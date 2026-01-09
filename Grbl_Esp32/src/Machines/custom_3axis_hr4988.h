@@ -10,8 +10,8 @@
 
     Hardware Configuration:
     - X Axis:  GPIO27 (STEP), GPIO26 (DIR)
-    - Y Axis:  GPIO13 (STEP), GPIO12 (DIR) - dual motor ganged (Y1Y2)
-    - Z Axis:  GPIO17 (STEP), GPIO18 (DIR)
+    - Y1Y2 Axis: 32K_XN (GPIO33/STEP), 32K_XP (GPIO32/DIR) - dual motor ganged
+    - Z Axis:  MTMS (GPIO14/STEP), MTDI (GPIO12/DIR)
     - Enable:   GPIO25 (shared for all 4 HR4988 drivers, active LOW)
 
     Note: No limit switches or position sensors are used.
@@ -35,16 +35,16 @@
 #define X_DIRECTION_PIN         GPIO_NUM_26
 
 // Y Axis (Hardware ganged - both motors share STEP/DIR signals)
-// NOTE: Using 32K_XN (GPIO13) and 32K_XP (GPIO12) crystal pins
-// This may interfere with RTC/Deep Sleep functionality
-#define Y_STEP_PIN              GPIO_NUM_13
-#define Y_DIRECTION_PIN         GPIO_NUM_12
+// Connected to 32K_XN (GPIO33) and 32K_XP (GPIO32) crystal pins
+// NOTE: These are 32.768kHz crystal pins, may interfere with RTC functionality
+#define Y_STEP_PIN              GPIO_NUM_33
+#define Y_DIRECTION_PIN         GPIO_NUM_32
 
 // Z Axis
-// NOTE: Using MTMS (GPIO14) and MTDI (GPIO12) JTAG pins  
-// May interfere with debugging functionality
-#define Z_STEP_PIN              GPIO_NUM_17
-#define Z_DIRECTION_PIN         GPIO_NUM_18
+// Connected to MTMS (GPIO14) and MTDI (GPIO12) JTAG pins
+// NOTE: May interfere with debugging functionality
+#define Z_STEP_PIN              GPIO_NUM_14
+#define Z_DIRECTION_PIN         GPIO_NUM_12
 
 // Shared stepper enable pin for all HR4988 drivers
 // Active LOW: Output LOW to enable, HIGH to disable
