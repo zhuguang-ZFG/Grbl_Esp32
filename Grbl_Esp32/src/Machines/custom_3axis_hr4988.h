@@ -35,11 +35,14 @@
 #define X_DIRECTION_PIN         GPIO_NUM_26
 
 // Y Axis (Hardware ganged - both motors share STEP/DIR signals)
-// Y1 and Y2 motors are connected in parallel to the same signals
+// NOTE: Using 32K_XN (GPIO13) and 32K_XP (GPIO12) crystal pins
+// This may interfere with RTC/Deep Sleep functionality
 #define Y_STEP_PIN              GPIO_NUM_13
 #define Y_DIRECTION_PIN         GPIO_NUM_12
 
 // Z Axis
+// NOTE: Using MTMS (GPIO14) and MTDI (GPIO12) JTAG pins  
+// May interfere with debugging functionality
 #define Z_STEP_PIN              GPIO_NUM_17
 #define Z_DIRECTION_PIN         GPIO_NUM_18
 
