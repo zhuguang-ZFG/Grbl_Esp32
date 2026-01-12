@@ -6,20 +6,33 @@
     Part of Grbl_ESP32
 
     Pin assignments for custom 3-axis CNC with HR4988 drivers
-    ESP32-D0WDQ6 with 40MHz crystal
+    ESP32-WROOM-32E with 40MHz crystal
+    Integrated 74HC595D-based automatic paper change system
 
-    Hardware Configuration:
-    - X Axis:  GPIO27 (STEP), GPIO26 (DIR)
-    - Y1Y2 Axis: 32K_XN (GPIO33/STEP), 32K_XP (GPIO32/DIR) - dual motor ganged
-    - Z Axis:  MTMS (GPIO14/STEP), MTDI (GPIO12/DIR) - Pen up/down control
-    - Enable:   GPIO25 (shared for all 4 HR4988 drivers, nENABLE active low)
+    === 3-Axis Writing Plotter ===
+    - X Axis:  GPIO2 (STEP), GPIO15 (DIR)
+    - Y1Y2 Axis: GPIO13 (STEP), GPIO12 (DIR) - dual motor ganged
+    - Z Axis:  GPIO14 (STEP), GPIO27 (DIR) - Pen up/down control
+    - Enable:   GPIO4 (shared for all 4 HR4988 drivers, nENABLE active low)
 
-    Note: No limit switches or position sensors are used.
+    === Paper Change System (74HC595D Control) ===
+    - 74HC595D Data Pin: GPIO16 (SER/DS input)
+    - Paper Sensor: GPIO34 (paper presence detection)
+    - Feed Motor: HC595 pins Q6/Q7 (DIR/STEP)
+    - Panel Motor: HC595 pins Q4/Q5 (DIR/STEP) 
+    - Clamp Motor: HC595 pins Q2/Q3 (DIR/STEP)
+
+    Note: No limit switches are used in this configuration.
     Enable pin: Output LOW to enable steppers, HIGH to disable
     
     Pen Control:
     - Z=0mm: Pen down (writing position)
     - Z=20mm: Pen up (travel position)
+    
+    Paper Change Control:
+    - M0 command triggers automatic paper change sequence
+    - Sensors provide feedback for paper detection and positioning
+    - 74HC595D provides expanded GPIO for multiple motor control
 */
 
 #define MACHINE_NAME "Custom 3-Axis HR4988"
@@ -35,24 +48,50 @@
 // === Stepper Motor Definitions ===
 
 // X Axis
-#define X_STEP_PIN              GPIO_NUM_27
-#define X_DIRECTION_PIN         GPIO_NUM_26
+#define X_STEP_PIN              GPIO_NUM_2
+#define X_DIRECTION_PIN         GPIO_NUM_15
 
 // Y Axis (Hardware ganged - both motors share STEP/DIR signals)
-// Connected to 32K_XN (GPIO33) and 32K_XP (GPIO32) crystal pins
-// NOTE: These are 32.768kHz crystal pins, may interfere with RTC functionality
-#define Y_STEP_PIN              GPIO_NUM_33
-#define Y_DIRECTION_PIN         GPIO_NUM_32
+// Connected to GPIO13 (STEP) and GPIO12 (DIR)
+#define Y_STEP_PIN              GPIO_NUM_13
+#define Y_DIRECTION_PIN         GPIO_NUM_12
 
 // Z Axis
-// Connected to MTMS (GPIO14) and MTDI (GPIO12) JTAG pins
-// NOTE: May interfere with debugging functionality
+// Connected to GPIO14 (STEP) and GPIO27 (DIR) - Pen up/down control
 #define Z_STEP_PIN              GPIO_NUM_14
-#define Z_DIRECTION_PIN         GPIO_NUM_12
+#define Z_DIRECTION_PIN         GPIO_NUM_27
 
 // Shared stepper enable pin for all HR4988 drivers
 // Active LOW (nENABLE): Output LOW to enable, HIGH to disable (HR4988 standard)
-#define STEPPERS_DISABLE_PIN    GPIO_NUM_25
+#define STEPPERS_DISABLE_PIN    GPIO_NUM_4
+
+// === Paper Change System with 74HC595D ===
+
+// 74HC595D Shift Register Control
+#define HC595_DATA_PIN            GPIO_NUM_16    // Serial data input (DS pin)
+#define HC595_CLOCK_PIN           GPIO_NUM_XX    // Shift register clock (SHCP) - not defined yet
+#define HC595_LATCH_PIN           GPIO_NUM_XX    // Storage register clock (STCP) - not defined yet
+
+// Paper Sensor Input
+#define PAPER_SENSOR_PIN          GPIO_NUM_34    // Paper presence sensor (input only pin)
+
+// 74HC595D Output Mapping (based on pin numbers)
+// Q0 (pin 15): Not used
+// Q1 (pin 1):  Not used  
+// Q2 (pin 2):  PAPER_CLAMP_DIR_PIN      - 压纸抬落电机方向控制
+// Q3 (pin 7):  PAPER_CLAMP_STEP_PIN     - 压纸抬落电机步进控制
+// Q4 (pin 4):  PANEL_MOTOR_DIR_PIN      - 出纸面板电机方向控制  
+// Q5 (pin 5):  PANEL_MOTOR_STEP_PIN     - 出纸面板电机步进控制
+// Q6 (pin 6):  FEED_MOTOR_DIR_PIN       - 进纸器电机方向控制
+// Q7 (pin 7):  FEED_MOTOR_STEP_PIN      - 进纸器电机步进控制
+
+// Bit positions in 74HC595D shift register (0-7)
+#define BIT_PAPER_CLAMP_DIR       2
+#define BIT_PAPER_CLAMP_STEP      3  
+#define BIT_PANEL_MOTOR_DIR       4
+#define BIT_PANEL_MOTOR_STEP       5
+#define BIT_FEED_MOTOR_DIR         6
+#define BIT_FEED_MOTOR_STEP        7
 
 // Note: No limit switches are used in this configuration
 // Uncomment and configure if you add limit switches later
@@ -102,3 +141,32 @@
 #define DEFAULT_X_MAX_TRAVEL         200.0   // mm - adjust to your machine
 #define DEFAULT_Y_MAX_TRAVEL         200.0   // mm - adjust to your machine
 #define DEFAULT_Z_MAX_TRAVEL         20.0    // mm - pen lift height (0-20mm)
+
+// === Paper Change System Parameters ===
+
+// Feed Motor (进纸器电机)
+#define DEFAULT_FEED_STEPS_PER_MM    100.0    // steps/mm
+#define DEFAULT_FEED_MAX_RATE        3000.0   // mm/min
+#define DEFAULT_FEED_ACCELERATION    400.0    // mm/sec^2
+#define DEFAULT_FEED_MAX_TRAVEL      300.0    // mm - maximum paper feed length
+
+// Panel Motor (出纸面板电机)  
+#define DEFAULT_PANEL_STEPS_PER_MM   80.0     // steps/mm
+#define DEFAULT_PANEL_MAX_RATE       2000.0   // mm/min
+#define DEFAULT_PANEL_ACCELERATION   300.0    // mm/sec^2
+#define DEFAULT_PANEL_MAX_TRAVEL     50.0     // mm - panel travel distance
+
+// Paper Clamp Motor (压纸抬落电机)
+#define DEFAULT_CLAMP_STEPS_PER_MM   150.0    // steps/mm
+#define DEFAULT_CLAMP_MAX_RATE       1500.0   // mm/min
+#define DEFAULT_CLAMP_ACCELERATION   250.0    // mm/sec^2
+#define DEFAULT_CLAMP_MAX_TRAVEL     10.0     // mm - clamping travel distance
+
+// Paper Change Timing Parameters
+#define PAPER_FEED_TIMEOUT_MS        5000     // ms - maximum time to wait for paper feeding
+#define PAPER_CLAMP_DELAY_MS         100      // ms - delay after clamp operation
+#define PAPER_UNCLAMP_DELAY_MS       150      // ms - delay after unclamp operation
+#define HC595_UPDATE_DELAY_US        10       // microseconds - delay between HC595 operations
+
+// Enable Paper Change System
+#define AUTO_PAPER_CHANGE_ENABLE     1        // Enable automatic paper change functionality
