@@ -24,6 +24,10 @@
 
 #include "Grbl.h"
 
+#ifdef AUTO_PAPER_CHANGE_ENABLE
+#include "SmartM0.h"
+#endif
+
 // Allow iteration over CoordIndex values
 CoordIndex& operator++(CoordIndex& i) {
     i = static_cast<CoordIndex>(static_cast<uint8_t>(i) + 1);
@@ -48,6 +52,11 @@ void gc_init() {
     // Load default G54 coordinate system.
     gc_state.modal.coord_select = CoordIndex::G54;
     coords[gc_state.modal.coord_select]->get(gc_state.coord_system);
+    
+    #ifdef AUTO_PAPER_CHANGE_ENABLE
+    // Initialize smart M0 detection system
+    smart_m0_init();
+    #endif
 }
 
 // Sets g-code parser position in mm. Input in steps. Called by the system abort and hard
@@ -127,6 +136,11 @@ Error gc_execute_line(char* line, uint8_t client) {
 #ifdef REPORT_ECHO_LINE_RECEIVED
     report_echo_line_received(line, client);
 #endif
+
+    // Check for pending paper change before processing new command
+    #ifdef AUTO_PAPER_CHANGE_ENABLE
+    smart_m0_on_next_command();
+    #endif
 
     /* -------------------------------------------------------------------------------------
        STEP 1: Initialize parser block struct and copy current g-code state modes. The parser
@@ -1562,10 +1576,17 @@ Error gc_execute_line(char* line, uint8_t client) {
             break;
         case ProgramFlow::Paused:
             protocol_buffer_synchronize();  // Sync and finish all remaining buffered motions before moving on.
+            
             if (sys.state != State::CheckMode) {
                 sys_rt_exec_state.bit.feedHold = true;  // Use feed hold for program pause.
                 protocol_execute_realtime();            // Execute suspend.
             }
+            
+            #ifdef AUTO_PAPER_CHANGE_ENABLE
+            // Trigger smart M0 detection after returning to home position
+            smart_m0_trigger();
+            #endif
+            
             break;
         case ProgramFlow::CompletedM2:
         case ProgramFlow::CompletedM30:

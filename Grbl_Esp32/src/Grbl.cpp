@@ -21,6 +21,11 @@
 #include "Grbl.h"
 #include <WiFi.h>
 
+#ifdef AUTO_PAPER_CHANGE_ENABLE
+#include "SmartM0.h"
+#include "PaperChange.h"
+#endif
+
 void grbl_init() {
 #ifdef USE_I2S_OUT
     i2s_out_init();  // The I2S out must be initialized before it can access the expanded GPIO port
@@ -101,6 +106,11 @@ static void reset_variables() {
     probe_init();
     plan_reset();  // Clear block buffer and planner variables
     st_reset();    // Clear stepper subsystem variables
+    
+    // Initialize paper change systems
+    #ifdef AUTO_PAPER_CHANGE_ENABLE
+    paper_change_init();
+    #endif
     // Sync cleared gcode and planner positions to current system position.
     plan_sync_position();
     gc_sync_position();

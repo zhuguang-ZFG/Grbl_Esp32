@@ -18,6 +18,7 @@
     === Paper Change System (74HC595D Control) ===
     - 74HC595D Data Pin: GPIO16 (SER/DS input)
     - Paper Sensor: GPIO34 (paper presence detection)
+    - One-Click Button: HC595 Q0 (pin 15) - 常开按钮接VCC
     - Feed Motor: HC595 pins Q6/Q7 (DIR/STEP)
     - Panel Motor: HC595 pins Q4/Q5 (DIR/STEP) 
     - Clamp Motor: HC595 pins Q2/Q3 (DIR/STEP)
@@ -69,14 +70,14 @@
 
 // 74HC595D Shift Register Control
 #define HC595_DATA_PIN            GPIO_NUM_16    // Serial data input (DS pin)
-#define HC595_CLOCK_PIN           GPIO_NUM_XX    // Shift register clock (SHCP) - not defined yet
-#define HC595_LATCH_PIN           GPIO_NUM_XX    // Storage register clock (STCP) - not defined yet
+#define HC595_CLOCK_PIN           GPIO_NUM_17    // Shift register clock (SHCP)
+#define HC595_LATCH_PIN           GPIO_NUM_5     // Storage register clock (STCP)
 
 // Paper Sensor Input
 #define PAPER_SENSOR_PIN          GPIO_NUM_34    // Paper presence sensor (input only pin)
 
 // 74HC595D Output Mapping (based on pin numbers)
-// Q0 (pin 15): Not used
+// Q0 (pin 15): PAPER_BUTTON_PIN          - 一键换纸按钮检测
 // Q1 (pin 1):  Not used  
 // Q2 (pin 2):  PAPER_CLAMP_DIR_PIN      - 压纸抬落电机方向控制
 // Q3 (pin 7):  PAPER_CLAMP_STEP_PIN     - 压纸抬落电机步进控制
@@ -86,12 +87,13 @@
 // Q7 (pin 7):  FEED_MOTOR_STEP_PIN      - 进纸器电机步进控制
 
 // Bit positions in 74HC595D shift register (0-7)
+#define BIT_PAPER_BUTTON           0        // 一键换纸按钮 (常开按钮接VCC，按下时为高电平)
 #define BIT_PAPER_CLAMP_DIR       2
 #define BIT_PAPER_CLAMP_STEP      3  
 #define BIT_PANEL_MOTOR_DIR       4
-#define BIT_PANEL_MOTOR_STEP       5
-#define BIT_FEED_MOTOR_DIR         6
-#define BIT_FEED_MOTOR_STEP        7
+#define BIT_PANEL_MOTOR_STEP      5
+#define BIT_FEED_MOTOR_DIR        6
+#define BIT_FEED_MOTOR_STEP       7
 
 // Note: No limit switches are used in this configuration
 // Uncomment and configure if you add limit switches later
@@ -168,5 +170,16 @@
 #define PAPER_UNCLAMP_DELAY_MS       150      // ms - delay after unclamp operation
 #define HC595_UPDATE_DELAY_US        10       // microseconds - delay between HC595 operations
 
+// One-Click Paper Change Button Parameters
+#define PAPER_BUTTON_DEBOUNCE_MS     50       // ms - button debounce time
+#define PAPER_BUTTON_LONG_PRESS_MS   2000     // ms - long press detection for emergency stop
+#define PAPER_BUTTON_POLL_INTERVAL   100      // ms - button check interval in main loop
+
 // Enable Paper Change System
 #define AUTO_PAPER_CHANGE_ENABLE     1        // Enable automatic paper change functionality
+
+// Smart M0 Detection Parameters
+#define SMART_M0_DETECTION_ENABLE     1        // Enable smart M0 content detection
+#define M0_CONTENT_CHECK_TIMEOUT_MS   2000     // ms - timeout for checking content after M0
+#define M0_COMMAND_QUEUE_SIZE         16       // Number of commands to check ahead for content
+#define PAPER_CHANGE_AUTO_OK_REPLY    1        // Automatically send OK after paper change completes

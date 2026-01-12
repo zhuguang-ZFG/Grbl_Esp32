@@ -24,6 +24,11 @@
 
 #include "Grbl.h"
 
+#ifdef AUTO_PAPER_CHANGE_ENABLE
+#include "SmartM0.h"
+#include "PaperChange.h"
+#endif
+
 static void protocol_exec_rt_suspend();
 
 static char    line[LINE_BUFFER_SIZE];     // Line to be executed. Zero-terminated.
@@ -188,6 +193,15 @@ void protocol_main_loop() {
         // this indicates that g-code streaming has either filled the planner buffer or has
         // completed. In either case, auto-cycle start, if enabled, any queued moves.
         protocol_auto_cycle_start();
+        
+#ifdef AUTO_PAPER_CHANGE_ENABLE
+        // Update smart M0 detection in main loop
+        smart_m0_update();
+        
+        // Update paper change system in main loop
+        paper_change_update();
+#endif
+        
         protocol_execute_realtime();  // Runtime command check point.
         if (sys.abort) {
             return;  // Bail to main() program loop to reset system.
