@@ -125,12 +125,14 @@ void smart_m0_update() {
 
 // === Check Queue for Content ===
 bool m0_has_content_in_queue() {
-    // Check if there are any non-M0 commands in the queue
-    // This is a simplified implementation - you may need to adapt based on your specific queue management
+    // Check if there are any pending commands in the planner buffer
+    // This indicates there is content after M0 that needs to be executed
     
-    // For now, we'll use the planner buffer check
-    // If there are blocks in the planner buffer, we assume there's content
-    return (plan_get_current_block() != NULL);
+    // Use the planner buffer count to check for pending blocks
+    uint8_t pending_blocks = plan_get_block_buffer_count();
+    
+    // If there are pending blocks (other than current), we assume there's content
+    return (pending_blocks > 0);
 }
 
 // === Start Paper Change ===
@@ -138,7 +140,7 @@ void m0_start_paper_change() {
     m0_state.paper_change_active = true;
     
     // Trigger actual paper change system
-    #ifdef PAPER_CHANGE_ENABLE
+    #ifdef AUTO_PAPER_CHANGE_ENABLE
     paper_change_start();
     #else
     // Simple delay simulation if paper change system not available
@@ -191,7 +193,7 @@ void smart_m0_emergency_stop() {
     if (m0_state.paper_change_active) {
         grbl_sendf(CLIENT_ALL, "[MSG: Emergency stop triggered during paper change]\r\n");
         
-        #ifdef PAPER_CHANGE_ENABLE
+        #ifdef AUTO_PAPER_CHANGE_ENABLE
         paper_change_stop();
         #endif
         

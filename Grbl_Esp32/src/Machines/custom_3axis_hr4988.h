@@ -9,10 +9,10 @@
     ESP32-WROOM-32E with 40MHz crystal
     Integrated 74HC595D-based automatic paper change system
 
-    === 3-Axis Writing Plotter ===
-    - X Axis:  GPIO2 (STEP), GPIO15 (DIR)
-    - Y1Y2 Axis: GPIO13 (STEP), GPIO12 (DIR) - dual motor ganged
-    - Z Axis:  GPIO14 (STEP), GPIO27 (DIR) - Pen up/down control
+    === A4 Size Writing Plotter ===
+    - X Axis:  GPIO2 (STEP), GPIO15 (DIR) - 210mm travel (A4 width)
+    - Y1Y2 Axis: GPIO13 (STEP), GPIO12 (DIR) - 297mm travel (A4 height), dual motor ganged
+    - Z Axis:  GPIO14 (STEP), GPIO27 (DIR) - Pen up/down control, 20mm travel
     - Enable:   GPIO4 (shared for all 4 HR4988 drivers, nENABLE active low)
 
     === Paper Change System (74HC595D Control) ===
@@ -76,8 +76,11 @@
 // Paper Sensor Input
 #define PAPER_SENSOR_PIN          GPIO_NUM_34    // Paper presence sensor (input only pin)
 
+// One-Click Button Input (GPIO, not HC595)
+#define PAPER_BUTTON_PIN          GPIO_NUM_35    // One-click paper change button (input only pin)
+
 // 74HC595D Output Mapping (based on pin numbers)
-// Q0 (pin 15): PAPER_BUTTON_PIN          - 一键换纸按钮检测
+// Q0 (pin 15): Not used (available for future expansion)
 // Q1 (pin 1):  Not used  
 // Q2 (pin 2):  PAPER_CLAMP_DIR_PIN      - 压纸抬落电机方向控制
 // Q3 (pin 7):  PAPER_CLAMP_STEP_PIN     - 压纸抬落电机步进控制
@@ -87,7 +90,7 @@
 // Q7 (pin 7):  FEED_MOTOR_STEP_PIN      - 进纸器电机步进控制
 
 // Bit positions in 74HC595D shift register (0-7)
-#define BIT_PAPER_BUTTON           0        // 一键换纸按钮 (常开按钮接VCC，按下时为高电平)
+// Note: Button is now on GPIO35, not HC595
 #define BIT_PAPER_CLAMP_DIR       2
 #define BIT_PAPER_CLAMP_STEP      3  
 #define BIT_PANEL_MOTOR_DIR       4
@@ -140,8 +143,8 @@
 #define DEFAULT_Y_ACCELERATION       500.0   // mm/sec^2
 #define DEFAULT_Z_ACCELERATION       800.0   // Faster acceleration for pen lift
 
-#define DEFAULT_X_MAX_TRAVEL         200.0   // mm - adjust to your machine
-#define DEFAULT_Y_MAX_TRAVEL         200.0   // mm - adjust to your machine
+#define DEFAULT_X_MAX_TRAVEL         210.0   // mm - A4 width (short side)
+#define DEFAULT_Y_MAX_TRAVEL         297.0   // mm - A4 height (long side)
 #define DEFAULT_Z_MAX_TRAVEL         20.0    // mm - pen lift height (0-20mm)
 
 // === Paper Change System Parameters ===
@@ -150,13 +153,13 @@
 #define DEFAULT_FEED_STEPS_PER_MM    100.0    // steps/mm
 #define DEFAULT_FEED_MAX_RATE        3000.0   // mm/min
 #define DEFAULT_FEED_ACCELERATION    400.0    // mm/sec^2
-#define DEFAULT_FEED_MAX_TRAVEL      300.0    // mm - maximum paper feed length
+#define DEFAULT_FEED_MAX_TRAVEL      350.0    // mm - maximum paper feed length (A4+margin)
 
 // Panel Motor (出纸面板电机)  
 #define DEFAULT_PANEL_STEPS_PER_MM   80.0     // steps/mm
 #define DEFAULT_PANEL_MAX_RATE       2000.0   // mm/min
 #define DEFAULT_PANEL_ACCELERATION   300.0    // mm/sec^2
-#define DEFAULT_PANEL_MAX_TRAVEL     50.0     // mm - panel travel distance
+#define DEFAULT_PANEL_MAX_TRAVEL     60.0     // mm - panel travel distance (A4 compatible)
 
 // Paper Clamp Motor (压纸抬落电机)
 #define DEFAULT_CLAMP_STEPS_PER_MM   150.0    // steps/mm

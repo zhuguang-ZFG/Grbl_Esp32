@@ -169,8 +169,8 @@ static void check_button_press() {
     static bool last_button_state = false;
     static uint32_t button_press_time = 0;
     
-    // Read button state from HC595 Q0 (bit 0)
-    bool button_pressed = (paper_ctrl.hc595_output & (1 << BIT_PAPER_BUTTON)) != 0;
+    // Read button state from GPIO input pin
+    bool button_pressed = (digitalRead(PAPER_BUTTON_PIN) == HIGH);
     
     if (button_pressed && !last_button_state) {
         // Button pressed - start timer
@@ -363,6 +363,7 @@ void paper_change_init() {
     pinMode(HC595_CLOCK_PIN, OUTPUT);
     pinMode(HC595_LATCH_PIN, OUTPUT);
     pinMode(PAPER_SENSOR_PIN, INPUT_PULLDOWN);
+    pinMode(PAPER_BUTTON_PIN, INPUT_PULLDOWN);  // Button with internal pulldown
     
     // Initialize HC595 output to all off
     hc595_write(0);
