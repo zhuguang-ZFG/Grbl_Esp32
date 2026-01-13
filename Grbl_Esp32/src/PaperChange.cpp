@@ -1398,38 +1398,46 @@ void paper_change_update() {
             
         case PAPER_FEEDING:
             // Feed new paper and detect sensor - 送入新纸并检测传感器（增强版）
-            
+
             CHECK_STATE_SAFETY(1000, "FEEDING");
-            
-            // === 进纸操作 ===
-            // 使用非阻塞式进纸控制，提高系统响应性
-            if (nonblocking_feed_step(true)) {  // true=正向进纸
-                paper_ctrl.step_counter++;  // 只有成功执行一步才递增计数器
-            }
-            
+
             // === 纸张检测 ===
             // 检测纸张存在：1)从无到有的上升沿 2)进入状态时已经有纸
             if (paper_ctrl.paper_sensor_state && !paper_ctrl.last_paper_sensor_state) {
                 // 从无到有的上升沿检测
-                grbl_sendf(CLIENT_ALL, "[MSG: Paper detected after %lu steps (edge), engaging clamp]\r\n", 
+                grbl_sendf(CLIENT_ALL, "[MSG: Paper detected after %lu steps (edge), stopping motor for clamp]\r\n",
                            paper_ctrl.step_counter);
+
                 // 立即停止进纸电机
-                set_motor_step(BIT_FEED_MOTOR_STEP, LOW);  
-                // 转入夹纸状态
-                enter_state(PAPER_CLAMPING);               
+                set_motor_step(BIT_FEED_MOTOR_STEP, LOW);
+                feed_motor_timing.step_pending = false;
+
+                // 等待50ms确保电机完全停止后进入夹纸状态
+                // 直接进入夹纸状态，让enter_state()的init_motor_timing()重置定时器
+                enter_state(PAPER_CLAMPING);
             } else if (paper_ctrl.paper_sensor_state && paper_ctrl.step_counter >= 10) {
                 // 进入状态时已经有纸，或稳定检测到纸（至少10步后确认）
-                grbl_sendf(CLIENT_ALL, "[MSG: Paper detected stable after %lu steps, engaging clamp]\r\n", 
+                grbl_sendf(CLIENT_ALL, "[MSG: Paper detected stable after %lu steps, stopping motor for clamp]\r\n",
                            paper_ctrl.step_counter);
+
                 // 立即停止进纸电机
-                set_motor_step(BIT_FEED_MOTOR_STEP, LOW);  
-                // 转入夹纸状态
-                enter_state(PAPER_CLAMPING);               
+                set_motor_step(BIT_FEED_MOTOR_STEP, LOW);
+                feed_motor_timing.step_pending = false;
+
+                // 等待50ms确保电机完全停止后进入夹纸状态
+                // 直接进入夹纸状态，让enter_state()的init_motor_timing()重置定时器
+                enter_state(PAPER_CLAMPING);
             } else if (paper_ctrl.step_counter > 500) {
                 // 进纸超时 - 使用故障恢复机制
-                handle_error(ERROR_SENSOR_TIMEOUT, 
-                            "Feed operation timeout - no paper detected", 
+                handle_error(ERROR_SENSOR_TIMEOUT,
+                            "Feed operation timeout - no paper detected",
                             PAPER_FEEDING);
+            } else {
+                // === 进纸操作 ===
+                // 使用非阻塞式进纸控制，提高系统响应性
+                if (nonblocking_feed_step(true)) {  // true=正向进纸
+                    paper_ctrl.step_counter++;  // 只有成功执行一步才递增计数器
+                }
             }
             break;
             
@@ -1438,25 +1446,33 @@ void paper_change_update() {
         case PAPER_CLAMPING:
             // Engage clamp motor - both clamp and panel motors active - 启动夹纸电机，夹纸和面板电机同时工作
             // 使用非阻塞式步进控制，确保稳定步进节奏
-            
+
             CHECK_STATE_SAFETY(50, "CLAMPING");
-            
+
             if (paper_ctrl.step_counter < 20) {  // 目标20步夹纸动作
-                // 同步执行两个电机的步进（夹纸+面板）
-                set_motor_dir(BIT_PAPER_CLAMP_DIR, true);    // 设置夹纸方向
-                set_motor_dir(BIT_PANEL_MOTOR_DIR, true);    // 设置面板方向
-                delayMicroseconds(10);                        // 方向稳定等待
-                
-                // 生成同步步进脉冲
-                set_motor_step(BIT_PAPER_CLAMP_STEP, HIGH);   // 夹纸脉冲上升沿
-                set_motor_step(BIT_PANEL_MOTOR_STEP, HIGH);   // 面板脉冲上升沿
-                delayMicroseconds(DEFAULT_STEP_PULSE_MICROSECONDS); // 脉冲宽度
-                
-                set_motor_step(BIT_PAPER_CLAMP_STEP, LOW);    // 夹纸脉冲下降沿
-                set_motor_step(BIT_PANEL_MOTOR_STEP, LOW);    // 面板脉冲下降沿
-                delayMicroseconds(2000);                      // 步进间隔(2ms)，确保稳定节奏
-                
-                paper_ctrl.step_counter++;  // 只有完整执行一步才递增计数器
+                // 使用时间控制器确保非阻塞式步进
+                if (millis() - clamp_motor_timing.last_step_time >= clamp_motor_timing.step_interval &&
+                    millis() - panel_motor_timing.last_step_time >= panel_motor_timing.step_interval) {
+
+                    // 同步执行两个电机的步进（夹纸+面板）
+                    set_motor_dir(BIT_PAPER_CLAMP_DIR, true);    // 设置夹纸方向
+                    set_motor_dir(BIT_PANEL_MOTOR_DIR, true);    // 设置面板方向
+                    delayMicroseconds(10);                        // 方向稳定等待
+
+                    // 生成同步步进脉冲
+                    set_motor_step(BIT_PAPER_CLAMP_STEP, HIGH);   // 夹纸脉冲上升沿
+                    set_motor_step(BIT_PANEL_MOTOR_STEP, HIGH);   // 面板脉冲上升沿
+                    delayMicroseconds(DEFAULT_STEP_PULSE_MICROSECONDS); // 脉冲宽度
+
+                    set_motor_step(BIT_PAPER_CLAMP_STEP, LOW);    // 夹纸脉冲下降沿
+                    set_motor_step(BIT_PANEL_MOTOR_STEP, LOW);    // 面板脉冲下降沿
+
+                    // 更新时间戳
+                    clamp_motor_timing.last_step_time = millis();
+                    panel_motor_timing.last_step_time = millis();
+
+                    paper_ctrl.step_counter++;  // 只有完整执行一步才递增计数器
+                }
             } else {
                 // 夹纸完成，进入释放检测状态
                 grbl_sendf(CLIENT_ALL, "[MSG: Clamp engaged (%lu steps), monitoring sensor]\r\n", paper_ctrl.step_counter);
@@ -1465,25 +1481,58 @@ void paper_change_update() {
             break;
             
         case PAPER_RELEASING:
-            // Wait for paper to leave sensor, then stop all motors
-            if (!paper_ctrl.paper_sensor_state && paper_ctrl.last_paper_sensor_state) {
-                grbl_sendf(CLIENT_ALL, "[MSG: Paper left sensor, stopping all motors]\r\n");
+            // 正确逻辑：夹纸完成后，保持夹纸状态，面板电机前进将纸张从夹具拉出
+            // 检测到纸张脱离夹具（传感器从有到无），释放夹具，然后进入定位
 
-                // Stop all motors
+            CHECK_STATE_SAFETY(500, "RELEASING");
+
+            // 保持夹纸电机夹持状态，面板电机前进拉出纸张
+            if (paper_ctrl.step_counter < 200) {  // 前进200步拉出纸张
+                // 使用非阻塞式步进控制面板电机
+                if (millis() - panel_motor_timing.last_step_time >= panel_motor_timing.step_interval) {
+                    generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true);
+                    panel_motor_timing.last_step_time = millis();
+                    paper_ctrl.step_counter++;
+
+                    // 检测纸张脱离夹具 - 从有纸到无纸的下降沿
+                    if (!paper_ctrl.paper_sensor_state && paper_ctrl.last_paper_sensor_state) {
+                        grbl_sendf(CLIENT_ALL, "[MSG: Paper released from clamp at step %lu, unclamping]\r\n",
+                                   paper_ctrl.step_counter);
+                        // 释放夹具
+                        set_motor_dir(BIT_PAPER_CLAMP_DIR, false);  // 反向=释放
+                        delayMicroseconds(10);
+                        // 执行释放步进
+                        set_motor_step(BIT_PAPER_CLAMP_STEP, HIGH);
+                        delayMicroseconds(DEFAULT_STEP_PULSE_MICROSECONDS);
+                        set_motor_step(BIT_PAPER_CLAMP_STEP, LOW);
+                        delayMicroseconds(10);
+
+                        // 停止面板电机
+                        STOP_ALL_MOTORS();
+
+                        // 等待夹具完全释放后进入定位
+                        enter_state(PAPER_POSITIONING);
+                        return;
+                    }
+                }
+            } else {
+                // 已前进足够步数但仍未检测到纸张脱离
+                grbl_sendf(CLIENT_ALL, "[MSG: Paper release timeout after %lu steps, assuming complete\r\n",
+                           paper_ctrl.step_counter);
+                // 释放夹具
+                set_motor_dir(BIT_PAPER_CLAMP_DIR, false);
+                delayMicroseconds(10);
+                set_motor_step(BIT_PAPER_CLAMP_STEP, HIGH);
+                delayMicroseconds(DEFAULT_STEP_PULSE_MICROSECONDS);
+                set_motor_step(BIT_PAPER_CLAMP_STEP, LOW);
+
                 STOP_ALL_MOTORS();
-
-                // Start positioning after 1 second delay - 不修改state_timer，使用独立的延迟变量
-                // 注意：延迟逻辑在POSITIONING状态中处理
                 enter_state(PAPER_POSITIONING);
-            } else if (current_time - paper_ctrl.state_timer > 10000) {
-                // 10 second timeout
-                grbl_sendf(CLIENT_ALL, "[MSG: Release timeout]\r\n");
-                enter_state(PAPER_ERROR);
             }
             break;
             
         case PAPER_POSITIONING:
-            // Panel motor fine positioning with calculated sensor search - 面板电机精确定位并计算搜索传感器
+            // 方案C: 找边缘 - 前进后退来回搜索纸张边缘定位
             CHECK_STATE_SAFETY(500, "POSITIONING");
 
             // 初始化定位阶段参数（首次进入时执行）
@@ -1496,41 +1545,53 @@ void paper_change_update() {
                 positioning_initialized = true;
             }
 
-            // 等待1秒延迟后才开始定位（给夹纸动作时间稳定）
+            // 等待1秒延迟后才开始定位（给夹具释放动作时间稳定）
             if (current_time >= positioning_delay_timer) {
-                
+
                 // === 非阻塞步进控制 ===
                 // 使用时间控制器确保稳定的步进节奏
                 if (millis() - panel_motor_timing.last_step_time >= panel_motor_timing.step_interval) {
+
+                    // 在脉冲生成前检测传感器状态
+                    sensor_result_t sensor = check_paper_sensor(false, 0);
+
                     if (paper_ctrl.step_counter < fine_steps) {
-                        // Phase 1: Forward fine adjustment steps - 前进微调步数
+                        // Phase 1: Forward fine adjustment steps - 前进微调步数(32步)
                         generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true);
                         panel_motor_timing.last_step_time = millis(); // 更新时间戳
                         paper_ctrl.step_counter++;
-                        
-                        // Check if paper sensor is detected during forward movement
-                        sensor_result_t sensor = check_paper_sensor(false, 0);
+
+                        // 检测纸张边缘 - 有纸表示到达边缘
                         if (sensor.detected) {
-                            LOG_PROGRESS("Paper sensor detected at step %d", paper_ctrl.step_counter);
-                            paper_ctrl.sensor_detected = true;
+                            grbl_sendf(CLIENT_ALL, "[MSG: Paper edge detected at step %d (forward phase)\r\n",
+                                       paper_ctrl.step_counter);
+                            STOP_ALL_MOTORS();
+                            enter_state(PAPER_COMPLETE);
+                            return;
                         }
                     } else if (paper_ctrl.step_counter < total_positioning_steps) {
-                        // Phase 2: Back adjustment steps - 后退微调步数
+                        // Phase 2: Back adjustment steps - 后退微调步数(2步)
                         generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, false);
                         panel_motor_timing.last_step_time = millis(); // 更新时间戳
                         paper_ctrl.step_counter++;
+
+                        // 检测纸张消失 - 无纸表示通过边缘
+                        if (!sensor.detected) {
+                            grbl_sendf(CLIENT_ALL, "[MSG: Paper edge lost at step %d (back phase), searching\r\n",
+                                       paper_ctrl.step_counter);
+                            // 记录边缘位置，准备精确搜索
+                            paper_ctrl.sensor_detected = true;
+                        }
                     } else if (paper_ctrl.step_counter < max_search_steps) {
-                        // Phase 3: Calculated search steps - 走计算出的搜索步数寻找传感器
+                        // Phase 3: Fine edge search - 精细搜索纸张边缘
                         generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true);
                         panel_motor_timing.last_step_time = millis(); // 更新时间戳
                         paper_ctrl.step_counter++;
-                        
-                        // Check for paper sensor during search
-                        sensor_result_t sensor = check_paper_sensor(false, 0);
+
+                        // 检测纸张边缘 - 寻找有纸的精确位置
                         if (sensor.detected) {
-                            LOG_PROGRESS("Paper sensor found at step %d after %.2fmm search",
-                                       paper_ctrl.step_counter,
-                                       (float)(paper_ctrl.step_counter - total_positioning_steps) / DEFAULT_PANEL_STEPS_PER_MM);
+                            LOG_PROGRESS("Paper sensor found at step %d after edge search",
+                                       paper_ctrl.step_counter);
                             STOP_ALL_MOTORS();  // Stop panel motor immediately
                             enter_state(PAPER_COMPLETE);  // 换纸完成，恢复正常写字功能
                             return;
