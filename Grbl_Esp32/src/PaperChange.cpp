@@ -563,6 +563,9 @@ static motor_timing_t panel_motor_timing;     // 面板电机时间控制器
 static motor_timing_t feed_motor_timing;      // 进纸电机时间控制器
 static motor_timing_t clamp_motor_timing;     // 夹纸电机时间控制器
 
+// 定位状态初始化标志（全局静态变量）
+static bool positioning_initialized = false;
+
 /**
  * @brief 电机配置结构体
  */
@@ -1200,53 +1203,59 @@ static void enter_state(paper_change_state_t new_state) {
         LOG_ERROR("Invalid state value");
         return; // 拒绝非法状态值
     }
-    
+
     // === 状态转换逻辑验证 ===
     // 检查状态转换是否符合预定义的规则
     paper_change_state_t old_state = paper_ctrl.state;
     if (!is_valid_transition(old_state, new_state)) {
         const char** state_names = (const char**)STATE_NAMES;
-        
+
         // 记录非法转换尝试
-        grbl_sendf(CLIENT_ALL, "[MSG: ERROR - Invalid transition %s->%s]\r\n", 
+        grbl_sendf(CLIENT_ALL, "[MSG: ERROR - Invalid transition %s->%s]\r\n",
                    state_names[old_state], state_names[new_state]);
-        
+
         // 非法转换时，如果不是错误状态，转入错误状态
         if (new_state != PAPER_ERROR) {
             enter_state(PAPER_ERROR);
         }
         return;
     }
-    
+
     // === 状态转换记录 ===
     uint32_t transition_time = millis();  // 记录转换时间戳
-    
+
     // === 错误状态特殊处理 ===
     // 从错误状态恢复时，执行额外的清理和安全检查
     if (old_state == PAPER_ERROR && new_state != PAPER_ERROR) {
-        grbl_sendf(CLIENT_ALL, "[MSG: Recovering from ERROR state to %s]\r\n", 
+        grbl_sendf(CLIENT_ALL, "[MSG: Recovering from ERROR state to %s]\r\n",
                    (new_state == PAPER_IDLE ? "IDLE" : "active state"));
-        
+
         // 清除紧急停止标志
         paper_ctrl.emergency_stop = false;
-        
+
         // 停止所有电机，确保安全状态
         STOP_ALL_MOTORS();
     }
-    
+
+    // === 定位状态特殊处理 ===
+    // 进入定位状态时重置定位初始化标志，确保初始化执行
+    if (new_state == PAPER_POSITIONING) {
+        positioning_initialized = false;
+    }
+
     // === 核心状态更新 ===
     paper_ctrl.state = new_state;          // 设置新状态
     paper_ctrl.state_timer = transition_time; // 重置状态计时器
     paper_ctrl.step_counter = 0;           // 重置步进计数器
-    
+
     // === 电机时序初始化 ===
     // 为新状态初始化电机时间控制器
     init_motor_timing();
-    
+
     // === 状态转换日志 ===
-    
+
     // 详细的转换日志，包含时间信息便于性能分析
-    grbl_sendf(CLIENT_ALL, "[MSG: State %s->%s at %lums]\r\n", 
+    grbl_sendf(CLIENT_ALL, "[MSG: State %s->%s at %lums]\r\n",
                GET_STATE_NAME(old_state), GET_STATE_NAME(new_state), transition_time);
 }
 
@@ -1333,7 +1342,6 @@ void paper_change_update() {
     // 声明定位阶段的变量（在switch外部，避免未初始化问题）
     int fine_steps = 0, back_steps = 0, total_positioning_steps = 0, max_search_steps = 0;
     static uint32_t positioning_delay_timer = 0;
-    static bool positioning_initialized = false;
 
     switch (paper_ctrl.state) {         // 根据当前状态执行相应操作
         case PAPER_IDLE:
@@ -1449,6 +1457,10 @@ void paper_change_update() {
 
             CHECK_STATE_SAFETY(50, "CLAMPING");
 
+            // 明确设置步进间隔，确保稳定性
+            clamp_motor_timing.step_interval = 1000;  // 1ms夹纸间隔
+            panel_motor_timing.step_interval = 1000;  // 1ms面板间隔
+
             if (paper_ctrl.step_counter < 20) {  // 目标20步夹纸动作
                 // 使用时间控制器确保非阻塞式步进
                 if (millis() - clamp_motor_timing.last_step_time >= clamp_motor_timing.step_interval &&
@@ -1482,7 +1494,7 @@ void paper_change_update() {
             
         case PAPER_RELEASING:
             // 正确逻辑：夹纸完成后，保持夹纸状态，面板电机前进将纸张从夹具拉出
-            // 检测到纸张脱离夹具（传感器从有到无），释放夹具，然后进入定位
+            // 检测到纸张脱离夹具（传感器从有到无），释放夹具（20步反向），然后进入定位
 
             CHECK_STATE_SAFETY(500, "RELEASING");
 
@@ -1496,19 +1508,17 @@ void paper_change_update() {
 
                     // 检测纸张脱离夹具 - 从有纸到无纸的下降沿
                     if (!paper_ctrl.paper_sensor_state && paper_ctrl.last_paper_sensor_state) {
-                        grbl_sendf(CLIENT_ALL, "[MSG: Paper released from clamp at step %lu, unclamping]\r\n",
+                        grbl_sendf(CLIENT_ALL, "[MSG: Paper released from clamp at step %lu, unclamping (20 steps)\r\n",
                                    paper_ctrl.step_counter);
-                        // 释放夹具
-                        set_motor_dir(BIT_PAPER_CLAMP_DIR, false);  // 反向=释放
-                        delayMicroseconds(10);
-                        // 执行释放步进
-                        set_motor_step(BIT_PAPER_CLAMP_STEP, HIGH);
-                        delayMicroseconds(DEFAULT_STEP_PULSE_MICROSECONDS);
-                        set_motor_step(BIT_PAPER_CLAMP_STEP, LOW);
-                        delayMicroseconds(10);
 
                         // 停止面板电机
                         STOP_ALL_MOTORS();
+
+                        // 执行完整的释放动作（20步反向步进）
+                        for (int i = 0; i < 20; i++) {
+                            generate_motor_step(BIT_PAPER_CLAMP_STEP, BIT_PAPER_CLAMP_DIR, false);
+                            delayMicroseconds(1000);  // 1ms步间延时
+                        }
 
                         // 等待夹具完全释放后进入定位
                         enter_state(PAPER_POSITIONING);
@@ -1517,16 +1527,18 @@ void paper_change_update() {
                 }
             } else {
                 // 已前进足够步数但仍未检测到纸张脱离
-                grbl_sendf(CLIENT_ALL, "[MSG: Paper release timeout after %lu steps, assuming complete\r\n",
+                grbl_sendf(CLIENT_ALL, "[MSG: Paper release timeout after %lu steps, forcing unclamp (20 steps)\r\n",
                            paper_ctrl.step_counter);
-                // 释放夹具
-                set_motor_dir(BIT_PAPER_CLAMP_DIR, false);
-                delayMicroseconds(10);
-                set_motor_step(BIT_PAPER_CLAMP_STEP, HIGH);
-                delayMicroseconds(DEFAULT_STEP_PULSE_MICROSECONDS);
-                set_motor_step(BIT_PAPER_CLAMP_STEP, LOW);
 
+                // 停止面板电机
                 STOP_ALL_MOTORS();
+
+                // 执行完整的释放动作（20步反向步进）
+                for (int i = 0; i < 20; i++) {
+                    generate_motor_step(BIT_PAPER_CLAMP_STEP, BIT_PAPER_CLAMP_DIR, false);
+                    delayMicroseconds(1000);  // 1ms步间延时
+                }
+
                 enter_state(PAPER_POSITIONING);
             }
             break;
@@ -1543,6 +1555,7 @@ void paper_change_update() {
                 max_search_steps = total_positioning_steps + PAPER_POSITIONING_SEARCH_STEPS;
                 positioning_delay_timer = current_time + 1000;  // 延迟1秒
                 positioning_initialized = true;
+                paper_ctrl.sensor_detected = false;  // 重置传感器检测标志
             }
 
             // 等待1秒延迟后才开始定位（给夹具释放动作时间稳定）
@@ -1605,8 +1618,6 @@ void paper_change_update() {
                     }
                 }
             }
-            // 退出POSITIONING状态时重置初始化标志
-            positioning_initialized = false;
             break;
 
         case PAPER_COMPLETE:

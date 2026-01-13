@@ -190,12 +190,24 @@ void m0_send_completion_ok() {
     grbl_sendf(CLIENT_ALL, "[MSG: Smart M0 paper change complete, resuming operation]\r\n");
 }
 
-// === Get Smart M0 Status ===
+/**
+ * @brief 检查SmartM0是否处于活动状态。
+ *
+ * 该函数用于判断当前是否有纸张更换操作正在进行，或者系统是否正在等待内容输入。如果任一条件满足，则认为SmartM0是活跃的。
+ *
+ * @return 如果有纸张更换操作正在进行或系统正在等待内容输入，则返回true；否则返回false。
+ */
 bool smart_m0_is_active() {
     return m0_state.paper_change_active || m0_state.waiting_for_content;
 }
 
-// === Emergency Stop Paper Change ===
+/**
+ * @brief 在纸张更换操作期间启动紧急停止。
+ *
+ * 此函数旨在安全地停止正在进行的纸张更换过程，并重置相关状态变量。它会向所有客户端发送消息，表明已触发紧急停止。如果启用了自动纸张更换功能，它还会调用 `paper_change_stop()` 以确保硬件处于安全状态。最后，它会更新状态以反映纸张更换不再处于活动状态，并向所有客户端发送错误消息。
+ *
+ * @note 此函数应在纸张更换期间检测到紧急情况时调用，例如长时间按下纸张更换按钮。
+ */
 void smart_m0_emergency_stop() {
     if (m0_state.paper_change_active) {
         grbl_sendf(CLIENT_ALL, "[MSG: Emergency stop triggered during paper change]\r\n");
@@ -213,7 +225,11 @@ void smart_m0_emergency_stop() {
     }
 }
 
-// === Reset Smart M0 State ===
+/**
+ * @brief 重置智能M0状态。
+ *
+ * 此函数将智能M0状态结构体的所有字段重置为初始值（通常是0或false），并发送一条消息通知所有客户端状态已重置。这在需要从头开始处理M0命令或清理状态时非常有用。
+ */
 void smart_m0_reset() {
     memset(&m0_state, 0, sizeof(smart_m0_state_t));
     grbl_sendf(CLIENT_ALL, "[MSG: Smart M0 state reset]\r\n");
