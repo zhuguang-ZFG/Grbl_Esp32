@@ -157,9 +157,13 @@
 
 // Panel Motor (出纸面板电机)  
 #define DEFAULT_PANEL_STEPS_PER_MM   80.0     // steps/mm
-#define DEFAULT_PANEL_MAX_RATE       2000.0   // mm/min
-#define DEFAULT_PANEL_ACCELERATION   300.0    // mm/sec^2
-#define DEFAULT_PANEL_MAX_TRAVEL     60.0     // mm - panel travel distance (A4 compatible)
+#define DEFAULT_PANEL_MAX_RATE       3000.0   // mm/min - 提高速度
+#define DEFAULT_PANEL_ACCELERATION   400.0    // mm/sec^2 - 提高加速度
+#define DEFAULT_PANEL_MAX_TRAVEL     300.0    // mm - panel travel distance (full A4 length)
+
+// Paper Change Eject Parameters
+#define PAPER_EJECT_STEPS          23800    // steps - A4 length: 297mm × 80步/mm  
+#define PAPER_EJECT_INTERVAL_US     1000      // μs - 1ms间隔，提高出纸速度
 
 // Paper Clamp Motor (压纸抬落电机)
 #define DEFAULT_CLAMP_STEPS_PER_MM   150.0    // steps/mm

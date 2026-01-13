@@ -38,51 +38,55 @@ void m0_send_completion_ok();
 void m0_complete();
 
 // === Smart M0 Initialization ===
+// Smart M0系统初始化函数 - 在GCode解析器初始化时调用
 void smart_m0_init() {
-    memset(&m0_state, 0, sizeof(smart_m0_state_t));
-    m0_state.content_check_timeout = M0_CONTENT_CHECK_TIMEOUT_MS;
+    memset(&m0_state, 0, sizeof(smart_m0_state_t));  // 将M0状态结构体全部清零
+    m0_state.content_check_timeout = M0_CONTENT_CHECK_TIMEOUT_MS; // 设置默认内容检测超时时间(2秒)
 }
 
 // === M0 Detection Trigger ===
+// M0检测触发函数 - 当G-code解析器遇到M0指令时调用
 void smart_m0_trigger() {
     if (!SMART_M0_DETECTION_ENABLE) {
-        // Traditional M0 behavior - immediate paper change
-        m0_start_paper_change();
+        // Traditional M0 behavior - immediate paper change - 传统模式：立即触发换纸
+        m0_start_paper_change();  // 直接启动物理换纸
         return;
     }
 
-    m0_state.m0_detected = true;
-    m0_state.m0_completed = false;
-    m0_state.m0_timestamp = millis();
-    m0_state.waiting_for_content = true;
-    m0_state.content_after_m0 = false;
-    m0_state.pending_paper_change = false;
+    // Smart mode setup - 智能模式：设置检测状态
+    m0_state.m0_detected = true;                    // 标记M0已检测
+    m0_state.m0_completed = false;                  // 标记M0尚未完成
+    m0_state.m0_timestamp = millis();               // 记录M0检测时间戳
+    m0_state.waiting_for_content = true;           // 开始等待内容检测
+    m0_state.content_after_m0 = false;             // 重置内容检测标志
+    m0_state.pending_paper_change = false;          // 重置待换纸标志
 
-    // Start content checking timer
-    m0_state.content_check_timeout = millis() + M0_CONTENT_CHECK_TIMEOUT_MS;
+    // Start content checking timer - 启动内容检测计时器
+    m0_state.content_check_timeout = millis() + M0_CONTENT_CHECK_TIMEOUT_MS; // 设置2秒超时
 
-    grbl_sendf(CLIENT_ALL, "[MSG: Smart M0 detected, checking for content...]\r\n");
+    grbl_sendf(CLIENT_ALL, "[MSG: Smart M0 detected, checking for content...]\r\n"); // 发送检测开始消息
 }
 
 // === M0 Complete Function ===
+// M0完成函数 - 完成M0处理并发送ok响应
 void m0_complete() {
-    if (m0_state.m0_detected && !m0_state.m0_completed) {
-        m0_state.m0_completed = true;
-        grbl_sendf(CLIENT_ALL, "[MSG: M0 processing completed, OK sent]\r\n");
+    if (m0_state.m0_detected && !m0_state.m0_completed) {  // 确保M0已检测且未完成
+        m0_state.m0_completed = true;  // 标记M0处理完成
+        grbl_sendf(CLIENT_ALL, "[MSG: M0 processing completed, OK sent]\r\n"); // 发送完成消息
         
-        // Send immediate OK for M0 completion
-        grbl_sendf(CLIENT_ALL, "ok\r\n");
+        // Send immediate OK for M0 completion - 立即发送ok响应给上位机
+        grbl_sendf(CLIENT_ALL, "ok\r\n");  // 这是关键：M0立即返回ok，不阻塞上位机
         
         if (!m0_state.content_after_m0) {
-            // No content detected, reset M0 state completely
-            m0_state.m0_detected = false;
-            m0_state.waiting_for_content = false;
-            m0_state.pending_paper_change = false;
-            grbl_sendf(CLIENT_ALL, "[MSG: No paper change needed]\r\n");
+            // No content detected, reset M0 state completely - 无内容检测到，完全重置M0状态
+            m0_state.m0_detected = false;       // 清除M0检测标志
+            m0_state.waiting_for_content = false; // 清除等待内容标志
+            m0_state.pending_paper_change = false;// 清除待换纸标志
+            grbl_sendf(CLIENT_ALL, "[MSG: No paper change needed]\r\n"); // 发送跳过换纸消息
         } else {
-            // Content detected - set paper change pending for next command
-            m0_state.pending_paper_change = true;
-            grbl_sendf(CLIENT_ALL, "[MSG: Paper change pending for next command]\r\n");
+            // Content detected - set paper change pending for next command - 有内容检测到，设置待换纸状态
+            m0_state.pending_paper_change = true;  // 标记有待处理的换纸操作
+            grbl_sendf(CLIENT_ALL, "[MSG: Paper change pending for next command]\r\n"); // 发送待换纸消息
         }
     }
 }
@@ -99,27 +103,28 @@ void smart_m0_on_next_command() {
 }
 
 // === Content Detection Update ===
+// 内容检测更新函数 - 在Protocol主循环中被调用，持续检测M0后的内容
 void smart_m0_update() {
-    if (!m0_state.waiting_for_content) {
-        return;
+    if (!m0_state.waiting_for_content) {  // 检查是否正在等待内容检测
+        return;  // 不在等待状态，直接返回
     }
 
-    // Check for content after M0
-    m0_state.content_after_m0 = m0_has_content_in_queue();
+    // Check for content after M0 - 检查M0后的内容
+    m0_state.content_after_m0 = m0_has_content_in_queue();  // 检查规划器缓冲区是否有待处理内容
 
-    // Check if timeout reached or content detected
-    uint32_t current_time = millis();
-    if (m0_state.content_after_m0 || current_time > m0_state.content_check_timeout) {
+    // Check if timeout reached or content detected - 检查是否超时或检测到内容
+    uint32_t current_time = millis();  // 获取当前系统时间
+    if (m0_state.content_after_m0 || current_time > m0_state.content_check_timeout) {  // 超时或检测到内容
         
         if (m0_state.content_after_m0) {
-            grbl_sendf(CLIENT_ALL, "[MSG: Content detected after M0, paper change will trigger on next command]\r\n");
+            grbl_sendf(CLIENT_ALL, "[MSG: Content detected after M0, paper change will trigger on next command]\r\n"); // 有内容消息
         } else {
-            grbl_sendf(CLIENT_ALL, "[MSG: No content after M0, will skip paper change]\r\n");
+            grbl_sendf(CLIENT_ALL, "[MSG: No content after M0, will skip paper change]\r\n"); // 无内容消息
         }
 
-        // Complete M0 processing - this will send OK and set pending state
-        m0_complete();
-        m0_state.waiting_for_content = false;
+        // Complete M0 processing - this will send OK and set pending state - 完成M0处理
+        m0_complete();  // 调用M0完成函数，发送ok并设置相应状态
+        m0_state.waiting_for_content = false;  // 清除等待内容标志
     }
 }
 

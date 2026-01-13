@@ -50,65 +50,84 @@ typedef struct {
 static paper_change_ctrl_t paper_ctrl;
 
 // === Motor Control Functions ===
+// 74HC595D移位寄存器数据写入函数
+// 参数: data - 要输出的8位数据 (每一位对应一个控制信号)
 static void hc595_write(uint8_t data) {
-    // Write data to 74HC595D shift register
-    digitalWrite(HC595_LATCH_PIN, LOW);
+    // 写入数据到74HC595D移位寄存器
+    digitalWrite(HC595_LATCH_PIN, LOW);    // 拉低锁存引脚，准备移位数据
     
+    // 循环8次，逐位移入数据 (从最高位MSB到最低位LSB)
     for (uint8_t i = 0; i < 8; i++) {
-        digitalWrite(HC595_CLOCK_PIN, LOW);
+        digitalWrite(HC595_CLOCK_PIN, LOW);    // 时钟信号拉低，准备数据位
+        // 设置数据引脚: 检查对应位是否为1
+        // (data & (0x80 >> i)): 从MSB开始检查每一位
         digitalWrite(HC595_DATA_PIN, (data & (0x80 >> i)) ? HIGH : LOW);
-        delayMicroseconds(1);
-        digitalWrite(HC595_CLOCK_PIN, HIGH);
-        delayMicroseconds(1);
+        delayMicroseconds(1);                  // 数据建立时间，确保数据稳定
+        digitalWrite(HC595_CLOCK_PIN, HIGH);   // 时钟上升沿，数据移入寄存器
+        delayMicroseconds(1);                  // 时钟保持时间，完成移位
     }
     
-    digitalWrite(HC595_LATCH_PIN, HIGH);
-    delayMicroseconds(HC595_UPDATE_DELAY_US);
+    digitalWrite(HC595_LATCH_PIN, HIGH);   // 锁存上升沿，将移位寄存器数据并行输出
+    delayMicroseconds(HC595_UPDATE_DELAY_US); // 等待硬件稳定时间
     
-    paper_ctrl.hc595_output = data;
+    paper_ctrl.hc595_output = data;        // 保存当前输出状态，用于状态跟踪
 }
 
+// 电机步进使能控制函数
+// 参数: motor_bit - 电机对应的位位置 (0-7), enable - true使能步进，false停止步进
 static void set_motor_step(uint8_t motor_bit, bool enable) {
-    uint8_t new_output = paper_ctrl.hc595_output;
+    uint8_t new_output = paper_ctrl.hc595_output;  // 获取当前HC595输出状态
     
     if (enable) {
-        new_output |= (1 << motor_bit);
+        // 使能电机步进: 将对应位设置为1 (高电平)
+        new_output |= (1 << motor_bit);  // 按位或操作，设置指定位为1
     } else {
-        new_output &= ~(1 << motor_bit);
+        // 禁用电机步进: 将对应位设置为0 (低电平)  
+        new_output &= ~(1 << motor_bit); // 按位与操作，清除指定位为0
     }
     
+    // 只有输出状态发生变化时才更新硬件，避免不必要的操作
     if (new_output != paper_ctrl.hc595_output) {
-        hc595_write(new_output);
+        hc595_write(new_output);          // 写入新的状态到HC595
     }
 }
 
+// 电机方向控制函数  
+// 参数: motor_bit - 电机对应的位位置 (0-7), forward - true正向，false反向
 static void set_motor_dir(uint8_t motor_bit, bool forward) {
-    uint8_t new_output = paper_ctrl.hc595_output;
+    uint8_t new_output = paper_ctrl.hc595_output;  // 获取当前HC595输出状态
     
     if (forward) {
-        new_output &= ~(1 << motor_bit);  // Forward direction
+        // 正向旋转: 将方向位设置为0 (根据硬件设计，低电平为正向)
+        new_output &= ~(1 << motor_bit);  // 按位清零，设置正向
     } else {
-        new_output |= (1 << motor_bit);   // Reverse direction
+        // 反向旋转: 将方向位设置为1 (根据硬件设计，高电平为反向)
+        new_output |= (1 << motor_bit);   // 按位置一，设置反向
     }
     
+    // 只有输出状态发生变化时才更新硬件
     if (new_output != paper_ctrl.hc595_output) {
-        hc595_write(new_output);
+        hc595_write(new_output);          // 写入新的方向状态到HC595
     }
 }
 
 // === Motor Step Generation ===
+// 电机步进脉冲生成函数 - 生成一个完整的步进脉冲
+// 参数: step_bit - 步进控制位, dir_bit - 方向控制位, forward - 转向
 static void generate_motor_step(uint8_t step_bit, uint8_t dir_bit, bool forward) {
-    set_motor_dir(dir_bit, forward);
-    delayMicroseconds(10);
-    set_motor_step(step_bit, HIGH);
-    delayMicroseconds(DEFAULT_STEP_PULSE_MICROSECONDS);
-    set_motor_step(step_bit, LOW);
-    delayMicroseconds(10);
+    set_motor_dir(dir_bit, forward);                // 1. 首先设置电机旋转方向
+    delayMicroseconds(10);                          // 2. 方向设置稳定时间 (10μs)
+    set_motor_step(step_bit, HIGH);                  // 3. 步进信号拉高 (开始步进)
+    delayMicroseconds(DEFAULT_STEP_PULSE_MICROSECONDS); // 4. 步进脉冲宽度 (默认5μs)
+    set_motor_step(step_bit, LOW);                   // 5. 步进信号拉低 (完成一步)
+    delayMicroseconds(10);                          // 6. 步进间隔时间 (10μs)
 }
 
 // === Paper Sensor Reading ===
+// 纸张传感器读取函数
+// 返回: true - 检测到纸张, false - 无纸张
 static bool read_paper_sensor() {
-    return digitalRead(PAPER_SENSOR_PIN) == HIGH;  // Assuming HIGH when paper detected
+    return digitalRead(PAPER_SENSOR_PIN) == HIGH;  // 读取GPIO34，假设高电平表示检测到纸张
 }
 
 // === State Machine Functions ===
@@ -193,58 +212,58 @@ static void check_button_press() {
 }
 
 // Update paper change state machine
+// 换纸状态机更新函数 - 在主循环中被调用，处理状态转换和电机控制
 void paper_change_update() {
-    // Check for emergency stop
+    // Check for emergency stop - 检查紧急停止标志
     if (paper_ctrl.emergency_stop) {
-        return;
+        return;  // 紧急停止状态下，不执行任何换纸操作
     }
     
-    // Check button press
+    // Check button press - 检查按钮状态变化
     check_button_press();
     
-    // Update sensor state
-    paper_ctrl.last_paper_sensor_state = paper_ctrl.paper_sensor_state;
-    paper_ctrl.paper_sensor_state = read_paper_sensor();
+    // Update sensor state - 更新传感器状态
+    paper_ctrl.last_paper_sensor_state = paper_ctrl.paper_sensor_state; // 保存上一次状态
+    paper_ctrl.paper_sensor_state = read_paper_sensor();             // 读取当前传感器状态
     
-    uint32_t current_time = millis();
+    uint32_t current_time = millis();  // 获取当前系统时间，用于超时判断
     
-    switch (paper_ctrl.state) {
+    switch (paper_ctrl.state) {         // 根据当前状态执行相应操作
         case PAPER_IDLE:
             // Check for paper sensor changes in idle (for monitoring)
             break;
             
         case PAPER_EJECTING:
-            // Eject finished paper using panel motor
-            if (paper_ctrl.step_counter < 100) {  // Eject for 100 steps
-                generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true);
-                paper_ctrl.step_counter++;
-                delayMicroseconds(2000);  // 2ms delay between steps
+            // Eject finished paper using panel motor - 完全送出A4纸张(297mm)
+            if (paper_ctrl.step_counter < PAPER_EJECT_STEPS) {  // 检查是否达到A4长度所需步数
+                generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true); // 生成面板电机步进脉冲
+                paper_ctrl.step_counter++;        // 步进计数器递增
+                delayMicroseconds(PAPER_EJECT_INTERVAL_US); // 步进间隔1ms，提高出纸速度
             } else {
-                enter_state(PAPER_FEEDING);
+                enter_state(PAPER_FEEDING);       // A4长度完成，转入进纸状态
             }
             break;
             
         case PAPER_FEEDING:
-            // Feed new paper and detect sensor
-            set_motor_dir(BIT_FEED_MOTOR_DIR, true);  // Forward direction
-            set_motor_step(BIT_FEED_MOTOR_STEP, HIGH);
-            delayMicroseconds(DEFAULT_STEP_PULSE_MICROSECONDS);
-            set_motor_step(BIT_FEED_MOTOR_STEP, LOW);
-            delayMicroseconds(2000);  // 2ms between steps
+            // Feed new paper and detect sensor - 送入新纸并检测传感器
+            set_motor_dir(BIT_FEED_MOTOR_DIR, true);  // 设置进纸电机方向为正向
+            set_motor_step(BIT_FEED_MOTOR_STEP, HIGH); // 开始步进脉冲
+            delayMicroseconds(DEFAULT_STEP_PULSE_MICROSECONDS); // 脉冲宽度时间
+            set_motor_step(BIT_FEED_MOTOR_STEP, LOW);  // 结束步进脉冲，完成一步
+            delayMicroseconds(2000);                  // 步进间隔2ms，控制进纸速度
             
-            paper_ctrl.step_counter++;
+            paper_ctrl.step_counter++;  // 进纸步数计数器递增
             
-            // Check for paper detection
+            // Check for paper detection - 检查纸张检测 (从无到有的上升沿)
             if (paper_ctrl.paper_sensor_state && !paper_ctrl.last_paper_sensor_state) {
-                grbl_sendf(CLIENT_ALL, "[MSG: Paper detected, engaging clamp]\r\n");
-                // Stop feed motor
-                set_motor_step(BIT_FEED_MOTOR_STEP, LOW);
-                enter_state(PAPER_CLAMPING);
+                grbl_sendf(CLIENT_ALL, "[MSG: Paper detected, engaging clamp]\r\n"); // 发送检测到纸张的消息
+                set_motor_step(BIT_FEED_MOTOR_STEP, LOW);  // 停止进纸电机
+                enter_state(PAPER_CLAMPING);               // 转入夹纸状态
             } else if (paper_ctrl.step_counter > 500) {
-                // Timeout - no paper detected
-                grbl_sendf(CLIENT_ALL, "[MSG: Feed timeout, no paper detected]\r\n");
-                set_motor_step(BIT_FEED_MOTOR_STEP, LOW);
-                enter_state(PAPER_ERROR);
+                // Timeout - no paper detected - 超时保护：500步后仍无检测到纸张
+                grbl_sendf(CLIENT_ALL, "[MSG: Feed timeout, no paper detected]\r\n"); // 发送超时消息
+                set_motor_step(BIT_FEED_MOTOR_STEP, LOW);  // 停止进纸电机
+                enter_state(PAPER_ERROR);                  // 转入错误状态
             }
             break;
             
@@ -254,15 +273,15 @@ void paper_change_update() {
             break;
             
         case PAPER_CLAMPING:
-            // Engage clamp motor - both clamp and panel motors active
-            generate_motor_step(BIT_PAPER_CLAMP_STEP, BIT_PAPER_CLAMP_DIR, true);
-            generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true);
+            // Engage clamp motor - both clamp and panel motors active - 启动夹纸电机，夹纸和面板电机同时工作
+            generate_motor_step(BIT_PAPER_CLAMP_STEP, BIT_PAPER_CLAMP_DIR, true);  // 压纸电机步进
+            generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true);  // 面板电机同步步进
             
-            paper_ctrl.step_counter++;
+            paper_ctrl.step_counter++;  // 夹纸步数计数器递增
             
-            if (paper_ctrl.step_counter >= 20) {  // Clamp for 20 steps
-                grbl_sendf(CLIENT_ALL, "[MSG: Clamp engaged, monitoring sensor]\r\n");
-                enter_state(PAPER_RELEASING);
+            if (paper_ctrl.step_counter >= 20) {  // 检查是否达到20步的目标夹纸步数
+                grbl_sendf(CLIENT_ALL, "[MSG: Clamp engaged, monitoring sensor]\r\n"); // 发送夹纸完成消息
+                enter_state(PAPER_RELEASING);      // 转入释放检测状态
             }
             break;
             
@@ -285,22 +304,22 @@ void paper_change_update() {
             break;
             
         case PAPER_POSITIONING:
-            // Panel motor fine positioning: forward 32 steps, back 2 steps
+            // Panel motor fine positioning: forward 32 steps, back 2 steps - 精确定位A4纸张位置
             if (current_time >= paper_ctrl.state_timer) {
                 if (paper_ctrl.step_counter < 32) {
-                    // Forward 32 steps
+                    // Forward 32 steps - 前进32步(0.4mm)，确保纸张完全到位
                     generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true);
                     paper_ctrl.step_counter++;
-                    delayMicroseconds(3000);  // 3ms delay
+                    delayMicroseconds(2000);  // 优化：2ms延迟，提高响应速度
                 } else if (paper_ctrl.step_counter < 34) {
-                    // Back 2 steps
+                    // Back 2 steps - 后退2步(0.025mm)，微调纸张精确位置
                     generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, false);
                     paper_ctrl.step_counter++;
-                    delayMicroseconds(3000);  // 3ms delay
+                    delayMicroseconds(2000);  // 优化：2ms延迟
                 } else {
-                    // Positioning complete
-                    hc595_write(0);  // Stop all motors
-                    enter_state(PAPER_COMPLETE);
+                    // Positioning complete - 精确定位完成
+                    hc595_write(0);  // Stop all motors - 停止所有电机
+                    enter_state(PAPER_COMPLETE);  // 进入完成状态
                 }
             }
             break;
@@ -357,17 +376,19 @@ void paper_change_reset() {
 }
 
 // Initialize paper change system
+// 换纸系统初始化函数 - 配置所有GPIO和硬件接口
 void paper_change_init() {
-    // Configure GPIO pins
-    pinMode(HC595_DATA_PIN, OUTPUT);
-    pinMode(HC595_CLOCK_PIN, OUTPUT);
-    pinMode(HC595_LATCH_PIN, OUTPUT);
-    pinMode(PAPER_SENSOR_PIN, INPUT_PULLDOWN);
-    pinMode(PAPER_BUTTON_PIN, INPUT_PULLDOWN);  // Button with internal pulldown
+    // Configure GPIO pins - 配置所有相关的GPIO引脚
+    pinMode(HC595_DATA_PIN, OUTPUT);           // HC595数据引脚设置为输出
+    pinMode(HC595_CLOCK_PIN, OUTPUT);         // HC595时钟引脚设置为输出
+    pinMode(HC595_LATCH_PIN, OUTPUT);         // HC595锁存引脚设置为输出
+    pinMode(PAPER_SENSOR_PIN, INPUT_PULLDOWN); // 纸张传感器引脚设置为输入+下拉电阻
+    pinMode(PAPER_BUTTON_PIN, INPUT_PULLDOWN); // 按钮引脚设置为输入+下拉电阻，默认低电平
     
-    // Initialize HC595 output to all off
-    hc595_write(0);
+    // Initialize HC595 output to all off - 初始化HC595所有输出为关闭状态
+    hc595_write(0);                          // 写入0，关闭所有电机输出
     
+    // 发送初始化完成消息到所有客户端
     grbl_sendf(CLIENT_ALL, "[MSG: Paper change system initialized]\r\n");
 }
 
