@@ -165,6 +165,10 @@
 #define PAPER_EJECT_STEPS          23800    // steps - A4 length: 297mm × 80步/mm  
 #define PAPER_EJECT_INTERVAL_US     1000      // μs - 1ms间隔，提高出纸速度
 
+// Paper Pre-Check Parameters  
+#define PAPER_PRE_CHECK_STEPS       50        // steps - 预检倒转步数(约0.625mm)
+#define PAPER_PRE_CHECK_INTERVAL_US  1000      // μs - 预检倒转间隔
+
 // Paper Clamp Motor (压纸抬落电机)
 #define DEFAULT_CLAMP_STEPS_PER_MM   150.0    // steps/mm
 #define DEFAULT_CLAMP_MAX_RATE       1500.0   // mm/min

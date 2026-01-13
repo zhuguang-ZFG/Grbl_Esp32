@@ -15,6 +15,8 @@
 #ifdef AUTO_PAPER_CHANGE_ENABLE
 #include "SmartM0.h"
 
+#    include "PaperChange.h"
+
 // === Smart M0 Detection State ===
 typedef struct {
     bool m0_detected = false;              // M0 command detected

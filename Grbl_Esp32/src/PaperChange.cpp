@@ -25,6 +25,7 @@
 // === Paper Change State Machine ===
 typedef enum {
     PAPER_IDLE,              // 空闲状态
+    PAPER_PRE_CHECK,         // 预检状态 - 面板电机倒转检测是否有纸
     PAPER_EJECTING,          // 出纸状态 - 面板电机送出写完的纸
     PAPER_FEEDING,           // 进纸状态 - 进纸器送入新纸
     PAPER_DETECTING,         // 检测状态 - 等待传感器触发
@@ -138,7 +139,7 @@ static void enter_state(paper_change_state_t new_state) {
     
     // Log state transition
     const char* state_names[] = {
-        "IDLE", "EJECTING", "FEEDING", "DETECTING", 
+        "IDLE", "PRE_CHECK", "EJECTING", "FEEDING", "DETECTING", 
         "CLAMPING", "RELEASING", "POSITIONING", "COMPLETE", "ERROR"
     };
     
@@ -156,8 +157,8 @@ void paper_change_start() {
         return;
     }
     
-    grbl_sendf(CLIENT_ALL, "[MSG: Starting automatic paper change]\r\n");
-    enter_state(PAPER_EJECTING);
+    grbl_sendf(CLIENT_ALL, "[MSG: Starting automatic paper change with pre-check]\r\n");
+    enter_state(PAPER_PRE_CHECK);  // 先进入预检状态，倒转检测是否有纸
 }
 
 // Manual one-click paper change
@@ -167,9 +168,9 @@ void paper_change_one_click() {
         return;
     }
     
-    grbl_sendf(CLIENT_ALL, "[MSG: Starting manual paper change]\r\n");
+    grbl_sendf(CLIENT_ALL, "[MSG: Starting manual paper change with pre-check]\r\n");
     paper_ctrl.one_click_active = true;
-    enter_state(PAPER_EJECTING);
+    enter_state(PAPER_PRE_CHECK);  // 手动换纸也先预检
 }
 
 // Emergency stop paper change
@@ -231,6 +232,26 @@ void paper_change_update() {
     switch (paper_ctrl.state) {         // 根据当前状态执行相应操作
         case PAPER_IDLE:
             // Check for paper sensor changes in idle (for monitoring)
+            break;
+            
+        case PAPER_PRE_CHECK:
+            // Pre-check state - 面板电机倒转检测是否有纸
+            if (paper_ctrl.step_counter < PAPER_PRE_CHECK_STEPS) {  // 倒转检测步数(约0.625mm)
+                generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, false); // 倒转
+                paper_ctrl.step_counter++;
+                delayMicroseconds(PAPER_PRE_CHECK_INTERVAL_US); // 倒转间隔
+            } else {
+                // 检测倒转后的传感器状态
+                if (paper_ctrl.paper_sensor_state) {
+                    // 传感器仍检测到纸 → 面板上有纸，执行出纸
+                    grbl_sendf(CLIENT_ALL, "[MSG: Paper detected on panel, starting ejection]\r\n");
+                    enter_state(PAPER_EJECTING);
+                } else {
+                    // 传感器未检测到纸 → 面板无纸，直接进纸
+                    grbl_sendf(CLIENT_ALL, "[MSG: No paper on panel, starting feeding]\r\n");
+                    enter_state(PAPER_FEEDING);
+                }
+            }
             break;
             
         case PAPER_EJECTING:
@@ -357,7 +378,7 @@ bool paper_change_is_active() {
 // Get paper change state
 const char* paper_change_get_state() {
     static const char* state_names[] = {
-        "IDLE", "EJECTING", "FEEDING", "DETECTING", 
+        "IDLE", "PRE_CHECK", "EJECTING", "FEEDING", "DETECTING", 
         "CLAMPING", "RELEASING", "POSITIONING", "COMPLETE", "ERROR"
     };
     
