@@ -26,6 +26,7 @@
 
 #ifdef AUTO_PAPER_CHANGE_ENABLE
 #include "SmartM0.h"
+#include "PaperChange.h"
 #endif
 
 // Allow iteration over CoordIndex values
@@ -561,6 +562,104 @@ Error gc_execute_line(char* line, uint8_t client) {
                         gc_block.modal.io_control = IoControl::SetAnalogImmediate;
                         mg_word_bit               = ModalGroup::MM10;
                         break;
+                        
+                    // Paper Change Debug Commands (M100-M106)
+                    #ifdef AUTO_PAPER_CHANGE_ENABLE
+                    case 100:
+                        // M100 S[steps] - Debug Feed Motor  
+                        if (bit_istrue(value_words, bit(GCodeWord::S))) {
+                            int steps = (int)gc_block.values.s;
+                            uint32_t delay_us = 2000; // default 2ms
+                            debug_feed_motor(steps, delay_us);
+                        } else {
+                            FAIL(Error::GcodeValueWordMissing);
+                        }
+                        mg_word_bit = ModalGroup::MM10;
+                        break;
+                        
+                    case 101:
+                        // M101 S[steps] - Debug Panel Motor
+                        if (bit_istrue(value_words, bit(GCodeWord::S))) {
+                            int steps = (int)gc_block.values.s;
+                            uint32_t delay_us = 2000; // default 2ms
+                            debug_panel_motor(steps, delay_us);
+                        } else {
+                            FAIL(Error::GcodeValueWordMissing);
+                        }
+                        mg_word_bit = ModalGroup::MM10;
+                        break;
+                        
+                    case 102:
+                        // M102 S[steps] - Debug Clamp Motor
+                        if (bit_istrue(value_words, bit(GCodeWord::S))) {
+                            int steps = (int)gc_block.values.s;
+                            uint32_t delay_us = 2000; // default 2ms
+                            debug_clamp_motor(steps, delay_us);
+                        } else {
+                            FAIL(Error::GcodeValueWordMissing);
+                        }
+                        mg_word_bit = ModalGroup::MM10;
+                        break;
+                        
+                    case 103:
+                        // M103 - Read All Sensors
+                        debug_read_sensors();
+                        mg_word_bit = ModalGroup::MM10;
+                        break;
+                        
+                    case 104:
+                        // M104 - Emergency Stop All Motors
+                        debug_emergency_stop();
+                        mg_word_bit = ModalGroup::MM10;
+                        break;
+                        
+                    case 105:
+                        // M105 - Reset Emergency Stop
+                        debug_reset_emergency();
+                        mg_word_bit = ModalGroup::MM10;
+                        break;
+                        
+                    case 106:
+                        // M106 - Direct HC595 Control (fixed value)
+                        debug_hc595_direct(0xFF); // All motors enabled
+                        mg_word_bit = ModalGroup::MM10;
+                        break;
+                        
+                    case 110:
+                        // M110 - Start Complete Paper Change Sequence
+                        paper_change_start();
+                        mg_word_bit = ModalGroup::MM10;
+                        break;
+                        
+                    case 111:
+                        // M111 - Manual One-Click Paper Change
+                        paper_change_one_click();
+                        mg_word_bit = ModalGroup::MM10;
+                        break;
+                        
+                    case 112:
+                        // M112 - Emergency Stop Paper Change
+                        paper_change_stop();
+                        mg_word_bit = ModalGroup::MM10;
+                        break;
+                        
+                    case 113:
+                        // M113 - Reset Paper Change System
+                        paper_change_reset();
+                        mg_word_bit = ModalGroup::MM10;
+                        break;
+                        
+                    case 114:
+                        // M114 - Get Paper Change Status
+                        if (paper_change_is_active()) {
+                            grbl_sendf(CLIENT_ALL, "[MSG: Paper Change ACTIVE - State: %s\r\n", paper_change_get_state());
+                        } else {
+                            grbl_sendf(CLIENT_ALL, "[MSG: Paper Change INACTIVE\r\n");
+                        }
+                        mg_word_bit = ModalGroup::MM10;
+                        break;
+                    #endif
+                    
                     default:
                         FAIL(Error::GcodeUnsupportedCommand);  // [Unsupported M command]
                 }

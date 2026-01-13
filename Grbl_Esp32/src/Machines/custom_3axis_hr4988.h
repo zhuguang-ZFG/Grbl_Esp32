@@ -16,7 +16,9 @@
     - Enable:   GPIO4 (shared for all 4 HR4988 drivers, nENABLE active low)
 
     === Paper Change System (74HC595D Control) ===
-    - 74HC595D Data Pin: GPIO16 (SER/DS input)
+    - 74HC595D Data Pin: GPIO8 (SER/DS input) - 74HC595D Pin 14
+    - 74HC595D Clock Pin: GPIO3 (SHCP input) - 74HC595D Pin 11
+    - 74HC595D Latch Pin: GPIO2 (STCP input) - 74HC595D Pin 12 (避免与STEPPERS_DISABLE_PIN冲突)
     - Paper Sensor: GPIO34 (paper presence detection)
     - One-Click Button: HC595 Q0 (pin 15) - 常开按钮接VCC
     - Feed Motor: HC595 pins Q6/Q7 (DIR/STEP)
@@ -64,14 +66,19 @@
 
 // Shared stepper enable pin for all HR4988 drivers
 // Active LOW (nENABLE): Output LOW to enable, HIGH to disable (HR4988 standard)
-#define STEPPERS_DISABLE_PIN    GPIO_NUM_4
+// 注意：GPIO4 (P26脚)是正确的STEPPERS_DISABLE_PIN，但HC595_LATCH_PIN需要使用其他引脚
+#define STEPPERS_DISABLE_PIN    GPIO_NUM_4     // 恢复：ESP32 P26脚，正确的使能引脚
 
 // === Paper Change System with 74HC595D ===
 
 // 74HC595D Shift Register Control
-#define HC595_DATA_PIN            GPIO_NUM_16    // Serial data input (DS pin)
-#define HC595_CLOCK_PIN           GPIO_NUM_17    // Shift register clock (SHCP)
-#define HC595_LATCH_PIN           GPIO_NUM_5     // Storage register clock (STCP)
+// 根据用户提供的实际硬件连接，但需要避免与GPIO4冲突：
+// 74HC595D Pin 14 (DS/Serial Data) ←→ ESP32 IO32
+// 74HC595D Pin 11 (SHCP/Shift Clock) ←→ ESP32 EN  
+// 74HC595D Pin 12 (STCP/Latch Clock) ←→ ESP32 SENSOR_VP (但GPIO4已被STEPPERS_DISABLE使用)
+#define HC595_DATA_PIN            GPIO_NUM_32    // Serial data input (DS pin) - 74HC595D Pin 14 (ESP32 IO32)
+#define HC595_CLOCK_PIN           GPIO_NUM_3     // Shift register clock (SHCP) - 74HC595D Pin 11 (ESP32 EN)
+#define HC595_LATCH_PIN           GPIO_NUM_2     // Storage register clock (STCP) - 使用GPIO2避免与STEPPERS_DISABLE冲突
 
 // Paper Sensor Input
 #define PAPER_SENSOR_PIN          GPIO_NUM_34    // Paper presence sensor (input only pin)
@@ -162,12 +169,18 @@
 #define DEFAULT_PANEL_MAX_TRAVEL     300.0    // mm - panel travel distance (full A4 length)
 
 // Paper Change Eject Parameters
-#define PAPER_EJECT_STEPS          23800    // steps - A4 length: 297mm × 80步/mm  
+#define PAPER_EJECT_STEPS          23760    // steps - A4 length: 297mm × 80步/mm (精确计算值)  
 #define PAPER_EJECT_INTERVAL_US     1000      // μs - 1ms间隔，提高出纸速度
 
 // Paper Pre-Check Parameters  
-#define PAPER_PRE_CHECK_STEPS       50        // steps - 预检倒转步数(约0.625mm)
+#define PAPER_PRE_CHECK_STEPS       200       // steps - 预检倒转步数(约2.5mm)
 #define PAPER_PRE_CHECK_INTERVAL_US  1000      // μs - 预检倒转间隔
+
+// Paper Positioning Parameters  
+#define PAPER_POSITIONING_FINE_STEPS 32        // steps - 微调前进步数(0.4mm)
+#define PAPER_POSITIONING_BACK_STEPS  2         // steps - 微调后退步数(0.025mm) 
+#define PAPER_POSITIONING_SEARCH_MM   10.0      // mm - 传感器搜索距离
+#define PAPER_POSITIONING_SEARCH_STEPS (int)(PAPER_POSITIONING_SEARCH_MM * DEFAULT_PANEL_STEPS_PER_MM)  // 800步
 
 // Paper Clamp Motor (压纸抬落电机)
 #define DEFAULT_CLAMP_STEPS_PER_MM   150.0    // steps/mm

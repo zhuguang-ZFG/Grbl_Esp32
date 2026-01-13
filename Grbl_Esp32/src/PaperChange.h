@@ -37,4 +37,26 @@ const char* paper_change_get_state();
 // Reset paper change system to initial state
 void paper_change_reset();
 
+// === Debug Functions for Manual Testing ===
+// Debug feed motor (M800)
+void debug_feed_motor(int steps, uint32_t delay_us);
+
+// Debug panel motor (M801)
+void debug_panel_motor(int steps, uint32_t delay_us);
+
+// Debug clamp motor (M802)
+void debug_clamp_motor(int steps, uint32_t delay_us);
+
+// Read all sensor status (M803)
+void debug_read_sensors();
+
+// Emergency stop all motors (M804)
+void debug_emergency_stop();
+
+// Reset emergency stop flag (M805)
+void debug_reset_emergency();
+
+// Direct HC595 control (M806)
+void debug_hc595_direct(uint8_t data);
+
 #endif // AUTO_PAPER_CHANGE_ENABLE
