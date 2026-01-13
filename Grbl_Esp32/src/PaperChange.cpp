@@ -581,11 +581,11 @@ typedef struct {
 /**
  * @brief 高性能74HC595D移位寄存器数据写入函数（寄存器优化版）
  * @param data 要写入的8位数据，每一位对应一个电机的控制信号
- * 
+ *
  * === 硬件连接说明 ===
  * 74HC595D是8位串入并出移位寄存器，用于扩展ESP32的GPIO控制能力：
- * - DS (Pin 14) 串行数据输入 → HC595_DATA_PIN (GPIO8)
- * - SHCP (Pin 11) 移位时钟输入 → HC595_CLOCK_PIN (GPIO3)  
+ * - DS (Pin 14) 串行数据输入 → HC595_DATA_PIN (GPIO32)
+ * - SHCP (Pin 11) 移位时钟输入 → HC595_CLOCK_PIN (GPIO3)
  * - STCP (Pin 12) 存储时钟输入 → HC595_LATCH_PIN (GPIO2)
  * - Q0-Q7 (Pin 15,1-7) 并行数据输出 → 连接电机驱动电路
  * 
@@ -1327,17 +1327,19 @@ void paper_change_update() {
     // Update sensor state - 更新传感器状态
     paper_ctrl.last_paper_sensor_state = paper_ctrl.paper_sensor_state; // 保存上一次状态
     paper_ctrl.paper_sensor_state = read_paper_sensor();             // 读取当前传感器状态
-    
+
     uint32_t current_time = millis();  // 获取当前系统时间，用于超时判断
-    
-    // 声明定位阶段的变量（避免switch case跨越初始化问题）
-    int fine_steps, back_steps, total_positioning_steps, max_search_steps;
-    
+
+    // 声明定位阶段的变量（在switch外部，避免未初始化问题）
+    int fine_steps = 0, back_steps = 0, total_positioning_steps = 0, max_search_steps = 0;
+    static uint32_t positioning_delay_timer = 0;
+    static bool positioning_initialized = false;
+
     switch (paper_ctrl.state) {         // 根据当前状态执行相应操作
         case PAPER_IDLE:
             // Check for paper sensor changes in idle (for monitoring)
             break;
-            
+
         case PAPER_PRE_CHECK:
             // Pre-check state - 面板电机倒转检测是否有纸（非阻塞式控制）
             
@@ -1466,12 +1468,12 @@ void paper_change_update() {
             // Wait for paper to leave sensor, then stop all motors
             if (!paper_ctrl.paper_sensor_state && paper_ctrl.last_paper_sensor_state) {
                 grbl_sendf(CLIENT_ALL, "[MSG: Paper left sensor, stopping all motors]\r\n");
-                
+
                 // Stop all motors
                 STOP_ALL_MOTORS();
-                
-                // Start positioning after 1 second delay
-                paper_ctrl.state_timer = current_time + 1000;
+
+                // Start positioning after 1 second delay - 不修改state_timer，使用独立的延迟变量
+                // 注意：延迟逻辑在POSITIONING状态中处理
                 enter_state(PAPER_POSITIONING);
             } else if (current_time - paper_ctrl.state_timer > 10000) {
                 // 10 second timeout
@@ -1483,13 +1485,19 @@ void paper_change_update() {
         case PAPER_POSITIONING:
             // Panel motor fine positioning with calculated sensor search - 面板电机精确定位并计算搜索传感器
             CHECK_STATE_SAFETY(500, "POSITIONING");
-            
-            // 等待1秒延迟后才开始定位（给夹纸动作时间稳定）
-            if (current_time >= paper_ctrl.state_timer) {
+
+            // 初始化定位阶段参数（首次进入时执行）
+            if (!positioning_initialized) {
                 fine_steps = PAPER_POSITIONING_FINE_STEPS;
                 back_steps = PAPER_POSITIONING_BACK_STEPS;
                 total_positioning_steps = fine_steps + back_steps;
                 max_search_steps = total_positioning_steps + PAPER_POSITIONING_SEARCH_STEPS;
+                positioning_delay_timer = current_time + 1000;  // 延迟1秒
+                positioning_initialized = true;
+            }
+
+            // 等待1秒延迟后才开始定位（给夹纸动作时间稳定）
+            if (current_time >= positioning_delay_timer) {
                 
                 // === 非阻塞步进控制 ===
                 // 使用时间控制器确保稳定的步进节奏
@@ -1520,8 +1528,8 @@ void paper_change_update() {
                         // Check for paper sensor during search
                         sensor_result_t sensor = check_paper_sensor(false, 0);
                         if (sensor.detected) {
-                            LOG_PROGRESS("Paper sensor found at step %d after %.2fmm search", 
-                                       paper_ctrl.step_counter, 
+                            LOG_PROGRESS("Paper sensor found at step %d after %.2fmm search",
+                                       paper_ctrl.step_counter,
                                        (float)(paper_ctrl.step_counter - total_positioning_steps) / DEFAULT_PANEL_STEPS_PER_MM);
                             STOP_ALL_MOTORS();  // Stop panel motor immediately
                             enter_state(PAPER_COMPLETE);  // 换纸完成，恢复正常写字功能
@@ -1536,8 +1544,10 @@ void paper_change_update() {
                     }
                 }
             }
+            // 退出POSITIONING状态时重置初始化标志
+            positioning_initialized = false;
             break;
-            
+
         case PAPER_COMPLETE:
             // Paper change complete
             grbl_sendf(CLIENT_ALL, "[MSG: Paper change completed successfully]\r\n");
