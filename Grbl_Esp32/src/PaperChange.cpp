@@ -579,8 +579,10 @@ static motor_timing_t panel_motor_timing;     // 面板电机时间控制器
 static motor_timing_t feed_motor_timing;      // 进纸电机时间控制器
 static motor_timing_t clamp_motor_timing;     // 夹纸电机时间控制器
 
-// 定位状态初始化标志（全局静态变量）
-static bool positioning_initialized = false;
+// 状态标志变量（全局静态变量）
+static bool positioning_initialized = false;    // 定位状态初始化标志
+static bool eject_paper_detected = false;      // 出纸状态中纸张检测标志
+static bool reverse_complete = false;          // 重新定位中反转完成标志
 
 /**
  * @brief 电机配置结构体
@@ -1253,10 +1255,19 @@ static void enter_state(paper_change_state_t new_state) {
         STOP_ALL_MOTORS();
     }
 
-    // === 定位状态特殊处理 ===
-    // 进入定位状态时重置定位初始化标志，确保初始化执行
+    // === 特殊状态处理 ===
+    // 重置静态标志变量，确保状态间不会相互干扰
     if (new_state == PAPER_POSITIONING) {
         positioning_initialized = false;
+    }
+    
+    // 重置出纸和重新定位的静态标志
+    if (new_state != PAPER_EJECTING) {
+        eject_paper_detected = false;
+    }
+    
+    if (new_state != PAPER_REPOSITION) {
+        reverse_complete = false;
     }
 
     // === 核心状态更新 ===
@@ -1396,8 +1407,9 @@ void paper_change_update() {
             
             CHECK_STATE_SAFETY(PAPER_EJECT_STEPS + 2000, "EJECTING");
             
-            // 第一阶段：反转检测纸张位置（最多反转500步）
-            if (paper_ctrl.step_counter < 500) {
+            // 阶段1：反转检测纸张位置（最多反转500步）
+            
+            if (!eject_paper_detected && paper_ctrl.step_counter < 500) {
                 if (nonblocking_panel_step(false)) {  // 反转检测纸张
                     paper_ctrl.step_counter++;
                     
@@ -1406,9 +1418,10 @@ void paper_change_update() {
                         grbl_sendf(CLIENT_ALL, "[MSG: Paper detected at reverse step %lu, starting forward ejection\r\n",
                                    paper_ctrl.step_counter);
                         paper_ctrl.step_counter = 0;  // 重置计数器用于正转计数
+                        eject_paper_detected = true;  // 标记检测到纸张
                     }
                 }
-            } else if (paper_ctrl.step_counter < 24160) {  // 第二阶段：正转A4+5/6cm
+            } else if (eject_paper_detected && paper_ctrl.step_counter < 24160) {  // 阶段2：正转A4+5/6cm（必须检测到纸张后）
                 // 计算总步数：A4(23760步) + 5cm(400步) = 24160步
                 uint32_t total_eject_steps = 23760 + 400;  // A4 + 5cm
                 
@@ -1429,9 +1442,10 @@ void paper_change_update() {
                         enter_state(PAPER_FEEDING);
                     }
                 }
-            } else {
+            } else if (!eject_paper_detected && paper_ctrl.step_counter >= 500) {
                 // 反转500步未检测到纸张，可能已无纸，直接进入进纸状态
                 grbl_sendf(CLIENT_ALL, "[MSG: No paper detected after reverse, proceeding to feed new paper]\r\n");
+                eject_paper_detected = false;  // 重置标志
                 enter_state(PAPER_FEEDING);
             }
             break;
@@ -1570,7 +1584,8 @@ void paper_change_update() {
             CHECK_STATE_SAFETY(2000, "REPOSITION");
 
             // 阶段1：反转寻找纸张位置，以传感器信号为准
-            if (paper_ctrl.step_counter < 1000) {  // 安全上限1000步，但以传感器信号为准，实际可能不止500步
+            
+            if (!reverse_complete && paper_ctrl.step_counter < 1000) {  // 安全上限1000步，但以传感器信号为准
                 if (millis() - panel_motor_timing.last_step_time >= panel_motor_timing.step_interval) {
                     generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, false);  // 反转寻找纸张
                     panel_motor_timing.last_step_time = millis();
@@ -1583,9 +1598,10 @@ void paper_change_update() {
                         
                         // 立即停止反转，重置计数器开始关键5cm正转定位
                         paper_ctrl.step_counter = 0;
+                        reverse_complete = true;  // 标记反转完成
                     }
                 }
-            } else if (paper_ctrl.step_counter < 400) {  // 阶段2：极其重要的5cm正转定位（400步）
+            } else if (reverse_complete && paper_ctrl.step_counter < 400) {  // 阶段2：极其重要的5cm正转定位（400步）
                 if (millis() - panel_motor_timing.last_step_time >= panel_motor_timing.step_interval) {
                     generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true);  // 关键的正转定位
                     panel_motor_timing.last_step_time = millis();
@@ -1598,11 +1614,19 @@ void paper_change_update() {
                                    position_mm, paper_ctrl.step_counter);
                     }
                 }
-            } else if (paper_ctrl.step_counter >= 400) {  // 正转5cm完成
+            } else if (reverse_complete && paper_ctrl.step_counter >= 400) {  // 正转5cm完成
+                // 重置静态变量为下一次使用做准备
+                reverse_complete = false;
+                
                 // 关键定位完成，纸张已到达精确的写字位置
                 float final_position = (float)paper_ctrl.step_counter / 80.0;
                 grbl_sendf(CLIENT_ALL, "[MSG: CRITICAL: Paper positioning complete at %.1fmm (%lu steps), ready for writing tasks\r\n",
                            final_position, paper_ctrl.step_counter);
+                enter_state(PAPER_COMPLETE);
+            } else if (!reverse_complete && paper_ctrl.step_counter >= 1000) {
+                // 反转1000步仍未检测到纸张，完成定位
+                grbl_sendf(CLIENT_ALL, "[MSG: No paper detected after 1000 reverse steps, proceeding to complete state\r\n");
+                reverse_complete = false;
                 enter_state(PAPER_COMPLETE);
             }
             break;
