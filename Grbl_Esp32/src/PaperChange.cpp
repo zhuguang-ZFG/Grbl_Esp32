@@ -24,10 +24,10 @@
 // ================================================================================
 
 // 主控制结构
-static paper_change_ctrl_t paper_ctrl = {0};
+static paper_change_ctrl_t paper_ctrl;
 
 // 错误信息结构
-static error_info_t last_error = {0};
+static error_info_t last_error;
 
 // 电机时序控制结构
 static motor_timing_t panel_motor_timing = {0, 0, false};
