@@ -24,15 +24,33 @@
 // ================================================================================
 
 // 主控制结构
-static paper_change_ctrl_t paper_ctrl = {0};
+static paper_change_ctrl_t paper_ctrl = {
+    .state = PAPER_IDLE,
+    .state_timer = 0,
+    .step_counter = 0,
+    .paper_sensor_state = false,
+    .last_paper_sensor_state = false,
+    .one_click_active = false,
+    .hc595_output = 0,
+    .emergency_stop = false,
+    .sensor_detected = false
+};
 
 // 错误信息结构
-static error_info_t last_error = {ERROR_NONE, 0, PAPER_IDLE, 0, "", 0, true};
+static error_info_t last_error = {
+    .error_type = ERROR_NONE,
+    .error_time = 0,
+    .error_state = PAPER_IDLE,
+    .step_count_at_error = 0,
+    .error_description = "",
+    .retry_count = 0,
+    .auto_recovery_enabled = true
+};
 
 // 电机时序控制结构
-static motor_timing_t panel_motor_timing = {0};
-static motor_timing_t feed_motor_timing = {0};
-static motor_timing_t clamp_motor_timing = {0};
+static motor_timing_t panel_motor_timing = {0, 0, false};
+static motor_timing_t feed_motor_timing = {0, 0, false};
+static motor_timing_t clamp_motor_timing = {0, 0, false};
 
 // 静态标志 - 用于状态间传递信息
 static bool positioning_init = false;
