@@ -145,6 +145,23 @@ bool nonblocking_feed_step(bool forward) {
     return nonblocking_motor_step(&config, forward);
 }
 
+/**
+ * @brief 夹紧电机非阻塞步进
+ * @param forward 前进方向（true=正转松开，false=反转夹紧）
+ * @return 是否执行了步进
+ */
+bool nonblocking_clamp_step(bool forward) {
+    motor_config_t config = {
+        .step_bit = BIT_PAPER_CLAMP_STEP,
+        .dir_bit = BIT_PAPER_CLAMP_DIR,
+        .step_interval = PAPER_FEED_INTERVAL_US, // 使用相同的间隔
+        .name = "Clamp",
+        .timing = get_clamp_motor_timing()
+    };
+    
+    return nonblocking_motor_step(&config, forward);
+}
+
 // ================================================================================
 // 数据转换工具实现
 // ================================================================================

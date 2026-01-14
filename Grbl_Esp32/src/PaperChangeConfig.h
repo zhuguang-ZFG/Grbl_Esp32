@@ -71,26 +71,46 @@
 #define DEFAULT_PANEL_MAX_RATE     3000.0  // 面板电机最大速度
 #endif
 
-// 运动距离参数（精确控制的关键参数）
-#define PAPER_A4_LENGTH_MM      297.0  // A4纸张长度（毫米）
-#define PAPER_5CM_LENGTH_MM      50.0   // 5厘米距离（毫米）
-#define PAPER_PRE_CHECK_MM       2.5    // 预检距离（毫米）
+// 运动距离参数（精确控制的关键参数）- 根据文档更新
+#define PAPER_A4_LENGTH_MM          297.0  // A4纸张长度（毫米）
+#define PAPER_5CM_LENGTH_MM          50.0  // 5厘米距离（毫米）- 传感器触发后夹紧松开运行距离
+#define PAPER_3_5CM_LENGTH_MM        35.0  // 3.5厘米距离（毫米）- 纸张经过传感器后继续运行距离
+#define PAPER_3CM_LENGTH_MM          30.0  // 3厘米距离（毫米）- 传感器到夹紧电机距离+位置校准距离
+#define PAPER_1_5CM_LENGTH_MM        15.0  // 1.5厘米距离（毫米）- 夹紧电机正转松开距离
+#define PAPER_3TO5CM_LENGTH_MM       40.0  // 3-5厘米距离（毫米）- 出纸预留距离（取中间值4cm）
+#define PAPER_PRE_CHECK_MM           2.5   // 预检距离（毫米）
 
 // 步数计算（避免重定义）
 #ifndef PAPER_EJECT_STEPS
-#define PAPER_EJECT_STEPS        (uint32_t)(PAPER_A4_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)
+#define PAPER_EJECT_STEPS            (uint32_t)(PAPER_A4_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)
 #endif
 
 #ifndef PAPER_5CM_STEPS
-#define PAPER_5CM_STEPS          (uint32_t)(PAPER_5CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)
+#define PAPER_5CM_STEPS              (uint32_t)(PAPER_5CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)
+#endif
+
+#ifndef PAPER_3_5CM_STEPS
+#define PAPER_3_5CM_STEPS            (uint32_t)(PAPER_3_5CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)
+#endif
+
+#ifndef PAPER_3CM_STEPS
+#define PAPER_3CM_STEPS              (uint32_t)(PAPER_3CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)
+#endif
+
+#ifndef PAPER_1_5CM_STEPS
+#define PAPER_1_5CM_STEPS            (uint32_t)(PAPER_1_5CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)
+#endif
+
+#ifndef PAPER_3TO5CM_STEPS
+#define PAPER_3TO5CM_STEPS           (uint32_t)(PAPER_3TO5CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)
 #endif
 
 #ifndef PAPER_PRE_CHECK_STEPS
-#define PAPER_PRE_CHECK_STEPS    (uint32_t)(PAPER_PRE_CHECK_MM * DEFAULT_PANEL_STEPS_PER_MM)
+#define PAPER_PRE_CHECK_STEPS        (uint32_t)(PAPER_PRE_CHECK_MM * DEFAULT_PANEL_STEPS_PER_MM)
 #endif
 
 #ifndef PAPER_CRITICAL_POSITION_STEPS
-#define PAPER_CRITICAL_POSITION_STEPS  400  // 关键5cm定位步数
+#define PAPER_CRITICAL_POSITION_STEPS  (uint32_t)(PAPER_3CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)  // 关键3cm定位步数
 #endif
 
 // ================================================================================
