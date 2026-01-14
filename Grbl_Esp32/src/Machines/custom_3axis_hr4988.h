@@ -92,9 +92,13 @@
 #define PAPER_BUTTON_PIN          GPIO_NUM_35    // One-click paper change button (input only pin)
 
 // Paper Motors Enable Control (dual control)
-// GPIO26: 直接控制所有三个纸路电机的HR4988使能信号
-// HC595 Q1: 额外控制换纸电机的HR4988使能脚
-#define PAPER_MOTORS_ENABLE      GPIO_NUM_26    // Paper change motors enable (拾落/面板/送纸器)
+// GPIO26: XYZ轴使能控制（互斥逻辑）
+//   - GPIO26=LOW: XYZ轴使能，换纸电机禁用（不能动）
+//   - GPIO26=HIGH: XYZ轴禁用，换纸电机可以工作
+// HC595 Q1: 换纸电机使能控制（互斥逻辑）  
+//   - Q1=LOW: 换纸电机使能，XYZ轴禁用（不能动）
+//   - Q1=HIGH: 换纸电机禁用，XYZ轴可以工作
+// 注意：PAPER_MOTORS_ENABLE 已移动到74HC595D Q1控制
 
 // 74HC595D Output Mapping (based on pin numbers)
 // Q0 (pin 15): Not used
