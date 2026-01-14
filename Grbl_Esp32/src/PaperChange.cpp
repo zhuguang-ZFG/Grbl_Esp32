@@ -1472,11 +1472,12 @@ void paper_change_update() {
 
             CHECK_STATE_SAFETY(500, "UNCLAMP_FEED");
 
-            // 第一阶段：松开夹具（执行30步反向动作）
+            // 第一阶段：松开夹具（夹紧电机永不反转，通过延时等待机械松开）
             if (paper_ctrl.step_counter < 30) {
                 if (millis() - clamp_motor_timing.last_step_time >= clamp_motor_timing.step_interval) {
-                    // 松开夹具 - 反向运行30步
-                    generate_motor_step(BIT_PAPER_CLAMP_STEP, BIT_PAPER_CLAMP_DIR, false);
+                    // 松开夹具 - 夹紧电机永不反转，延时等待夹具机械松开
+                    // 停止夹紧电机的步进信号，让其自然松开
+                    set_motor_step(BIT_PAPER_CLAMP_STEP, LOW);  // 停止步进信号
                     clamp_motor_timing.last_step_time = millis();
                     paper_ctrl.step_counter++;
                 }
