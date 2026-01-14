@@ -1392,31 +1392,47 @@ void paper_change_update() {
             break;
             
         case PAPER_EJECTING:
-            // Eject finished paper using panel motor - 完全送出A4纸张(297mm，非阻塞式)
+            // 出纸逻辑：面板电机先反转直到传感器感应到纸张，然后正转A4+5/6cm
             
-            CHECK_STATE_SAFETY(PAPER_EJECT_STEPS + 1000, "EJECTING");
+            CHECK_STATE_SAFETY(PAPER_EJECT_STEPS + 2000, "EJECTING");
             
-            // 设置面板电机的出纸步进间隔(1ms)以获得较快的出纸速度
-            panel_motor_timing.step_interval = PAPER_EJECT_INTERVAL_US;
-            
-            if (paper_ctrl.step_counter < PAPER_EJECT_STEPS) {  // 检查是否达到A4长度所需步数
-                // 使用非阻塞式步进控制，避免阻塞主循环
-                if (nonblocking_panel_step(true)) {   // true=正向(出纸方向)
-                    paper_ctrl.step_counter++;        // 只有成功执行一步才递增计数器
+            // 第一阶段：反转检测纸张位置（最多反转500步）
+            if (paper_ctrl.step_counter < 500) {
+                if (nonblocking_panel_step(false)) {  // 反转检测纸张
+                    paper_ctrl.step_counter++;
                     
-                    // 每1000步(约12.5mm)输出一次进度，便于调试和监控
-                    if (paper_ctrl.step_counter % 1000 == 0) {
-                        float progress = (float)paper_ctrl.step_counter / PAPER_EJECT_STEPS * 100.0;
-                        grbl_sendf(CLIENT_ALL, "[MSG: Ejection progress: %.1f%% (%lu/%lu)]\r\n", 
-                                   progress, paper_ctrl.step_counter, PAPER_EJECT_STEPS);
+                    // 检测到纸张，停止反转，准备正转
+                    if (paper_ctrl.paper_sensor_state && !paper_ctrl.last_paper_sensor_state) {
+                        grbl_sendf(CLIENT_ALL, "[MSG: Paper detected at reverse step %lu, starting forward ejection\r\n",
+                                   paper_ctrl.step_counter);
+                        paper_ctrl.step_counter = 0;  // 重置计数器用于正转计数
                     }
                 }
-                // 如果时间未到，直接返回，让主循环继续处理其他任务
+            } else if (paper_ctrl.step_counter < 24160) {  // 第二阶段：正转A4+5/6cm
+                // 计算总步数：A4(23760步) + 5cm(400步) = 24160步
+                uint32_t total_eject_steps = 23760 + 400;  // A4 + 5cm
+                
+                if (nonblocking_panel_step(true)) {  // 正转送出纸张
+                    paper_ctrl.step_counter++;
+                    
+                    // 每1000步输出一次进度
+                    if (paper_ctrl.step_counter % 1000 == 0) {
+                        float progress = (float)paper_ctrl.step_counter / total_eject_steps * 100.0;
+                        grbl_sendf(CLIENT_ALL, "[MSG: Ejection progress: %.1f%% (%lu/%lu)]\r\n", 
+                                   progress, paper_ctrl.step_counter, total_eject_steps);
+                    }
+                    
+                    // 完成A4+5/6cm送纸
+                    if (paper_ctrl.step_counter >= total_eject_steps) {
+                        grbl_sendf(CLIENT_ALL, "[MSG: Paper ejection complete (%lu steps), feeding new paper]\r\n", 
+                                   paper_ctrl.step_counter);
+                        enter_state(PAPER_FEEDING);
+                    }
+                }
             } else {
-                // A4纸张完全送出，准备进纸新纸
-                grbl_sendf(CLIENT_ALL, "[MSG: Paper ejection complete (%lu steps), feeding new paper]\r\n", 
-                           paper_ctrl.step_counter);
-                enter_state(PAPER_FEEDING);           // 转入进纸状态
+                // 反转500步未检测到纸张，可能已无纸，直接进入进纸状态
+                grbl_sendf(CLIENT_ALL, "[MSG: No paper detected after reverse, proceeding to feed new paper]\r\n");
+                enter_state(PAPER_FEEDING);
             }
             break;
             
@@ -1451,29 +1467,36 @@ void paper_change_update() {
             break;
 
         case PAPER_UNCLAMP_FEED:
-            // 检测到纸张后松开夹具，面板电机同步运行
-            // 夹紧电机初始态是夹紧态，先松开夹子
-            // 注意：夹紧电机永远不会反转，通过释放步进信号实现松开
+            // 检测到纸张后立即松开夹具，面板电机同步运行5cm
+            // 断电即为夹紧态，检测到纸张后需要松开夹子
 
             CHECK_STATE_SAFETY(500, "UNCLAMP_FEED");
 
-            // 检测到纸张后保持松开状态，面板电机同步运行
-            if (paper_ctrl.step_counter < 400) {  // 运行5cm（400步）
-                // 面板电机同步运行
+            // 第一阶段：松开夹具（执行30步反向动作）
+            if (paper_ctrl.step_counter < 30) {
+                if (millis() - clamp_motor_timing.last_step_time >= clamp_motor_timing.step_interval) {
+                    // 松开夹具 - 反向运行30步
+                    generate_motor_step(BIT_PAPER_CLAMP_STEP, BIT_PAPER_CLAMP_DIR, false);
+                    clamp_motor_timing.last_step_time = millis();
+                    paper_ctrl.step_counter++;
+                }
+            } else if (paper_ctrl.step_counter < 430) {  // 第二阶段：面板电机同步运行5cm (400步)
+                // 面板电机与进纸电机同步运行，运送纸张5cm
                 if (millis() - panel_motor_timing.last_step_time >= panel_motor_timing.step_interval) {
                     generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true);
                     panel_motor_timing.last_step_time = millis();
                     paper_ctrl.step_counter++;
                 }
 
-                // 检测到传感器（纸张到达夹紧位置）
+                // 检测纸张位置（虽然已经检测到，但持续监控）
                 if (paper_ctrl.paper_sensor_state && !paper_ctrl.last_paper_sensor_state) {
-                    grbl_sendf(CLIENT_ALL, "[MSG: Paper reached sensor at step %lu, paper in position\r\n",
+                    grbl_sendf(CLIENT_ALL, "[MSG: Paper confirmed at sensor position (step %lu)\r\n",
                                paper_ctrl.step_counter);
                 }
             } else {
-                // 5cm完成，进入夹紧状态
-                grbl_sendf(CLIENT_ALL, "[MSG: 5cm reached (%lu steps), entering clamp state\r\n", paper_ctrl.step_counter);
+                // 松开+5cm运送完成，进入夹紧状态
+                grbl_sendf(CLIENT_ALL, "[MSG: Unclamp and 5cm transport complete (%lu steps), entering clamp state\r\n", 
+                           paper_ctrl.step_counter);
                 enter_state(PAPER_CLAMP_FEED);
             }
             break;
@@ -1540,37 +1563,45 @@ void paper_change_update() {
             break;
 
         case PAPER_REPOSITION:
-            // 面板电机反转判断纸张位置，检测到纸张后正转5cm
-            // 面板电机反转仅用于判断纸张位置，一般情况下不会反转
+            // 关键定位逻辑：面板电机反转找到纸张后，必须正转5cm确保位置正确
+            // 这一步很重要，不然纸张位置不对，影响后续写字任务
 
-            CHECK_STATE_SAFETY(1000, "REPOSITION");
+            CHECK_STATE_SAFETY(1200, "REPOSITION");
 
-            // 第一阶段：反转判断纸张位置（最多反转500步约6.25cm）
+            // 第一阶段：反转寻找纸张位置（最多反转500步）
             if (paper_ctrl.step_counter < 500) {
                 if (millis() - panel_motor_timing.last_step_time >= panel_motor_timing.step_interval) {
-                    generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, false);  // 反转判断位置
+                    generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, false);  // 反转寻找纸张
                     panel_motor_timing.last_step_time = millis();
                     paper_ctrl.step_counter++;
 
-                    // 检测到纸张，说明纸张位置已找到
+                    // 检测到纸张边缘，立即停止反转
                     if (paper_ctrl.paper_sensor_state && !paper_ctrl.last_paper_sensor_state) {
-                        grbl_sendf(CLIENT_ALL, "[MSG: Paper detected at reverse step %lu, moving forward 5cm to correct position\r\n",
+                        grbl_sendf(CLIENT_ALL, "[MSG: Paper edge detected at reverse step %lu, starting critical 5cm forward positioning\r\n",
                                    paper_ctrl.step_counter);
-
-                        // 进入正转5cm阶段
-                        paper_ctrl.step_counter = 0;  // 重置计数器用于正转计数
+                        
+                        // 重置计数器，开始关键的5cm正转定位
+                        paper_ctrl.step_counter = 0;
                     }
                 }
-            } else if (paper_ctrl.step_counter < 400) {  // 正转5cm（400步）到正确位置
+            } else if (paper_ctrl.step_counter < 400) {  // 第二阶段：精确正转5cm定位（400步）
                 if (millis() - panel_motor_timing.last_step_time >= panel_motor_timing.step_interval) {
-                    generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true);  // 正转到正确位置
+                    generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true);  // 关键的正转定位
                     panel_motor_timing.last_step_time = millis();
                     paper_ctrl.step_counter++;
+
+                    // 输出定位进度
+                    if (paper_ctrl.step_counter % 50 == 0) {
+                        float position_mm = (float)paper_ctrl.step_counter / 80.0;  // 80步/mm
+                        grbl_sendf(CLIENT_ALL, "[MSG: Critical positioning: %.1fmm (%lu/400 steps)\r\n",
+                                   position_mm, paper_ctrl.step_counter);
+                    }
                 }
             } else {
-                // 定位完成，纸张已到正确位置
-                grbl_sendf(CLIENT_ALL, "[MSG: Repositioning complete (%lu steps forward), ready for writing\r\n",
-                           paper_ctrl.step_counter);
+                // 关键定位完成，纸张已到达精确的写字位置
+                float final_position = (float)paper_ctrl.step_counter / 80.0;
+                grbl_sendf(CLIENT_ALL, "[MSG: CRITICAL: Paper positioning complete at %.1fmm (%lu steps), ready for writing tasks\r\n",
+                           final_position, paper_ctrl.step_counter);
                 enter_state(PAPER_COMPLETE);
             }
             break;
@@ -1731,8 +1762,9 @@ void paper_change_init() {
     
     // === 第六步：初始化完成确认 ===
     // 发送详细的初始化完成报告
+    // 注意：夹紧电机断电即为夹紧态，无需额外初始化
     grbl_sendf(CLIENT_ALL, "[MSG: Paper change system initialization complete]\r\n");
-    grbl_sendf(CLIENT_ALL, "[MSG: System ready - State: IDLE, Version: v2.0]\r\n");
+    grbl_sendf(CLIENT_ALL, "[MSG: System ready - State: IDLE, Clamp: CLAMPED (power-on state), Version: v2.0]\r\n");
 }
 
 // ================================================================================
