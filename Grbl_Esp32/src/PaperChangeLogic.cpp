@@ -63,10 +63,10 @@ void enter_state(paper_change_state_t new_state) {
     
     // 重置静态标志
     bool pos_init_val, eject_detected_val, reverse_complete_val;
-    get_static_flags(&pos_init_val, &eject_detected_val, &reverse_complete_val);
     bool* pos_init = &pos_init_val;
     bool* eject_detected = &eject_detected_val;
     bool* reverse_complete = &reverse_complete_val;
+    get_static_flags(pos_init, eject_detected, reverse_complete);
     
     if (new_state == PAPER_REPOSITION) {
         *pos_init = false;
@@ -177,7 +177,10 @@ void handle_pre_check_state() {
  */
 void handle_ejecting_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
-    bool* pos_init, *eject_detected, *reverse_complete;
+    bool pos_init_val, eject_detected_val, reverse_complete_val;
+    bool* pos_init = &pos_init_val;
+    bool* eject_detected = &eject_detected_val;
+    bool* reverse_complete = &reverse_complete_val;
     get_static_flags(pos_init, eject_detected, reverse_complete);
     if (!ctrl || !eject_detected) return;
     
@@ -395,7 +398,10 @@ void handle_full_feed_state() {
 void handle_reposition_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
     motor_timing_t* panel_timing = get_panel_motor_timing();
-    bool* pos_init, *eject_detected, *reverse_complete;
+    bool pos_init_val, eject_detected_val, reverse_complete_val;
+    bool* pos_init = &pos_init_val;
+    bool* eject_detected = &eject_detected_val;
+    bool* reverse_complete = &reverse_complete_val;
     get_static_flags(pos_init, eject_detected, reverse_complete);
     if (!ctrl || !panel_timing || !reverse_complete) return;
     

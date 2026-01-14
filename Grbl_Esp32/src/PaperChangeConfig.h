@@ -37,6 +37,29 @@
 #endif
 
 // ================================================================================
+// 重要：警告信息，防止其他文件重定义这些参数
+// ================================================================================
+#ifdef PAPER_EJECT_STEPS
+#pragma message("警告：PAPER_EJECT_STEPS在其他文件中重定义，请移除重复定义")
+#endif
+
+#ifdef PAPER_EJECT_INTERVAL_US
+#pragma message("警告：PAPER_EJECT_INTERVAL_US在其他文件中重定义，请移除重复定义")
+#endif
+
+#ifdef PAPER_PRE_CHECK_STEPS
+#pragma message("警告：PAPER_PRE_CHECK_STEPS在其他文件中重定义，请移除重复定义")
+#endif
+
+#ifdef PAPER_PRE_CHECK_INTERVAL_US
+#pragma message("警告：PAPER_PRE_CHECK_INTERVAL_US在其他文件中重定义，请移除重复定义")
+#endif
+
+#ifdef DEFAULT_CLAMP_STEPS_PER_MM
+#pragma message("警告：DEFAULT_CLAMP_STEPS_PER_MM在其他文件中重定义，请移除重复定义")
+#endif
+
+// ================================================================================
 // HC595位映射定义 - 电机控制位分配
 // ================================================================================
 #define BIT_PAPER_CLAMP_DIR     2     // 夹纸电机方向控制位
@@ -50,10 +73,6 @@
 // 机械参数配置 - 易于调整的运动参数
 // ================================================================================
 // 步进电机参数（避免重定义）
-#ifndef DEFAULT_STEPS_PER_MM
-#define DEFAULT_STEPS_PER_MM    80.0  // 默认步进分辨率
-#endif
-
 #ifndef DEFAULT_FEED_STEPS_PER_MM
 #define DEFAULT_FEED_STEPS_PER_MM   80.0  // 进纸电机步数/毫米
 #endif
@@ -77,7 +96,6 @@
 
 // 运动距离参数（精确控制的关键参数）- 根据文档更新
 #define PAPER_A4_LENGTH_MM          297.0  // A4纸张长度（毫米）
-#define PAPER_5CM_LENGTH_MM          50.0  // 5厘米距离（毫米）- 传感器触发后夹紧松开运行距离
 #define PAPER_3_5CM_LENGTH_MM        35.0  // 3.5厘米距离（毫米）- 纸张经过传感器后继续运行距离
 #define PAPER_3CM_LENGTH_MM          30.0  // 3厘米距离（毫米）- 传感器到夹紧电机距离+位置校准距离
 #define PAPER_1_5CM_LENGTH_MM        15.0  // 1.5厘米距离（毫米）- 夹紧电机正转松开距离
@@ -87,10 +105,6 @@
 // 步数计算（避免重定义）
 #ifndef PAPER_EJECT_STEPS
 #define PAPER_EJECT_STEPS            (uint32_t)(PAPER_A4_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)
-#endif
-
-#ifndef PAPER_5CM_STEPS
-#define PAPER_5CM_STEPS              (uint32_t)(PAPER_5CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)
 #endif
 
 #ifndef PAPER_3_5CM_STEPS
@@ -113,8 +127,7 @@
 #define PAPER_PRE_CHECK_STEPS        (uint32_t)(PAPER_PRE_CHECK_MM * DEFAULT_PANEL_STEPS_PER_MM)
 #endif
 
-#ifndef PAPER_CRITICAL_POSITION_STEPS
-#define PAPER_CRITICAL_POSITION_STEPS  (uint32_t)(PAPER_3CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)  // 关键3cm定位步数
+#ifndef PAPER_EJECT_CHECK_STEPS
 #define PAPER_EJECT_CHECK_STEPS       (uint32_t)(PAPER_3CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)  // 出纸预检反转3cm步数
 #endif
 

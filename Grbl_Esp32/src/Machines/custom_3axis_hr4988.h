@@ -168,25 +168,8 @@
 #define DEFAULT_PANEL_ACCELERATION   400.0    // mm/sec^2 - 提高加速度
 #define DEFAULT_PANEL_MAX_TRAVEL     300.0    // mm - panel travel distance (full A4 length)
 
-// Paper Change Eject Parameters
-#define PAPER_EJECT_STEPS          23760    // steps - A4 length: 297mm × 80步/mm (精确计算值)  
-#define PAPER_EJECT_INTERVAL_US     1000      // μs - 1ms间隔，提高出纸速度
-
-// Paper Pre-Check Parameters  
-#define PAPER_PRE_CHECK_STEPS       200       // steps - 预检倒转步数(约2.5mm)
-#define PAPER_PRE_CHECK_INTERVAL_US  1000      // μs - 预检倒转间隔
-
-// Paper Positioning Parameters  
-#define PAPER_POSITIONING_FINE_STEPS 32        // steps - 微调前进步数(0.4mm)
-#define PAPER_POSITIONING_BACK_STEPS  2         // steps - 微调后退步数(0.025mm) 
-#define PAPER_POSITIONING_SEARCH_MM   10.0      // mm - 传感器搜索距离
-#define PAPER_POSITIONING_SEARCH_STEPS (int)(PAPER_POSITIONING_SEARCH_MM * DEFAULT_PANEL_STEPS_PER_MM)  // 800步
-
-// Paper Clamp Motor (压纸抬落电机)
-#define DEFAULT_CLAMP_STEPS_PER_MM   150.0    // steps/mm
-#define DEFAULT_CLAMP_MAX_RATE       1500.0   // mm/min
-#define DEFAULT_CLAMP_ACCELERATION   250.0    // mm/sec^2
-#define DEFAULT_CLAMP_MAX_TRAVEL     10.0     // mm - clamping travel distance
+// 注意：Paper Change相关参数已移动到 PaperChangeConfig.h
+// 请勿在此文件中重定义换纸系统参数，避免编译冲突
 
 // Paper Change Timing Parameters
 #define PAPER_FEED_TIMEOUT_MS        5000     // ms - maximum time to wait for paper feeding

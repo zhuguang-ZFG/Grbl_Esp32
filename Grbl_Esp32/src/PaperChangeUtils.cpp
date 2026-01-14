@@ -58,7 +58,7 @@ void init_motor_timing() {
     
     if (clamp_timing) {
         clamp_timing->last_step_time = current_time;
-        clamp_timing->step_interval = DEFAULT_STEP_PULSE_MICROSECONDS;
+        clamp_timing->step_interval = PAPER_CLAMP_INTERVAL_US;
         clamp_timing->step_pending = false;
     }
 }
