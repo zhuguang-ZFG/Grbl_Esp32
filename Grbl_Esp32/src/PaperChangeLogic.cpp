@@ -197,7 +197,7 @@ void handle_ejecting_state() {
             if (ctrl->step_counter >= PAPER_EJECT_CHECK_STEPS) {
                 LOG_MSG("Ejection pre-check complete (3cm reverse), starting full detection");
                 ctrl->step_counter = 0; // 重置计数器
-                *eject_detected = false; // 重置检测标志
+                *eject_detected = false; // 保持检测标志为false，继续检测
             }
         }
     }
@@ -292,7 +292,7 @@ void handle_unclamp_feed_state() {
             ctrl->step_counter++;
             
             if (ctrl->step_counter % 50 == 0) {
-                float progress_mm = steps_to_mm(ctrl->step_counter, DEFAULT_PANEL_STEPS_PER_MM);
+                float progress_mm = steps_to_mm(ctrl->step_counter, DEFAULT_CLAMP_STEPS_PER_MM);
                 LOG_PROGRESS("Clamp motor releasing: %.1fmm", progress_mm);
             }
             
@@ -337,7 +337,7 @@ void handle_clamp_feed_state() {
             ctrl->step_counter++;
             
             if (ctrl->step_counter % 50 == 0) {
-                float progress_mm = steps_to_mm(ctrl->step_counter, DEFAULT_PANEL_STEPS_PER_MM);
+                float progress_mm = steps_to_mm(ctrl->step_counter, DEFAULT_CLAMP_STEPS_PER_MM);
                 LOG_PROGRESS("Clamp motor clamping: %.1fmm", progress_mm);
             }
             

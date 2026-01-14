@@ -122,7 +122,7 @@ bool nonblocking_panel_step(bool forward) {
     motor_config_t config = {
         .step_bit = BIT_PANEL_MOTOR_STEP,
         .dir_bit = BIT_PANEL_MOTOR_DIR,
-        .step_interval = 0,
+        .step_interval = PAPER_PANEL_INTERVAL_US, // 面板电机专用间隔
         .name = "Panel",
         .timing = get_panel_motor_timing()
     };
@@ -154,7 +154,7 @@ bool nonblocking_clamp_step(bool forward) {
     motor_config_t config = {
         .step_bit = BIT_PAPER_CLAMP_STEP,
         .dir_bit = BIT_PAPER_CLAMP_DIR,
-        .step_interval = PAPER_FEED_INTERVAL_US, // 使用相同的间隔
+        .step_interval = PAPER_CLAMP_INTERVAL_US, // 夹紧电机专用间隔
         .name = "Clamp",
         .timing = get_clamp_motor_timing()
     };

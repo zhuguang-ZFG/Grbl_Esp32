@@ -62,6 +62,10 @@
 #define DEFAULT_PANEL_STEPS_PER_MM  80.0  // 面板电机步数/毫米
 #endif
 
+#ifndef DEFAULT_CLAMP_STEPS_PER_MM
+#define DEFAULT_CLAMP_STEPS_PER_MM  80.0  // 夹紧电机步数/毫米
+#endif
+
 // 速度参数（避免重定义）
 #ifndef DEFAULT_FEED_MAX_RATE
 #define DEFAULT_FEED_MAX_RATE      2000.0  // 进纸电机最大速度
@@ -98,7 +102,7 @@
 #endif
 
 #ifndef PAPER_1_5CM_STEPS
-#define PAPER_1_5CM_STEPS            (uint32_t)(PAPER_1_5CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)
+#define PAPER_1_5CM_STEPS            (uint32_t)(PAPER_1_5CM_LENGTH_MM * DEFAULT_CLAMP_STEPS_PER_MM)
 #endif
 
 #ifndef PAPER_3TO5CM_STEPS
@@ -125,6 +129,8 @@
 #define PAPER_EJECT_INTERVAL_US     1000   // 出纸步进间隔（微秒）
 #define PAPER_PRE_CHECK_INTERVAL_US  1000   // 预检步进间隔（微秒）
 #define PAPER_FEED_INTERVAL_US      2000   // 进纸步进间隔（微秒）
+#define PAPER_CLAMP_INTERVAL_US     2000   // 夹紧电机步进间隔（微秒）
+#define PAPER_PANEL_INTERVAL_US     1000   // 面板电机步进间隔（微秒）
 
 // 超时保护参数（安全机制）
 #define PAPER_FEED_TIMEOUT_MS       5000   // 进纸超时（毫秒）
@@ -145,7 +151,7 @@
 // ================================================================================
 // 安全限制参数 - 防止硬件损坏
 // ================================================================================
-#define PAPER_MAX_REVERSE_STEPS     1000   // 反转最大步数限制
+#define PAPER_MAX_REVERSE_STEPS     4000   // 反转最大步数限制（50mm，确保有足够的反转距离检测纸张）
 #define PAPER_MAX_TOTAL_STEPS       50000  // 单过程最大总步数
 #define PAPER_MAX_RETRY_COUNT       3      // 最大重试次数
 
