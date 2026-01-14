@@ -33,7 +33,12 @@
 #endif
 
 #ifndef HC595_LATCH_PIN
-#define HC595_LATCH_PIN         2     // HC595锁存引脚（使用现有定义）
+#define HC595_LATCH_PIN         5     // HC595锁存引脚（避免与X_STEP_PIN冲突）
+#endif
+
+// 换纸电机独立使能控制（与XYZ轴分离）
+#ifndef PAPER_MOTORS_ENABLE
+#define PAPER_MOTORS_ENABLE      26    // 换纸电机使能控制（拾落/面板/送纸器）
 #endif
 
 // ================================================================================
@@ -92,6 +97,10 @@
 
 #ifndef DEFAULT_PANEL_MAX_RATE
 #define DEFAULT_PANEL_MAX_RATE     3000.0  // 面板电机最大速度
+#endif
+
+#ifndef DEFAULT_CLAMP_MAX_RATE
+#define DEFAULT_CLAMP_MAX_RATE      2000.0  // 夹紧电机最大速度
 #endif
 
 // 运动距离参数（精确控制的关键参数）- 根据文档更新

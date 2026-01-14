@@ -81,4 +81,26 @@ void stop_all_motors();
  */
 bool hardware_self_test();
 
+// ================================================================================
+// 换纸电机使能控制接口
+// ================================================================================
+
+/**
+ * @brief 启用换纸电机
+ * 设置PAPER_MOTORS_ENABLE为低电平（使能有效）
+ */
+void enable_paper_motors();
+
+/**
+ * @brief 禁用换纸电机
+ * 设置PAPER_MOTORS_ENABLE为高电平（禁用有效）
+ */
+void disable_paper_motors();
+
+/**
+ * @brief 获取换纸电机使能状态
+ * @return true=已启用, false=已禁用
+ */
+bool is_paper_motors_enabled();
+
 #endif // AUTO_PAPER_CHANGE_ENABLE

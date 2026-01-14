@@ -21,12 +21,53 @@
  * @brief HC595移位寄存器初始化
  */
 void hc595_init() {
+    // 引脚冲突检测
+    #ifdef X_STEP_PIN
+    if (HC595_LATCH_PIN == X_STEP_PIN) {
+        grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_LATCH_PIN (%d) conflicts with X_STEP_PIN (%d)]\n", HC595_LATCH_PIN, X_STEP_PIN);
+        delay(1000);
+        return;
+    }
+    #endif
+    
+    #ifdef STEPPERS_DISABLE_PIN
+    if (HC595_LATCH_PIN == STEPPERS_DISABLE_PIN) {
+        grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_LATCH_PIN (%d) conflicts with STEPPERS_DISABLE_PIN (%d)]\n", HC595_LATCH_PIN, STEPPERS_DISABLE_PIN);
+        delay(1000);
+        return;
+    }
+    #endif
+    
+    // 检查HC595引脚之间的冲突
+    if (HC595_DATA_PIN == HC595_CLOCK_PIN || 
+        HC595_DATA_PIN == HC595_LATCH_PIN || 
+        HC595_CLOCK_PIN == HC595_LATCH_PIN) {
+        grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595 pins have conflicts: DATA=%d, CLOCK=%d, LATCH=%d]\n", 
+                   HC595_DATA_PIN, HC595_CLOCK_PIN, HC595_LATCH_PIN);
+        delay(1000);
+        return;
+    }
+    
     pinMode(HC595_DATA_PIN, OUTPUT);
     pinMode(HC595_CLOCK_PIN, OUTPUT);
     pinMode(HC595_LATCH_PIN, OUTPUT);
     
+    // 换纸电机独立使能控制初始化
+    #ifdef PAPER_MOTORS_ENABLE
+    pinMode(PAPER_MOTORS_ENABLE, OUTPUT);
+    // 默认禁用换纸电机，等待系统完全初始化后启用
+    digitalWrite(PAPER_MOTORS_ENABLE, HIGH);  // HIGH = 禁用
+    #endif
+    
     // 初始状态为0，确保所有电机停止
     hc595_write_fast(0);
+    
+    #ifdef PAPER_DEBUG_ENABLED
+    if (PAPER_DEBUG_ENABLED) {
+        grbl_sendf(CLIENT_ALL, "[MSG: HC595 initialized - DATA:%d, CLOCK:%d, LATCH:%d]\n", 
+                   HC595_DATA_PIN, HC595_CLOCK_PIN, HC595_LATCH_PIN);
+    }
+    #endif
 }
 
 /**
@@ -202,6 +243,42 @@ bool hardware_self_test() {
     
     LOG_MSG("=== Hardware Self-Test Complete ===");
     return true;
+}
+
+// ================================================================================
+// 换纸电机使能控制实现
+// ================================================================================
+
+/**
+ * @brief 启用换纸电机
+ */
+void enable_paper_motors() {
+    #ifdef PAPER_MOTORS_ENABLE
+    digitalWrite(PAPER_MOTORS_ENABLE, LOW);  // LOW = 使能
+    LOG_MSG("Paper motors ENABLED");
+    #endif
+}
+
+/**
+ * @brief 禁用换纸电机
+ */
+void disable_paper_motors() {
+    #ifdef PAPER_MOTORS_ENABLE
+    digitalWrite(PAPER_MOTORS_ENABLE, HIGH);  // HIGH = 禁用
+    LOG_MSG("Paper motors DISABLED");
+    #endif
+}
+
+/**
+ * @brief 获取换纸电机使能状态
+ * @return true=已启用, false=已禁用
+ */
+bool is_paper_motors_enabled() {
+    #ifdef PAPER_MOTORS_ENABLE
+    return digitalRead(PAPER_MOTORS_ENABLE) == LOW;  // LOW=使能
+    #else
+    return true;  // 如果没有定义使能引脚，认为始终启用
+    #endif
 }
 
 #endif // AUTO_PAPER_CHANGE_ENABLE

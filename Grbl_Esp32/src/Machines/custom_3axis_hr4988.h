@@ -16,11 +16,14 @@
     - Enable:   GPIO4 (shared for all 4 HR4988 drivers, nENABLE active low)
 
     === Paper Change System (74HC595D Control) ===
-    - 74HC595D Data Pin: GPIO8 (SER/DS input) - 74HC595D Pin 14
-    - 74HC595D Clock Pin: GPIO3 (SHCP input) - 74HC595D Pin 11
-    - 74HC595D Latch Pin: GPIO2 (STCP input) - 74HC595D Pin 12 (避免与STEPPERS_DISABLE_PIN冲突)
+- 74HC595D Data Pin: GPIO21 (SI input) - 74HC595D Pin 14
+- 74HC595D Clock Pin: GPIO16 (SRCLK input) - 74HC595D Pin 11
+- 74HC595D Latch Pin: GPIO17 (RCLK input) - 74HC595D Pin 12
+- 74HC595D Clear Pin: VCC (SRCLR input) - 74HC595D Pin 10 (高电平，不复位)
+- 74HC595D OE Pin: GND (OE input) - 74HC595D Pin 13 (低电平，使能输出)
     - Paper Sensor: GPIO34 (paper presence detection)
-    - One-Click Button: HC595 Q0 (pin 15) - 常开按钮接VCC
+    - One-Click Button: GPIO35 (input only pin)
+    - Paper Motors Enable: GPIO26 + HC595 Q0 (双重使能控制)
     - Feed Motor: HC595 pins Q6/Q7 (DIR/STEP)
     - Panel Motor: HC595 pins Q4/Q5 (DIR/STEP) 
     - Clamp Motor: HC595 pins Q2/Q3 (DIR/STEP)
@@ -72,13 +75,15 @@
 // === Paper Change System with 74HC595D ===
 
 // 74HC595D Shift Register Control
-// 根据用户提供的实际硬件连接，但需要避免与GPIO4冲突：
-// 74HC595D Pin 14 (DS/Serial Data) ←→ ESP32 IO32
-// 74HC595D Pin 11 (SHCP/Shift Clock) ←→ ESP32 EN  
-// 74HC595D Pin 12 (STCP/Latch Clock) ←→ ESP32 SENSOR_VP (但GPIO4已被STEPPERS_DISABLE使用)
-#define HC595_DATA_PIN            GPIO_NUM_32    // Serial data input (DS pin) - 74HC595D Pin 14 (ESP32 IO32)
-#define HC595_CLOCK_PIN           GPIO_NUM_3     // Shift register clock (SHCP) - 74HC595D Pin 11 (ESP32 EN)
-#define HC595_LATCH_PIN           GPIO_NUM_2     // Storage register clock (STCP) - 使用GPIO2避免与STEPPERS_DISABLE冲突
+// 用户提供的实际硬件连接：
+// 74HC595D Pin 10 (SRCLR) ←→ VCC (高电平，不复位)
+// 74HC595D Pin 11 (SRCLK) ←→ ESP32 GPIO16
+// 74HC595D Pin 12 (RCLK) ←→ ESP32 GPIO17
+// 74HC595D Pin 13 (OE) ←→ GND (低电平，使能输出)
+// 74HC595D Pin 14 (SI) ←→ ESP32 GPIO21
+#define HC595_DATA_PIN            GPIO_NUM_21    // Serial data input (SI pin) - 74HC595D Pin 14
+#define HC595_CLOCK_PIN           GPIO_NUM_16    // Shift register clock (SRCLK) - 74HC595D Pin 11
+#define HC595_LATCH_PIN           GPIO_NUM_17    // Register clock (RCLK) - 74HC595D Pin 12
 
 // Paper Sensor Input
 #define PAPER_SENSOR_PIN          GPIO_NUM_34    // Paper presence sensor (input only pin)
@@ -86,24 +91,29 @@
 // One-Click Button Input (GPIO, not HC595)
 #define PAPER_BUTTON_PIN          GPIO_NUM_35    // One-click paper change button (input only pin)
 
+// Paper Motors Enable Control (dual control)
+// GPIO26: 直接控制所有三个纸路电机的HR4988使能信号
+// HC595 Q0: 额外控制换纸电机的HR4988使能脚
+#define PAPER_MOTORS_ENABLE      GPIO_NUM_26    // Paper change motors enable (拾落/面板/送纸器)
+
 // 74HC595D Output Mapping (based on pin numbers)
-// Q0 (pin 15): Not used (available for future expansion)
+// Q0 (pin 15): PAPER_MOTORS_ENABLE      - 换纸电机HR4988额外使能控制(配合GPIO26)
 // Q1 (pin 1):  Not used  
 // Q2 (pin 2):  PAPER_CLAMP_DIR_PIN      - 压纸抬落电机方向控制
-// Q3 (pin 7):  PAPER_CLAMP_STEP_PIN     - 压纸抬落电机步进控制
+// Q3 (pin 3):  PAPER_CLAMP_STEP_PIN     - 压纸抬落电机步进控制
 // Q4 (pin 4):  PANEL_MOTOR_DIR_PIN      - 出纸面板电机方向控制  
 // Q5 (pin 5):  PANEL_MOTOR_STEP_PIN     - 出纸面板电机步进控制
 // Q6 (pin 6):  FEED_MOTOR_DIR_PIN       - 进纸器电机方向控制
 // Q7 (pin 7):  FEED_MOTOR_STEP_PIN      - 进纸器电机步进控制
 
 // Bit positions in 74HC595D shift register (0-7)
-// Note: Button is now on GPIO35, not HC595
-#define BIT_PAPER_CLAMP_DIR       2
-#define BIT_PAPER_CLAMP_STEP      3  
-#define BIT_PANEL_MOTOR_DIR       4
-#define BIT_PANEL_MOTOR_STEP      5
-#define BIT_FEED_MOTOR_DIR        6
-#define BIT_FEED_MOTOR_STEP       7
+#define BIT_PAPER_MOTORS_ENABLE    0    // Q0 - 换纸电机使能
+#define BIT_PAPER_CLAMP_DIR         2    // Q2 - 压纸抬落电机方向
+#define BIT_PAPER_CLAMP_STEP        3    // Q3 - 压纸抬落电机步进
+#define BIT_PANEL_MOTOR_DIR        4    // Q4 - 面板电机方向
+#define BIT_PANEL_MOTOR_STEP        5    // Q5 - 面板电机步进
+#define BIT_FEED_MOTOR_DIR          6    // Q6 - 进纸器电机方向
+#define BIT_FEED_MOTOR_STEP         7    // Q7 - 进纸器电机步进
 
 // Note: No limit switches are used in this configuration
 // Uncomment and configure if you add limit switches later
@@ -157,8 +167,8 @@
 // === Paper Change System Parameters ===
 
 // Feed Motor (进纸器电机)
-#define DEFAULT_FEED_STEPS_PER_MM    100.0    // steps/mm
-#define DEFAULT_FEED_MAX_RATE        3000.0   // mm/min
+#define DEFAULT_FEED_STEPS_PER_MM    80.0     // steps/mm - 与文档一致
+#define DEFAULT_FEED_MAX_RATE        2000.0   // mm/min - 与文档一致
 #define DEFAULT_FEED_ACCELERATION    400.0    // mm/sec^2
 #define DEFAULT_FEED_MAX_TRAVEL      350.0    // mm - maximum paper feed length (A4+margin)
 

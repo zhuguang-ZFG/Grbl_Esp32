@@ -122,6 +122,10 @@ void paper_change_init() {
         return;
     }
     
+    // 启用换纸电机（系统初始化完成）
+    enable_paper_motors();
+    LOG_MSG("Paper change system initialization complete");
+    
     // 初始化电机时序
     init_motor_timing();
     
