@@ -173,7 +173,7 @@ void handle_pre_check_state() {
 
 /**
  * @brief 处理出纸状态逻辑
- * 按照文档实现：面板电机反转检测纸张位置，然后快速正转A4+3-5cm送出纸张
+ * 按照文档实现：预检反转3cm检测纸张，然后反转检测纸张位置，最后快速正转A4+3-5cm送出纸张
  */
 void handle_ejecting_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
@@ -181,10 +181,28 @@ void handle_ejecting_state() {
     get_static_flags(pos_init, eject_detected, reverse_complete);
     if (!ctrl || !eject_detected) return;
     
-    CHECK_STATE_SAFETY(PAPER_MAX_REVERSE_STEPS + PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS + 200, "EJECTING");
+    CHECK_STATE_SAFETY(PAPER_EJECT_CHECK_STEPS + PAPER_MAX_REVERSE_STEPS + PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS + 200, "EJECTING");
     
-    // 步骤1：检测纸张位置 - 面板电机反转，直到传感器感应到纸张后停止
-    if (!*eject_detected && ctrl->step_counter < PAPER_MAX_REVERSE_STEPS) {
+    // 步骤0：出纸预检 - 面板电机反转3cm检测是否有纸
+    if (!*eject_detected && ctrl->step_counter < PAPER_EJECT_CHECK_STEPS) {
+        if (nonblocking_panel_step(false)) {
+            ctrl->step_counter++;
+            
+            if (ctrl->step_counter % 100 == 0) {
+                float check_mm = steps_to_mm(ctrl->step_counter, DEFAULT_PANEL_STEPS_PER_MM);
+                LOG_PROGRESS("Ejection pre-check reverse: %.1fmm", check_mm);
+            }
+            
+            // 完成3cm预检反转
+            if (ctrl->step_counter >= PAPER_EJECT_CHECK_STEPS) {
+                LOG_MSG("Ejection pre-check complete (3cm reverse), starting full detection");
+                ctrl->step_counter = 0; // 重置计数器
+                *eject_detected = false; // 重置检测标志
+            }
+        }
+    }
+    // 步骤1：检测纸张位置 - 面板电机继续反转，直到传感器感应到纸张后停止
+    else if (!*eject_detected && ctrl->step_counter < PAPER_MAX_REVERSE_STEPS) {
         if (nonblocking_panel_step(false)) {
             ctrl->step_counter++;
             

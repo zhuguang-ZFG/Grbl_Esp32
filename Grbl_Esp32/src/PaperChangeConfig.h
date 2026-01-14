@@ -111,6 +111,7 @@
 
 #ifndef PAPER_CRITICAL_POSITION_STEPS
 #define PAPER_CRITICAL_POSITION_STEPS  (uint32_t)(PAPER_3CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)  // 关键3cm定位步数
+#define PAPER_EJECT_CHECK_STEPS       (uint32_t)(PAPER_3CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)  // 出纸预检反转3cm步数
 #endif
 
 // ================================================================================
