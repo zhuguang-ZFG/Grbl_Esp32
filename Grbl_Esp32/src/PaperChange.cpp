@@ -1569,48 +1569,32 @@ void paper_change_update() {
 
             CHECK_STATE_SAFETY(1200, "REPOSITION");
 
-            // 第一阶段：反转500步左右寻找纸张位置（固定500步动作）
-            if (paper_ctrl.step_counter < 500) {
+            // 阶段1：反转寻找纸张位置，以传感器信号为准
+            if (paper_ctrl.step_counter < 500) {  // 安全上限500步，但以传感器信号为准
                 if (millis() - panel_motor_timing.last_step_time >= panel_motor_timing.step_interval) {
                     generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, false);  // 反转寻找纸张
                     panel_motor_timing.last_step_time = millis();
                     paper_ctrl.step_counter++;
 
-                    // 检测到纸张边缘，记录但不停止反转
+                    // 检测到纸张边缘，立即停止反转，以传感器信号为准
                     if (paper_ctrl.paper_sensor_state && !paper_ctrl.last_paper_sensor_state) {
-                        grbl_sendf(CLIENT_ALL, "[MSG: Paper edge detected at reverse step %lu (noted), continuing reverse to 500 steps\r\n",
+                        grbl_sendf(CLIENT_ALL, "[MSG: Paper edge detected at reverse step %lu, STOPPED - sensor based detection\r\n",
                                    paper_ctrl.step_counter);
+                        
+                        // 立即停止反转，重置计数器开始关键5cm正转定位
+                        paper_ctrl.step_counter = 0;
                     }
                 }
-            } else if (paper_ctrl.step_counter < 900) {  // 第二阶段：精确正转5cm定位（400步）
-                // 反转500步完成，重置计数器开始正转定位
-                if (paper_ctrl.step_counter == 500) {
-                    grbl_sendf(CLIENT_ALL, "[MSG: Reverse 500 steps complete, starting critical 5cm forward positioning\r\n");
-                    paper_ctrl.step_counter = 0;  // 重置计数器用于正转计数
-                }
-                
+            } else if (paper_ctrl.step_counter < 400) {  // 阶段2：极其重要的5cm正转定位（400步）
                 if (millis() - panel_motor_timing.last_step_time >= panel_motor_timing.step_interval) {
                     generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true);  // 关键的正转定位
                     panel_motor_timing.last_step_time = millis();
                     paper_ctrl.step_counter++;
 
-                    // 输出定位进度
+                    // 输出关键定位进度
                     if (paper_ctrl.step_counter % 50 == 0) {
                         float position_mm = (float)paper_ctrl.step_counter / 80.0;  // 80步/mm
-                        grbl_sendf(CLIENT_ALL, "[MSG: Critical positioning: %.1fmm (%lu/400 steps)\r\n",
-                                   position_mm, paper_ctrl.step_counter);
-                    }
-                }
-            }
-                if (millis() - panel_motor_timing.last_step_time >= panel_motor_timing.step_interval) {
-                    generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true);  // 关键的正转定位
-                    panel_motor_timing.last_step_time = millis();
-                    paper_ctrl.step_counter++;
-
-                    // 输出定位进度
-                    if (paper_ctrl.step_counter % 50 == 0) {
-                        float position_mm = (float)paper_ctrl.step_counter / 80.0;  // 80步/mm
-                        grbl_sendf(CLIENT_ALL, "[MSG: Critical positioning: %.1fmm (%lu/400 steps)\r\n",
+                        grbl_sendf(CLIENT_ALL, "[MSG: CRITICAL POSITIONING: %.1fmm (%lu/400 steps) - EXTREMELY IMPORTANT\r\n",
                                    position_mm, paper_ctrl.step_counter);
                     }
                 }
