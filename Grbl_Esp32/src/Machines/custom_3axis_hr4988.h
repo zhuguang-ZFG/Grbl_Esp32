@@ -93,12 +93,12 @@
 
 // Paper Motors Enable Control (dual control)
 // GPIO26: 直接控制所有三个纸路电机的HR4988使能信号
-// HC595 Q0: 额外控制换纸电机的HR4988使能脚
+// HC595 Q1: 额外控制换纸电机的HR4988使能脚
 #define PAPER_MOTORS_ENABLE      GPIO_NUM_26    // Paper change motors enable (拾落/面板/送纸器)
 
 // 74HC595D Output Mapping (based on pin numbers)
-// Q0 (pin 15): PAPER_MOTORS_ENABLE      - 换纸电机HR4988额外使能控制(配合GPIO26)
-// Q1 (pin 1):  Not used  
+// Q0 (pin 15): Not used
+// Q1 (pin 1):  PAPER_MOTORS_ENABLE      - 换纸电机HR4988额外使能控制(配合GPIO26)  
 // Q2 (pin 2):  PAPER_CLAMP_DIR_PIN      - 压纸抬落电机方向控制
 // Q3 (pin 3):  PAPER_CLAMP_STEP_PIN     - 压纸抬落电机步进控制
 // Q4 (pin 4):  PANEL_MOTOR_DIR_PIN      - 出纸面板电机方向控制  
@@ -107,7 +107,7 @@
 // Q7 (pin 7):  FEED_MOTOR_STEP_PIN      - 进纸器电机步进控制
 
 // Bit positions in 74HC595D shift register (0-7)
-#define BIT_PAPER_MOTORS_ENABLE    0    // Q0 - 换纸电机使能
+#define BIT_PAPER_MOTORS_ENABLE    1    // Q1 - 换纸电机使能
 #define BIT_PAPER_CLAMP_DIR         2    // Q2 - 压纸抬落电机方向
 #define BIT_PAPER_CLAMP_STEP        3    // Q3 - 压纸抬落电机步进
 #define BIT_PANEL_MOTOR_DIR        4    // Q4 - 面板电机方向
