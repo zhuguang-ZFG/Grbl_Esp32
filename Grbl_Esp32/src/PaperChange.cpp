@@ -42,7 +42,6 @@ static error_info_t last_error = {
     .error_time = 0,
     .error_state = PAPER_IDLE,
     .step_count_at_error = 0,
-    .error_description = "",
     .retry_count = 0,
     .auto_recovery_enabled = true
 };
