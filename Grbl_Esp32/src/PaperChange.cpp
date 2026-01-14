@@ -1257,7 +1257,7 @@ static void enter_state(paper_change_state_t new_state) {
 
     // === 特殊状态处理 ===
     // 重置静态标志变量，确保状态间不会相互干扰
-    if (new_state == PAPER_POSITIONING) {
+    if (new_state == PAPER_REPOSITION) {
         positioning_initialized = false;
     }
     
