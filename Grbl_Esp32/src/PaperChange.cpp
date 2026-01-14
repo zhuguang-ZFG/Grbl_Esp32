@@ -1567,10 +1567,10 @@ void paper_change_update() {
             // 关键定位逻辑：面板电机反转找到纸张后，必须正转5cm确保位置正确
             // 这一步很重要，不然纸张位置不对，影响后续写字任务
 
-            CHECK_STATE_SAFETY(1200, "REPOSITION");
+            CHECK_STATE_SAFETY(2000, "REPOSITION");
 
             // 阶段1：反转寻找纸张位置，以传感器信号为准
-            if (paper_ctrl.step_counter < 500) {  // 安全上限500步，但以传感器信号为准
+            if (paper_ctrl.step_counter < 1000) {  // 安全上限1000步，但以传感器信号为准，实际可能不止500步
                 if (millis() - panel_motor_timing.last_step_time >= panel_motor_timing.step_interval) {
                     generate_motor_step(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, false);  // 反转寻找纸张
                     panel_motor_timing.last_step_time = millis();
