@@ -21,47 +21,102 @@
 // ================================================================================
 
 /**
- * @brief 状态转换验证
+ * @brief 状态转换验证函数
+ * 
+ * 检查状态机转换是否合法，防止非法状态跳转
+ * 这对于系统稳定性和错误处理至关重要
+ * 
+ * @param from_state 源状态
+ * @param to_state 目标状态
+ * @return true=合法转换，false=非法转换
+ * 
+ * @example 典型合法转换流程：
+ * IDLE → PRE_CHECK → EJECTING → FEEDING → UNCLAMP_FEED → CLAMP_FEED → FULL_FEED → REPOSITION → COMPLETE
  */
 bool is_valid_transition(paper_change_state_t from_state, paper_change_state_t to_state) {
+    // 参数有效性检查 - 防止数组越界
     if (from_state < PAPER_IDLE || from_state > PAPER_ERROR ||
         to_state < PAPER_IDLE || to_state > PAPER_ERROR) {
         return false;
     }
     
+    // 查表验证转换合法性 - 使用预定义的状态转换矩阵
     return state_transition_matrix[from_state][to_state];
 }
 
 /**
- * @brief 安全状态转换
+ * @brief 安全状态转换函数
+ * 
+ * 执行状态机状态转换，包含完整的验证和日志记录
+ * 这是整个换纸系统的核心控制函数
+ * 
+ * @param new_state 要转换到的新状态
+ * 
+ * @note 转换过程：
+ * 1. 验证新状态有效性
+ * 2. 检查转换合法性  
+ * 3. 执行状态清理和初始化
+ * 4. 记录转换日志
+ * 5. 更新状态变量
  */
-void enter_state(paper_change_state_t new_state) {
-    paper_change_ctrl_t* ctrl = get_paper_control();
-    if (!ctrl) return;
-    
+// ================================================================================
+// 状态转换辅助函数 - 提高代码可读性
+// ================================================================================
+
+/**
+ * @brief 验证状态转换的有效性
+ * @param new_state 新状态
+ * @return true=有效, false=无效
+ */
+static bool validate_state_transition(paper_change_state_t new_state) {
+    // 状态参数有效性检查
     if (new_state < PAPER_IDLE || new_state > PAPER_ERROR) {
-        LOG_ERROR("Invalid state value");
-        return;
+        LOG_ERROR_F("Invalid state value: %d", new_state);
+        return false;
+    }
+    
+    paper_change_ctrl_t* ctrl = get_paper_control();
+    if (!ctrl) {
+        LOG_ERROR("Control structure not available");
+        return false;
     }
     
     paper_change_state_t old_state = ctrl->state;
+    
+    // 状态转换合法性验证
     if (!is_valid_transition(old_state, new_state)) {
         LOG_ERROR_F("Invalid state transition %s->%s", 
                    GET_STATE_NAME(old_state), GET_STATE_NAME(new_state));
-        if (new_state != PAPER_ERROR) {
-            enter_state(PAPER_ERROR);
-        }
-        return;
+        return false;
     }
     
-    // 错误状态特殊处理
+    return true;
+}
+
+/**
+ * @brief 处理错误状态恢复
+ * @param old_state 原状态
+ * @param new_state 新状态
+ * @return true=已处理, false=无需处理
+ */
+static bool handle_error_state_recovery(paper_change_state_t old_state, paper_change_state_t new_state) {
     if (old_state == PAPER_ERROR && new_state != PAPER_ERROR) {
-        LOG_MSG_F("Recovering from ERROR state to %s", GET_STATE_NAME(new_state));
-        ctrl->emergency_stop = false;
-        STOP_ALL_MOTORS();
+        paper_change_ctrl_t* ctrl = get_paper_control();
+        if (ctrl) {
+            LOG_MSG_F("Recovering from ERROR state to %s", GET_STATE_NAME(new_state));
+            ctrl->emergency_stop = false;
+            STOP_ALL_MOTORS();
+        }
+        return true;
     }
-    
-    // 重置静态标志
+    return false;
+}
+
+/**
+ * @brief 重置静态标志
+ * @param new_state 新状态
+ */
+static void reset_static_flags(paper_change_state_t new_state) {
     bool pos_init_val, eject_detected_val, reverse_complete_val;
     bool* pos_init = &pos_init_val;
     bool* eject_detected = &eject_detected_val;
@@ -81,39 +136,115 @@ void enter_state(paper_change_state_t new_state) {
     }
     
     set_static_flags(*pos_init, *eject_detected, *reverse_complete);
-    
-    // 更新状态
-    ctrl->state = new_state;
-    ctrl->state_timer = millis();
-    ctrl->step_counter = 0;
-    
+}
+
+/**
+ * @brief 更新控制结构
+ * @param new_state 新状态
+ */
+static void update_control_structure(paper_change_state_t new_state) {
+    paper_change_ctrl_t* ctrl = get_paper_control();
+    if (ctrl) {
+        ctrl->state = new_state;
+        ctrl->state_timer = millis();
+        ctrl->step_counter = 0;
+    }
+}
+
+/**
+ * @brief 完成状态转换
+ * @param old_state 原状态
+ * @param new_state 新状态
+ */
+static void complete_state_transition(paper_change_state_t old_state, paper_change_state_t new_state) {
     // 初始化电机时序
     init_motor_timing();
     
+    // 记录状态转换
     LOG_MSG_F("State %s->%s", GET_STATE_NAME(old_state), GET_STATE_NAME(new_state));
+}
+
+// ================================================================================
+// 主状态转换函数 - 简化版本
+// ================================================================================
+
+void enter_state(paper_change_state_t new_state) {
+    paper_change_ctrl_t* ctrl = get_paper_control();
+    if (!ctrl) {
+        LOG_ERROR("Control structure not available");
+        return;
+    }
+    
+    paper_change_state_t old_state = ctrl->state;
+    
+    // 验证状态转换
+    if (!validate_state_transition(new_state)) {
+        // 自动进入错误状态，保护系统安全
+        if (new_state != PAPER_ERROR) {
+            enter_state(PAPER_ERROR);
+        }
+        return;
+    }
+    
+    // 处理错误状态恢复
+    handle_error_state_recovery(old_state, new_state);
+    
+    // 重置静态标志
+    reset_static_flags(new_state);
+    
+    // 更新控制结构
+    update_control_structure(new_state);
+    
+    // 完成状态转换
+    complete_state_transition(old_state, new_state);
 }
 
 /**
  * @brief 状态机更新函数
+ * 
+ * 这是换纸系统的核心调度器，根据当前状态调用相应的处理函数
+ * 采用状态机设计模式，确保系统状态转换的可预测和可控性
+ * 
+ * @note 设计原则：
+ * 1. 每个状态有明确的入口和出口条件
+ * 2. 状态转换必须经过验证，防止非法跳转
+ * 3. 每个状态都有超时保护，防止死锁
+ * 4. 所有电机控制都是非阻塞的，保证系统响应性
+ * 
+ * @warning 状态机是单线程的，任何状态处理都不能阻塞太久
+ * 
+ * @example 状态流转：
+ * IDLE → PRE_CHECK → EJECTING → FEEDING → UNCLAMP_FEED → CLAMP_FEED → FULL_FEED → REPOSITION → COMPLETE
  */
-void paper_state_machine_update() {
+void handle_state_machine_update() {
     paper_change_ctrl_t* ctrl = get_paper_control();
-    if (!ctrl) return;
+    if (!ctrl) {
+        LOG_ERROR("Control structure not available for state machine update");
+        return;
+    }
     
+    // 根据当前状态调用相应的处理函数
     switch (ctrl->state) {
         case PAPER_IDLE:
-            // 空闲状态，无操作
+            // 空闲状态：系统待命，等待触发条件
+            // 触发条件：M0命令、用户按钮等
             break;
             
         case PAPER_PRE_CHECK:
+            // 预检状态：检查面板上是否有纸张
+            // 功能：反转2.5mm，检查传感器状态
             handle_pre_check_state();
             break;
             
         case PAPER_EJECTING:
+            // 出纸状态：将现有纸张完全送出
+            // 功能：检测边缘 → 完全送出A4+4cm
             handle_ejecting_state();
             break;
             
         case PAPER_FEEDING:
+            // 进纸状态：送入新纸张
+            // 功能：进纸直到检测到纸张前边缘
             handle_feeding_state();
             break;
             
@@ -149,31 +280,57 @@ void paper_state_machine_update() {
 
 /**
  * @brief 处理预检状态逻辑
+ * 
+ * 预检阶段的目的是检查面板上是否已有纸张
+ * 这是出纸流程的第一个步骤，确保后续操作的准确性
+ * 
+ * @note 预检流程：
+ * 1. 面板电机反转2.5mm，移除可能的纸张遮挡
+ * 2. 检查传感器状态
+ * 3. 根据检测结果决定进入出纸或进纸状态
+ * 
+ * @warning 此步骤确保纸张传感器可靠工作，避免误检测
  */
 void handle_pre_check_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
-    if (!ctrl) return;
+    HANDLE_NULL_POINTER(ctrl, "handle_pre_check_state");
     
+    // 设置适合预检阶段的电流
+    set_current_for_paper_phase(PAPER_PRE_CHECK);
+    
+    // 安全检查：防止预检过程卡死
     CHECK_STATE_SAFETY(PAPER_PRE_CHECK_STEPS + 50, "PRE_CHECK");
     
+    // 步骤1：预检反转2.5mm，清除可能的干扰
     if (ctrl->step_counter < PAPER_PRE_CHECK_STEPS) {
         if (nonblocking_panel_step(false)) {
             ctrl->step_counter++;
         }
     } else {
+        // 步骤2：根据传感器状态决定后续流程
         if (ctrl->paper_sensor_state) {
-            LOG_MSG("Paper detected on panel, starting ejection");
+            // 传感器检测到纸张 -> 面板上有纸，需要先送出
+            LOG_MSG("Paper detected on panel, starting ejection sequence");
             enter_state(PAPER_EJECTING);
         } else {
-            LOG_MSG("No paper on panel, starting feeding");
+            // 传感器未检测到纸张 -> 面板为空，可以直接进纸
+            LOG_MSG("No paper on panel, starting feeding sequence");
             enter_state(PAPER_FEEDING);
         }
     }
 }
 
+// 出纸状态子函数声明
+static void handle_eject_pre_check(paper_change_ctrl_t* ctrl, bool* eject_detected);
+static void handle_edge_detection(paper_change_ctrl_t* ctrl, bool* eject_detected);
+static void handle_full_ejection(paper_change_ctrl_t* ctrl, bool* eject_detected);
+static void handle_no_paper_detected(paper_change_ctrl_t* ctrl, bool* eject_detected);
+
 /**
  * @brief 处理出纸状态逻辑
- * 按照文档实现：预检反转3cm检测纸张，然后反转检测纸张位置，最后快速正转A4+3-5cm送出纸张
+ * 
+ * 出纸流程分为三个阶段：
+ * 1. 预检反转(3cm) → 2. 边沿检测 → 3. 完全出纸(A4+4cm)
  */
 void handle_ejecting_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
@@ -182,96 +339,148 @@ void handle_ejecting_state() {
     bool* eject_detected = &eject_detected_val;
     bool* reverse_complete = &reverse_complete_val;
     get_static_flags(pos_init, eject_detected, reverse_complete);
+    
     if (!ctrl || !eject_detected) return;
     
-    CHECK_STATE_SAFETY(PAPER_EJECT_CHECK_STEPS + PAPER_MAX_REVERSE_STEPS + PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS + 200, "EJECTING");
+    CHECK_STATE_SAFETY(PAPER_EJECT_CHECK_STEPS + PAPER_MAX_REVERSE_STEPS + 
+                      PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS + 200, "EJECTING");
     
     // 步骤0：出纸预检 - 面板电机反转3cm检测是否有纸
     if (!*eject_detected && ctrl->step_counter < PAPER_EJECT_CHECK_STEPS) {
-        if (nonblocking_panel_step(false)) {
-            ctrl->step_counter++;
-            
-            if (ctrl->step_counter % 100 == 0) {
-                float check_mm = steps_to_mm(ctrl->step_counter, DEFAULT_PANEL_STEPS_PER_MM);
-                LOG_PROGRESS("Ejection pre-check reverse: %.1fmm", check_mm);
-            }
-            
-            // 完成3cm预检反转
-            if (ctrl->step_counter >= PAPER_EJECT_CHECK_STEPS) {
-                LOG_MSG("Ejection pre-check complete (3cm reverse), starting full detection");
-                ctrl->step_counter = 0; // 重置计数器
-                *eject_detected = false; // 保持检测标志为false，继续检测
-            }
-        }
+        handle_eject_pre_check(ctrl, eject_detected);
     }
-    // 步骤1：检测纸张位置 - 面板电机继续反转，直到传感器感应到纸张后停止
+    // 步骤1：检测纸张后边缘位置
     else if (!*eject_detected && ctrl->step_counter < PAPER_MAX_REVERSE_STEPS) {
-        if (nonblocking_panel_step(false)) {
-            ctrl->step_counter++;
-            
-            if (ctrl->paper_sensor_state && !ctrl->last_paper_sensor_state) {
-                LOG_MSG("Paper edge detected in reverse, starting forward ejection");
-                ctrl->step_counter = 0;
-                *eject_detected = true;
-                
-                // 设置快速正转速度
-                motor_timing_t* panel_timing = get_panel_motor_timing();
-                if (panel_timing) {
-                    panel_timing->step_interval = 500; // 快速正转（2kHz）
-                }
-            }
-            
-            if (ctrl->step_counter % 200 == 0) {
-                float reverse_mm = steps_to_mm(ctrl->step_counter, DEFAULT_PANEL_STEPS_PER_MM);
-                LOG_PROGRESS("Panel motor reverse searching: %.1fmm", reverse_mm);
-            }
-        }
-    } 
-    // 步骤2：完全出纸 - 面板电机快速正转，运行距离：A4纸张长度 + 3-5cm
+        handle_edge_detection(ctrl, eject_detected);
+    }
+    // 步骤2：完全出纸 - 面板电机快速正转
     else if (*eject_detected && ctrl->step_counter < (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS)) {
-        if (nonblocking_panel_step(true)) {
-            ctrl->step_counter++;
-            
-            if (ctrl->step_counter % 1000 == 0) {
-                float progress = (float)ctrl->step_counter / (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS) * 100.0;
-                LOG_PROGRESS("Ejection progress: %.1f%%", progress);
-            }
-            
-            if (ctrl->step_counter >= (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS)) {
-                LOG_MSG("Paper ejection complete (A4 + 3-5cm forward)");
-                *eject_detected = false;
-                enter_state(PAPER_FEEDING);
-            }
-        }
-    } 
-    // 步骤3：如果反转没有检测到纸张，直接进入进纸状态
+        handle_full_ejection(ctrl, eject_detected);
+    }
+    // 步骤3：如果反转没有检测到纸张
     else if (!*eject_detected && ctrl->step_counter >= PAPER_MAX_REVERSE_STEPS) {
-        LOG_MSG("No paper detected in reverse, proceeding to feed");
-        *eject_detected = false;
-        enter_state(PAPER_FEEDING);
+        handle_no_paper_detected(ctrl, eject_detected);
     }
 }
 
 /**
+ * @brief 出纸预检 - 反转3cm检测传感器状态
+ */
+static void handle_eject_pre_check(paper_change_ctrl_t* ctrl, bool* eject_detected) {
+    HANDLE_NULL_POINTER(ctrl, "handle_eject_pre_check");
+    HANDLE_NULL_POINTER(eject_detected, "handle_eject_pre_check");
+    
+    if (nonblocking_panel_step(false)) {
+        ctrl->step_counter++;
+        
+        if (ctrl->step_counter % 100 == 0) {
+            float check_mm = steps_to_mm(ctrl->step_counter, DEFAULT_PANEL_STEPS_PER_MM);
+            LOG_PROGRESS("Ejection pre-check reverse: %.1fmm", check_mm);
+        }
+        
+        if (ctrl->step_counter >= PAPER_EJECT_CHECK_STEPS) {
+            LOG_MSG("Ejection pre-check complete (3cm reverse), starting full detection");
+            ctrl->step_counter = 0;
+        }
+    }
+}
+
+/**
+ * @brief 边沿检测 - 寻找纸张后边缘
+ */
+static void handle_edge_detection(paper_change_ctrl_t* ctrl, bool* eject_detected) {
+    if (nonblocking_panel_step(false)) {
+        ctrl->step_counter++;
+        
+        // 检测纸张边缘：HIGH→LOW电平跳变
+        if (ctrl->paper_sensor_state && !ctrl->last_paper_sensor_state) {
+            LOG_MSG("Paper edge detected in reverse (HIGH->LOW), switching to forward ejection");
+            ctrl->step_counter = 0;
+            *eject_detected = true;
+            
+            // 设置快速正转速度
+            motor_timing_t* panel_timing = get_panel_motor_timing();
+            if (panel_timing) {
+                panel_timing->step_interval = 500; // 2kHz快速出纸
+            }
+        }
+        
+        if (ctrl->step_counter % 200 == 0) {
+            float reverse_mm = steps_to_mm(ctrl->step_counter, DEFAULT_PANEL_STEPS_PER_MM);
+            LOG_PROGRESS("Panel motor reverse searching: %.1fmm", reverse_mm);
+        }
+    }
+}
+
+/**
+ * @brief 完全出纸 - 快速正转A4+4cm距离
+ */
+static void handle_full_ejection(paper_change_ctrl_t* ctrl, bool* eject_detected) {
+    if (nonblocking_panel_step(true)) {
+        ctrl->step_counter++;
+        
+        if (ctrl->step_counter % 1000 == 0) {
+            float progress = (float)ctrl->step_counter / (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS) * 100.0;
+            LOG_PROGRESS("Ejection progress: %.1f%% (Step %d/%d)", 
+                       progress, ctrl->step_counter, (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS));
+        }
+        
+        if (ctrl->step_counter >= (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS)) {
+            LOG_MSG("Paper ejection complete - A4(297mm) + reserve(40mm) = total(337mm), %d steps", 
+                     (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS));
+            *eject_detected = false;
+            enter_state(PAPER_FEEDING);
+        }
+    }
+}
+
+/**
+ * @brief 处理无纸张检测情况
+ */
+static void handle_no_paper_detected(paper_change_ctrl_t* ctrl, bool* eject_detected) {
+    LOG_MSG("No paper detected in reverse, proceeding to feed");
+    *eject_detected = false;
+    enter_state(PAPER_FEEDING);
+}
+
+/**
  * @brief 处理进纸状态逻辑
- * 按照文档步骤1：启动进纸 - 进纸电机开始运动，等待纸张感应器检测到纸张
+ * 
+ * 进纸是换纸流程的第一个主动动作，负责将新纸张送入系统
+ * 这是整个换纸过程的基础，需要确保可靠检测
+ * 
+ * @note 进纸流程：
+ * 1. 启动进纸电机（永不反转，只正向进纸）
+ * 2. 监控纸张传感器，等待检测到纸张前边缘
+ * 3. 检测到纸张后立即停止，准备松开夹紧机构
+ * 
+ * @warning 进纸超时保护：500步内未检测到纸张将报错
+ * 这防止了电机空转导致的硬件损坏
+ * 
+ * @example 实际场景：
+ * 纸张盒中插入A4纸 → 进纸电机启动 → 传感器检测到纸张前边缘 → 进入松开状态
  */
 void handle_feeding_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
-    if (!ctrl) return;
+    HANDLE_NULL_POINTER(ctrl, "handle_feeding_state");
     
+    // 安全检查：防止进纸过程卡死，最多1000步
     CHECK_STATE_SAFETY(1000, "FEEDING");
     
-    // 步骤1：启动进纸 - 等待纸张感应器检测到纸张（高→低跳变）
-    // paper_sensor_state=true表示检测到纸张(低电平)
+    // 步骤1：等待纸张前边缘检测
+    // 传感器跳变检测：HIGH→LOW电平跳变表示检测到纸张前边缘
+    // paper_sensor_state=true 表示传感器检测到纸张（硬件低电平）
     if (ctrl->paper_sensor_state && !ctrl->last_paper_sensor_state) {
-        LOG_MSG("Paper detected by sensor (HIGH->LOW transition), entering unclamp state");
-        STOP_ALL_MOTORS();
-        enter_state(PAPER_UNCLAMP_FEED);
+        LOG_MSG("Paper front edge detected by sensor (HIGH->LOW transition), entering unclamp state");
+        STOP_ALL_MOTORS();              // 立即停止所有电机，精确定位
+        enter_state(PAPER_UNCLAMP_FEED); // 进入松开状态，准备夹紧机构操作
     } else if (ctrl->step_counter > 500) {
+        // 超时保护：500步（约6.25mm）内未检测到纸张
+        // 这通常表示纸张盒为空或传感器故障
         handle_error(ERROR_SENSOR_TIMEOUT, "Feed operation timeout - no paper detected", PAPER_FEEDING);
     } else {
-        // 进纸电机正转，等待检测到纸张
+        // 持续进纸：进纸电机正转，等待检测到纸张
+        // 注意：进纸电机只正转，从不反转，这是机械设计决定的
         if (nonblocking_feed_step(true)) {
             ctrl->step_counter++;
         }
@@ -284,9 +493,11 @@ void handle_feeding_state() {
  */
 void handle_unclamp_feed_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
+    HANDLE_NULL_POINTER(ctrl, "handle_unclamp_feed_state");
+    
     motor_timing_t* clamp_timing = get_clamp_motor_timing();
     motor_timing_t* panel_timing = get_panel_motor_timing();
-    if (!ctrl || !clamp_timing || !panel_timing) return;
+    if (!clamp_timing || !panel_timing) return;
     
     CHECK_STATE_SAFETY(PAPER_1_5CM_STEPS + PAPER_3_5CM_STEPS + 100, "UNCLAMP_FEED");
     
@@ -507,6 +718,13 @@ void check_button_press() {
     }
     
     last_button_state = button_pressed;
+}
+
+/**
+ * @brief 纸张换纸状态机更新函数 - 公共接口
+ */
+void paper_state_machine_update() {
+    handle_state_machine_update();
 }
 
 #endif // AUTO_PAPER_CHANGE_ENABLE

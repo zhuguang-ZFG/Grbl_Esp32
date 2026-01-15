@@ -103,31 +103,56 @@ void set_static_flags(bool positioning_init_val, bool eject_detected_val, bool r
 /**
  * @brief 初始化换纸系统
  */
-void paper_change_init() {
-    LOG_MSG("Initializing Paper Change System v4.0");
+// ================================================================================
+// 初始化辅助函数 - 提高代码可读性
+// ================================================================================
+
+/**
+ * @brief 硬件系统初始化
+ * @return true=成功, false=失败
+ */
+static bool init_hardware_system() {
+    LOG_MSG("Initializing hardware system");
     
     // 硬件初始化
     hc595_init();
     sensor_system_init();
     
+    // HR4988 VREF动态电流控制初始化
+    if (!init_hr4988_vref()) {
+        LOG_WARNING("HR4988 VREF initialization failed, using default current");
+    }
+    
+    return true;
+}
+
+/**
+ * @brief 系统验证和自检
+ * @return true=通过, false=失败
+ */
+static bool validate_and_selftest() {
+    LOG_MSG("Validating system parameters and running self-test");
+    
     // 系统参数验证
     if (!validate_system_parameters()) {
         LOG_ERROR("System parameters validation failed");
-        return;
+        return false;
     }
     
     // 硬件自检
     if (!hardware_self_test()) {
         LOG_ERROR("Hardware self-test failed");
-        return;
+        return false;
     }
     
-    // 启用换纸电机（系统初始化完成）
-    enable_paper_motors();
-    LOG_MSG("Paper change system initialization complete");
-    
-    // 初始化电机时序
-    init_motor_timing();
+    return true;
+}
+
+/**
+ * @brief 初始化控制结构和数据
+ */
+static void init_control_structures() {
+    LOG_MSG("Initializing control structures");
     
     // 初始化控制结构
     memset(&paper_ctrl, 0, sizeof(paper_change_ctrl_t));
@@ -144,6 +169,44 @@ void paper_change_init() {
     positioning_init = false;
     eject_detected = false;
     reverse_complete = false;
+}
+
+/**
+ * @brief 完成系统初始化
+ */
+static void complete_initialization() {
+    // 启用换纸电机（系统初始化完成）
+    enable_paper_motors();
+    LOG_MSG("Paper change system initialization complete");
+    
+    // 初始化电机时序
+    init_motor_timing();
+}
+
+// ================================================================================
+// 主初始化函数 - 简化版本
+// ================================================================================
+
+void paper_change_init() {
+    LOG_MSG("Initializing Paper Change System v4.0");
+    
+    // 硬件系统初始化
+    if (!init_hardware_system()) {
+        LOG_ERROR("Hardware initialization failed");
+        return;
+    }
+    
+    // 系统验证和自检
+    if (!validate_and_selftest()) {
+        LOG_ERROR("System validation failed");
+        return;
+    }
+    
+    // 初始化控制结构
+    init_control_structures();
+    
+    // 完成初始化
+    complete_initialization();
     
     LOG_MSG("Paper Change System initialized successfully");
 }
@@ -200,19 +263,40 @@ void paper_change_stop() {
 
 /**
  * @brief 更新换纸状态机 - 在主循环中调用
+ * 
+ * 这是换纸系统的主循环更新函数，负责：
+ * 1. 传感器状态采样和跳变检测
+ * 2. 状态机逻辑更新
+ * 3. 用户按钮状态检查
+ * 
+ * @note 调用频率：由主循环决定，通常每几毫秒调用一次
+ * @warning 必须按顺序执行：先更新传感器，再更新状态机
+ * 
+ * @example 执行流程：
+ * 读取传感器 → 检测跳变 → 更新状态机 → 处理按钮 → 等待下次调用
  */
 void paper_change_update() {
     paper_change_ctrl_t* ctrl = get_paper_control();
-    if (!ctrl) return;
+    if (!ctrl) {
+        LOG_ERROR("Control structure not available for update");
+        return;
+    }
     
-    // 更新传感器状态
-    ctrl->last_paper_sensor_state = ctrl->paper_sensor_state;
-    ctrl->paper_sensor_state = read_paper_sensor_debounced();
+    // 步骤1：传感器状态更新和跳变检测
+    // 顺序很重要：先保存上一状态，再读取当前状态
+    ctrl->last_paper_sensor_state = ctrl->paper_sensor_state;  // 保存上一状态（用于跳变检测）
+    ctrl->paper_sensor_state = read_paper_sensor_debounced();   // 读取当前去抖动状态
     
-    // 更新状态机
+    // 步骤2：状态机逻辑更新
+    // 基于传感器状态和当前状态，执行相应的业务逻辑
     paper_state_machine_update();
     
-    // 检查按钮状态
+    // 步骤2.5：HR4988 VREF控制更新
+    // 更新动态电流控制状态
+    update_hr4988_vref();
+    
+    // 步骤3：用户交互检查
+    // 检查一键换纸按钮是否被按下
     check_button_press();
 }
 

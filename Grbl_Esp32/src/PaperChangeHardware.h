@@ -12,6 +12,7 @@
 #include "Grbl.h"
 #include "PaperChangeConfig.h"
 #include "PaperChangeTypes.h"
+#include "HR4988VREF_SIMPLE.h"
 
 // ================================================================================
 // 硬件抽象层接口 - 便于移植和维护
@@ -114,5 +115,46 @@ void set_button_led(bool on);
  * @return true=LED亮，false=LED灭
  */
 bool get_button_led();
+
+// ================================================================================
+// HR4988 VREF动态电流控制接口
+// ================================================================================
+
+/**
+ * @brief 初始化HR4988 VREF控制（简化版）
+ * @return true=成功, false=失败
+ */
+bool init_hr4988_vref();
+
+/**
+ * @brief 设置换纸系统电机工作电流
+ * @param current 电流 (A)
+ * @return true=成功, false=失败
+ */
+bool set_paper_motor_current(float current);
+
+/**
+ * @brief 设置换纸系统工作模式
+ * @param mode 工作模式
+ * @return true=成功, false=失败
+ */
+bool set_paper_motor_mode(motor_current_mode_t mode);
+
+/**
+ * @brief 为特定换纸阶段设置合适的电流
+ * @param phase 换纸阶段
+ */
+void set_current_for_paper_phase(paper_change_state_t phase);
+
+/**
+ * @brief 更新HR4988 VREF控制状态
+ * 需要在主循环中定期调用
+ */
+void update_hr4988_vref();
+
+/**
+ * @brief 输出HR4988 VREF状态信息
+ */
+void print_hr4988_vref_status();
 
 #endif // AUTO_PAPER_CHANGE_ENABLE

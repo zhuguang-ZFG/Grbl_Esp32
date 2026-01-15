@@ -14,14 +14,27 @@
 #include "PaperChangeTypes.h"
 
 // ================================================================================
+// 前置声明 - 解决编译依赖问题
+// ================================================================================
+
+// 错误处理函数
+void handle_error(paper_error_type_t error_type, const char* description, paper_change_state_t current_state);
+
+// HC595硬件控制函数
+void hc595_update(void);
+void hc595_force_update(void);
+
+// ================================================================================
 // 通用宏定义 - 简化常用操作
 // ================================================================================
 
 // 日志输出宏 - 修正多参数问题
-#define LOG_MSG(msg) grbl_sendf(CLIENT_ALL, "[MSG: %s]\r\n", msg)
-#define LOG_ERROR(msg) grbl_sendf(CLIENT_ALL, "[MSG: ERROR - %s]\r\n", msg)
+#define LOG_MSG(msg, ...) grbl_sendf(CLIENT_ALL, "[MSG: " msg "]\r\n", ##__VA_ARGS__)
+#define LOG_ERROR(msg, ...) grbl_sendf(CLIENT_ALL, "[MSG: ERROR - " msg "]\r\n", ##__VA_ARGS__)
+#define LOG_WARNING(msg, ...) grbl_sendf(CLIENT_ALL, "[MSG: WARNING - " msg "]\r\n", ##__VA_ARGS__)
 #define LOG_MSG_F(format, ...) grbl_sendf(CLIENT_ALL, "[MSG: " format "]\r\n", ##__VA_ARGS__)
 #define LOG_ERROR_F(format, ...) grbl_sendf(CLIENT_ALL, "[MSG: ERROR - " format "]\r\n", ##__VA_ARGS__)
+#define LOG_WARNING_F(format, ...) grbl_sendf(CLIENT_ALL, "[MSG: WARNING - " format "]\r\n", ##__VA_ARGS__)
 #define LOG_PROGRESS(format, ...) grbl_sendf(CLIENT_ALL, "[MSG: " format "]\r\n", ##__VA_ARGS__)
 #define LOG_DEBUG(format, ...) do { \
     if (PAPER_DEBUG_ENABLED) { \
@@ -37,6 +50,107 @@
             return; \
         } \
     } while(0)
+
+// ================================================================================
+// 统一的错误处理宏系统 - 标准化错误处理
+// ================================================================================
+
+// 基础错误检查宏
+#define CHECK_NULL(ptr, error_msg) \
+    do { \
+        if (!(ptr)) { \
+            LOG_ERROR(error_msg); \
+            return false; \
+        } \
+    } while(0)
+
+#define CHECK_NULL_RETURN(ptr, error_msg, return_value) \
+    do { \
+        if (!(ptr)) { \
+            LOG_ERROR(error_msg); \
+            return return_value; \
+        } \
+    } while(0)
+
+#define CHECK_NULL_VOID(ptr, error_msg) \
+    do { \
+        if (!(ptr)) { \
+            LOG_ERROR(error_msg); \
+            return; \
+        } \
+    } while(0)
+
+#define CHECK_RANGE(value, min_val, max_val, error_msg) \
+    do { \
+        if ((value) < (min_val) || (value) > (max_val)) { \
+            LOG_ERROR_F(error_msg ": %d (expected %d-%d)", (int)(value), (int)(min_val), (int)(max_val)); \
+            return false; \
+        } \
+    } while(0)
+
+#define CHECK_RANGE_RETURN(value, min_val, max_val, error_msg, return_value) \
+    do { \
+        if ((value) < (min_val) || (value) > (max_val)) { \
+            LOG_ERROR_F(error_msg ": %d (expected %d-%d)", (int)(value), (int)(min_val), (int)(max_val)); \
+            return return_value; \
+        } \
+    } while(0)
+
+// 带错误处理的增强版宏
+#define HANDLE_ERROR_CHECK(condition, error_msg, return_value) \
+    do { \
+        if (condition) { \
+            LOG_ERROR(error_msg); \
+            handle_error(ERROR_PARAMETER_INVALID, error_msg, PAPER_ERROR); \
+            return return_value; \
+        } \
+    } while(0)
+
+#define HANDLE_ERROR_CHECK_VOID(condition, error_msg) \
+    do { \
+        if (condition) { \
+            LOG_ERROR(error_msg); \
+            handle_error(ERROR_PARAMETER_INVALID, error_msg, PAPER_ERROR); \
+            return; \
+        } \
+    } while(0)
+
+// 函数名相关的错误检查宏（兼容旧代码）
+#define HANDLE_NULL_POINTER(ptr, func_name) \
+    HANDLE_ERROR_CHECK_VOID(!(ptr), "Null pointer in " func_name)
+
+#define HANDLE_NULL_POINTER_RETURN(ptr, func_name, return_value) \
+    HANDLE_ERROR_CHECK(!(ptr), "Null pointer in " func_name, return_value)
+
+#define HANDLE_INVALID_RANGE(value, min_val, max_val, func_name, param_name) \
+    do { \
+        if ((value) < (min_val) || (value) > (max_val)) { \
+            LOG_ERROR_F("Invalid range in %s: %s = %d (expected %d-%d)", \
+                        func_name, param_name, (int)(value), (int)(min_val), (int)(max_val)); \
+            handle_error(ERROR_PARAMETER_INVALID, "Invalid range", PAPER_ERROR); \
+            return; \
+        } \
+    } while(0)
+
+#define HANDLE_INVALID_RANGE_RETURN(value, min_val, max_val, func_name, param_name, return_value) \
+    do { \
+        if ((value) < (min_val) || (value) > (max_val)) { \
+            LOG_ERROR_F("Invalid range in %s: %s = %d (expected %d-%d)", \
+                        func_name, param_name, (int)(value), (int)(min_val), (int)(max_val)); \
+            handle_error(ERROR_PARAMETER_INVALID, "Invalid range", PAPER_ERROR); \
+            return return_value; \
+        } \
+    } while(0)
+
+// 条件错误检查宏
+#define CHECK_CONDITION(condition, error_msg) \
+    HANDLE_ERROR_CHECK(condition, error_msg, false)
+
+#define CHECK_CONDITION_RETURN(condition, error_msg, return_value) \
+    HANDLE_ERROR_CHECK(condition, error_msg, return_value)
+
+#define CHECK_CONDITION_VOID(condition, error_msg) \
+    HANDLE_ERROR_CHECK_VOID(condition, error_msg)
 
 // 电机控制宏 - 快速操作
 #define STOP_ALL_MOTORS() stop_all_motors()

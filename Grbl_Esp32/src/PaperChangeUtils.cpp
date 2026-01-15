@@ -115,34 +115,69 @@ bool nonblocking_motor_step(const motor_config_t* config, bool forward) {
     return true;
 }
 
+// ================================================================================
+// 通用电机控制函数 - 消除重复代码
+// ================================================================================
+
+/**
+ * @brief 通用的非阻塞电机步进函数
+ * @param step_bit 步进控制位
+ * @param dir_bit 方向控制位
+ * @param interval_us 步进间隔（微秒）
+ * @param name 电机名称
+ * @param timing_func 获取时序控制的函数指针
+ * @param forward 前进方向
+ * @return 是否执行了步进
+ */
+static inline bool nonblocking_motor_step_generic(
+    uint8_t step_bit, 
+    uint8_t dir_bit, 
+    uint32_t interval_us,
+    const char* name,
+    motor_timing_t* (*timing_func)(),
+    bool forward) {
+    
+    motor_config_t config = {
+        .step_bit = step_bit,
+        .dir_bit = dir_bit,
+        .step_interval = interval_us,
+        .name = name,
+        .timing = timing_func()
+    };
+    
+    return nonblocking_motor_step(&config, forward);
+}
+
+// ================================================================================
+// 具体电机控制函数实现 - 调用通用函数
+// ================================================================================
+
 /**
  * @brief 面板电机非阻塞步进
  */
 bool nonblocking_panel_step(bool forward) {
-    motor_config_t config = {
-        .step_bit = BIT_PANEL_MOTOR_STEP,
-        .dir_bit = BIT_PANEL_MOTOR_DIR,
-        .step_interval = PAPER_PANEL_INTERVAL_US, // 面板电机专用间隔
-        .name = "Panel",
-        .timing = get_panel_motor_timing()
-    };
-    
-    return nonblocking_motor_step(&config, forward);
+    return nonblocking_motor_step_generic(
+        BIT_PANEL_MOTOR_STEP,
+        BIT_PANEL_MOTOR_DIR,
+        PAPER_PANEL_INTERVAL_US,
+        "Panel",
+        get_panel_motor_timing,
+        forward
+    );
 }
 
 /**
  * @brief 进纸电机非阻塞步进
  */
 bool nonblocking_feed_step(bool forward) {
-    motor_config_t config = {
-        .step_bit = BIT_FEED_MOTOR_STEP,
-        .dir_bit = BIT_FEED_MOTOR_DIR,
-        .step_interval = PAPER_FEED_INTERVAL_US,
-        .name = "Feed",
-        .timing = get_feed_motor_timing()
-    };
-    
-    return nonblocking_motor_step(&config, forward);
+    return nonblocking_motor_step_generic(
+        BIT_FEED_MOTOR_STEP,
+        BIT_FEED_MOTOR_DIR,
+        PAPER_FEED_INTERVAL_US,
+        "Feed",
+        get_feed_motor_timing,
+        forward
+    );
 }
 
 /**
@@ -151,15 +186,14 @@ bool nonblocking_feed_step(bool forward) {
  * @return 是否执行了步进
  */
 bool nonblocking_clamp_step(bool forward) {
-    motor_config_t config = {
-        .step_bit = BIT_PAPER_CLAMP_STEP,
-        .dir_bit = BIT_PAPER_CLAMP_DIR,
-        .step_interval = PAPER_CLAMP_INTERVAL_US, // 夹紧电机专用间隔
-        .name = "Clamp",
-        .timing = get_clamp_motor_timing()
-    };
-    
-    return nonblocking_motor_step(&config, forward);
+    return nonblocking_motor_step_generic(
+        BIT_PAPER_CLAMP_STEP,
+        BIT_PAPER_CLAMP_DIR,
+        PAPER_CLAMP_INTERVAL_US,
+        "Clamp",
+        get_clamp_motor_timing,
+        forward
+    );
 }
 
 // ================================================================================
