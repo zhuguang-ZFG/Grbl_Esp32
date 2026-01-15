@@ -6,6 +6,7 @@
 */
 
 #include "Grbl.h"
+#include <math.h>
 
 #ifdef AUTO_PAPER_CHANGE_ENABLE
 #include "PaperChangeConfig.h"
@@ -44,22 +45,31 @@ void init_motor_timing() {
     
     uint32_t current_time = micros();
     
+    // 初始化面板电机时序
     if (panel_timing) {
         panel_timing->last_step_time = current_time;
         panel_timing->step_interval = PAPER_PRE_CHECK_INTERVAL_US;
         panel_timing->step_pending = false;
+    } else {
+        LOG_ERROR("Panel motor timing is NULL during initialization");
     }
     
+    // 初始化进纸电机时序
     if (feed_timing) {
         feed_timing->last_step_time = current_time;
         feed_timing->step_interval = PAPER_FEED_INTERVAL_US;
         feed_timing->step_pending = false;
+    } else {
+        LOG_ERROR("Feed motor timing is NULL during initialization");
     }
     
+    // 初始化夹紧电机时序
     if (clamp_timing) {
         clamp_timing->last_step_time = current_time;
         clamp_timing->step_interval = PAPER_CLAMP_INTERVAL_US;
         clamp_timing->step_pending = false;
+    } else {
+        LOG_ERROR("Clamp motor timing is NULL during initialization");
     }
 }
 
@@ -137,12 +147,19 @@ static inline bool nonblocking_motor_step_generic(
     motor_timing_t* (*timing_func)(),
     bool forward) {
     
+    // 安全检查
+    motor_timing_t* timing = timing_func();
+    if (!timing) {
+        LOG_ERROR("Motor timing function returned NULL for %s", name);
+        return false;
+    }
+    
     motor_config_t config = {
         .step_bit = step_bit,
         .dir_bit = dir_bit,
         .step_interval = interval_us,
         .name = name,
-        .timing = timing_func()
+        .timing = timing
     };
     
     return nonblocking_motor_step(&config, forward);
@@ -204,7 +221,8 @@ bool nonblocking_clamp_step(bool forward) {
  * @brief 步数转换为毫米
  */
 float steps_to_mm(uint32_t steps, float steps_per_mm) {
-    if (steps_per_mm <= 0) return 0;
+    if (steps_per_mm <= 0 || steps_per_mm > 10000.0f) return 0;
+    if (steps > UINT32_MAX) return 0;
     return (float)steps / steps_per_mm;
 }
 
@@ -212,8 +230,14 @@ float steps_to_mm(uint32_t steps, float steps_per_mm) {
  * @brief 毫米转换为步数
  */
 uint32_t mm_to_steps(float mm, float steps_per_mm) {
-    if (steps_per_mm <= 0) return 0;
-    return (uint32_t)(mm * steps_per_mm);
+    // 检查输入参数的有效性
+    if (steps_per_mm <= 0 || steps_per_mm > 10000.0f) return 0;
+    if (mm < 0 || mm > 10000.0f || isnan(mm) || isinf(mm)) return 0;
+    
+    float result = mm * steps_per_mm;
+    if (result > UINT32_MAX) return UINT32_MAX;
+    
+    return (uint32_t)result;
 }
 
 /**
@@ -451,8 +475,16 @@ void handle_error(paper_error_type_t error_type, const char* description, paper_
     error_info->error_time = millis();
     error_info->error_state = current_state;
     error_info->step_count_at_error = ctrl->step_counter;
-    strncpy(error_info->error_description, description, sizeof(error_info->error_description) - 1);
-    error_info->error_description[sizeof(error_info->error_description) - 1] = '\0';
+    
+    // 使用安全的字符串操作，防止缓冲区溢出
+    if (description != NULL) {
+        snprintf(error_info->error_description, sizeof(error_info->error_description), 
+                "%s", description);
+    } else {
+        strncpy(error_info->error_description, "Unknown error", 
+                sizeof(error_info->error_description) - 1);
+        error_info->error_description[sizeof(error_info->error_description) - 1] = '\0';
+    }
     
     // 发送错误报告
     grbl_sendf(CLIENT_ALL, "[MSG: ERROR - %s (State: %s, Steps: %lu, Retry: %u)]\r\n",
