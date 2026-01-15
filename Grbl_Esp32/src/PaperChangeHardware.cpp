@@ -71,20 +71,67 @@ static HC595BatchUpdater hc595_updater;
  * @brief HC595移位寄存器初始化
  */
 void hc595_init() {
-    // 引脚冲突检测
+    // 全面的引脚冲突检测
+    bool pin_conflict = false;
+    
+    // 检查所有可能冲突的引脚
     #ifdef X_STEP_PIN
     if (HC595_LATCH_PIN == X_STEP_PIN) {
         grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_LATCH_PIN (%d) conflicts with X_STEP_PIN (%d)]\n", HC595_LATCH_PIN, X_STEP_PIN);
-        delay(1000);
-        return;
+        pin_conflict = true;
+    }
+    if (HC595_DATA_PIN == X_STEP_PIN) {
+        grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_DATA_PIN (%d) conflicts with X_STEP_PIN (%d)]\n", HC595_DATA_PIN, X_STEP_PIN);
+        pin_conflict = true;
+    }
+    if (HC595_CLOCK_PIN == X_STEP_PIN) {
+        grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_CLOCK_PIN (%d) conflicts with X_STEP_PIN (%d)]\n", HC595_CLOCK_PIN, X_STEP_PIN);
+        pin_conflict = true;
+    }
+    #endif
+    
+    #ifdef Y_STEP_PIN
+    if (HC595_LATCH_PIN == Y_STEP_PIN) {
+        grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_LATCH_PIN (%d) conflicts with Y_STEP_PIN (%d)]\n", HC595_LATCH_PIN, Y_STEP_PIN);
+        pin_conflict = true;
+    }
+    if (HC595_DATA_PIN == Y_STEP_PIN) {
+        grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_DATA_PIN (%d) conflicts with Y_STEP_PIN (%d)]\n", HC595_DATA_PIN, Y_STEP_PIN);
+        pin_conflict = true;
+    }
+    if (HC595_CLOCK_PIN == Y_STEP_PIN) {
+        grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_CLOCK_PIN (%d) conflicts with Y_STEP_PIN (%d)]\n", HC595_CLOCK_PIN, Y_STEP_PIN);
+        pin_conflict = true;
+    }
+    #endif
+    
+    #ifdef Z_STEP_PIN
+    if (HC595_LATCH_PIN == Z_STEP_PIN) {
+        grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_LATCH_PIN (%d) conflicts with Z_STEP_PIN (%d)]\n", HC595_LATCH_PIN, Z_STEP_PIN);
+        pin_conflict = true;
+    }
+    if (HC595_DATA_PIN == Z_STEP_PIN) {
+        grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_DATA_PIN (%d) conflicts with Z_STEP_PIN (%d)]\n", HC595_DATA_PIN, Z_STEP_PIN);
+        pin_conflict = true;
+    }
+    if (HC595_CLOCK_PIN == Z_STEP_PIN) {
+        grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_CLOCK_PIN (%d) conflicts with Z_STEP_PIN (%d)]\n", HC595_CLOCK_PIN, Z_STEP_PIN);
+        pin_conflict = true;
     }
     #endif
     
     #ifdef STEPPERS_DISABLE_PIN
     if (HC595_LATCH_PIN == STEPPERS_DISABLE_PIN) {
         grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_LATCH_PIN (%d) conflicts with STEPPERS_DISABLE_PIN (%d)]\n", HC595_LATCH_PIN, STEPPERS_DISABLE_PIN);
-        delay(1000);
-        return;
+        pin_conflict = true;
+    }
+    if (HC595_DATA_PIN == STEPPERS_DISABLE_PIN) {
+        grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_DATA_PIN (%d) conflicts with STEPPERS_DISABLE_PIN (%d)]\n", HC595_DATA_PIN, STEPPERS_DISABLE_PIN);
+        pin_conflict = true;
+    }
+    if (HC595_CLOCK_PIN == STEPPERS_DISABLE_PIN) {
+        grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595_CLOCK_PIN (%d) conflicts with STEPPERS_DISABLE_PIN (%d)]\n", HC595_CLOCK_PIN, STEPPERS_DISABLE_PIN);
+        pin_conflict = true;
     }
     #endif
     
@@ -94,7 +141,14 @@ void hc595_init() {
         HC595_CLOCK_PIN == HC595_LATCH_PIN) {
         grbl_sendf(CLIENT_ALL, "[MSG: Error: HC595 pins have conflicts: DATA=%d, CLOCK=%d, LATCH=%d]\n", 
                    HC595_DATA_PIN, HC595_CLOCK_PIN, HC595_LATCH_PIN);
-        delay(1000);
+        pin_conflict = true;
+    }
+    
+    // 如果发现冲突，进入系统错误状态
+    if (pin_conflict) {
+        grbl_sendf(CLIENT_ALL, "[MSG: FATAL: GPIO conflict detected. Halting initialization.\n]");
+        delay(2000);
+        // 系统级错误处理 - 不应该继续初始化
         return;
     }
     

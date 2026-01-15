@@ -50,7 +50,7 @@ Setting::Setting(
         for (const char* s = fullName; *s; s++) {
             hash = ((hash << 5) ^ (hash >> 27)) ^ (*s);
         }
-        sprintf(hashName, "%.7s%08x", fullName, hash);
+        snprintf(hashName, 16, "%.7s%08x", fullName, hash);
         _keyName = hashName;
     }
 }

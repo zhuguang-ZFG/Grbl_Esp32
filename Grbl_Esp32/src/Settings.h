@@ -132,7 +132,12 @@ public:
         return Error::Ok;
     }
 
-    ~Setting() {}
+    ~Setting() { 
+        // 释放动态分配的内存
+        if (_keyName != _fullName) {
+            free((void*)_keyName);
+        }
+    }
     // Setting(const char *description, group_t group, const char * grblName, const char* fullName, bool (*checker)(char *));
     Setting(const char* description, type_t type, permissions_t permissions, const char* grblName, const char* fullName, bool (*checker)(char*));
     axis_t getAxis() { return _axis; }
