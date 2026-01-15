@@ -16,14 +16,15 @@
     - Enable:   GPIO4 (shared for all 4 HR4988 drivers, nENABLE active low)
 
     === Paper Change System (74HC595D Control) ===
-- 74HC595D Data Pin: GPIO21 (SI input) - 74HC595D Pin 14
-- 74HC595D Clock Pin: GPIO16 (SRCLK input) - 74HC595D Pin 11
-- 74HC595D Latch Pin: GPIO17 (RCLK input) - 74HC595D Pin 12
+- 74HC595D Data Pin: GPIO32 (SI input) - 74HC595D Pin 14
+- 74HC595D Clock Pin: GPIO3 (SRCLK input) - 74HC595D Pin 11
+- 74HC595D Latch Pin: GPIO5 (RCLK input) - 74HC595D Pin 12
 - 74HC595D Clear Pin: VCC (SRCLR input) - 74HC595D Pin 10 (高电平，不复位)
 - 74HC595D OE Pin: GND (OE input) - 74HC595D Pin 13 (低电平，使能输出)
     - Paper Sensor: GPIO34 (paper presence detection)
-    - One-Click Button: GPIO35 (input only pin)
-    - Paper Motors Enable: GPIO26 + HC595 Q0 (双重使能控制)
+    - One-Click Button: GPIO35 (input only pin, with pull-down resistor)
+    - Button LED Control: HC595 Q0 - 按钮指示灯控制
+    - Paper Motors Enable: GPIO26 + HC595 Q1 (互斥使能控制)
     - Feed Motor: HC595 pins Q6/Q7 (DIR/STEP)
     - Panel Motor: HC595 pins Q4/Q5 (DIR/STEP) 
     - Clamp Motor: HC595 pins Q2/Q3 (DIR/STEP)
@@ -77,19 +78,23 @@
 // 74HC595D Shift Register Control
 // 用户提供的实际硬件连接：
 // 74HC595D Pin 10 (SRCLR) ←→ VCC (高电平，不复位)
-// 74HC595D Pin 11 (SRCLK) ←→ ESP32 GPIO16
-// 74HC595D Pin 12 (RCLK) ←→ ESP32 GPIO17
+// 74HC595D Pin 11 (SRCLK) ←→ ESP32 GPIO3
+// 74HC595D Pin 12 (RCLK) ←→ ESP32 GPIO5
 // 74HC595D Pin 13 (OE) ←→ GND (低电平，使能输出)
-// 74HC595D Pin 14 (SI) ←→ ESP32 GPIO21
-#define HC595_DATA_PIN            GPIO_NUM_21    // Serial data input (SI pin) - 74HC595D Pin 14
-#define HC595_CLOCK_PIN           GPIO_NUM_16    // Shift register clock (SRCLK) - 74HC595D Pin 11
-#define HC595_LATCH_PIN           GPIO_NUM_17    // Register clock (RCLK) - 74HC595D Pin 12
+// 74HC595D Pin 14 (SI) ←→ ESP32 GPIO32
+#define HC595_DATA_PIN            GPIO_NUM_32    // Serial data input (SI pin) - 74HC595D Pin 14
+#define HC595_CLOCK_PIN           GPIO_NUM_3     // Shift register clock (SRCLK) - 74HC595D Pin 11
+#define HC595_LATCH_PIN           GPIO_NUM_5     // Register clock (RCLK) - 74HC595D Pin 12
 
-// Paper Sensor Input
-#define PAPER_SENSOR_PIN          GPIO_NUM_34    // Paper presence sensor (input only pin)
+// Paper Sensor Input (Low active)
+#define PAPER_SENSOR_PIN          GPIO_NUM_34    // Paper presence sensor (input only pin, LOW=paper detected)
 
 // One-Click Button Input (GPIO, not HC595)
-#define PAPER_BUTTON_PIN          GPIO_NUM_35    // One-click paper change button (input only pin)
+#define PAPER_BUTTON_PIN          GPIO_NUM_35    // One-click paper change button (input only pin, LOW=pressed, with pull-up)
+
+// HR4988 Driver Reference Voltage Control
+// GPIO25 connected to VREF pin of HR4988 drivers for current setting
+#define HR4988_VREF_PIN           GPIO_NUM_25    // HR4988 VREF current control pin
 
 // Paper Motors Enable Control (dual control)
 // GPIO26: XYZ轴使能控制（互斥逻辑）
@@ -101,7 +106,7 @@
 // 注意：PAPER_MOTORS_ENABLE 已移动到74HC595D Q1控制
 
 // 74HC595D Output Mapping (based on pin numbers)
-// Q0 (pin 15): Not used
+// Q0 (pin 15): BUTTON_LED_CONTROL      - 一键换纸按钮指示灯控制(LOW=亮, HIGH=灭)
 // Q1 (pin 1):  PAPER_MOTORS_ENABLE      - 换纸电机HR4988额外使能控制(配合GPIO26)  
 // Q2 (pin 2):  PAPER_CLAMP_DIR_PIN      - 压纸抬落电机方向控制
 // Q3 (pin 3):  PAPER_CLAMP_STEP_PIN     - 压纸抬落电机步进控制
@@ -111,6 +116,7 @@
 // Q7 (pin 7):  FEED_MOTOR_STEP_PIN      - 进纸器电机步进控制
 
 // Bit positions in 74HC595D shift register (0-7)
+#define BIT_BUTTON_LED_CONTROL       0    // Q0 - 按钮指示灯控制
 #define BIT_PAPER_MOTORS_ENABLE    1    // Q1 - 换纸电机使能
 #define BIT_PAPER_CLAMP_DIR         2    // Q2 - 压纸抬落电机方向
 #define BIT_PAPER_CLAMP_STEP        3    // Q3 - 压纸抬落电机步进

@@ -121,15 +121,15 @@ void hc595_write_fast(uint8_t data) {
  * @brief 传感器系统初始化
  */
 void sensor_system_init() {
-    pinMode(PAPER_SENSOR_PIN, INPUT);  // GPIO34是输入专用引脚
-    pinMode(PAPER_BUTTON_PIN, INPUT);  // GPIO35是输入专用引脚
+    pinMode(PAPER_SENSOR_PIN, INPUT_PULLUP);  // GPIO34低电平有效，启用内部上拉
+    pinMode(PAPER_BUTTON_PIN, INPUT_PULLUP);  // GPIO35按键，启用内部上拉
 }
 
 /**
  * @brief 读取纸张传感器原始状态
  */
 bool read_paper_sensor_raw() {
-    return digitalRead(PAPER_SENSOR_PIN) == HIGH;
+    return digitalRead(PAPER_SENSOR_PIN) == LOW;  // 低电平有效
 }
 
 /**
@@ -157,7 +157,7 @@ bool read_paper_sensor_debounced() {
  * @brief 按钮状态读取
  */
 bool read_button_state() {
-    return digitalRead(PAPER_BUTTON_PIN) == HIGH;
+    return digitalRead(PAPER_BUTTON_PIN) == LOW;  // 低电平有效
 }
 
 // ================================================================================
@@ -255,8 +255,12 @@ bool hardware_self_test() {
 void enable_paper_motors() {
     #ifdef PAPER_MOTORS_ENABLE
     digitalWrite(PAPER_MOTORS_ENABLE, LOW);  // LOW = 使能
-    LOG_MSG("Paper motors ENABLED");
     #endif
+    
+    // 同时设置HC595 Q1位为低电平（使能换纸电机）
+    hc595_set_bit(BIT_PAPER_MOTORS_ENABLE, LOW);
+    
+    LOG_MSG("Paper motors ENABLED (GPIO26=LOW, Q1=LOW)");
 }
 
 /**
@@ -265,8 +269,12 @@ void enable_paper_motors() {
 void disable_paper_motors() {
     #ifdef PAPER_MOTORS_ENABLE
     digitalWrite(PAPER_MOTORS_ENABLE, HIGH);  // HIGH = 禁用
-    LOG_MSG("Paper motors DISABLED");
     #endif
+    
+    // 同时设置HC595 Q1位为高电平（禁用换纸电机）
+    hc595_set_bit(BIT_PAPER_MOTORS_ENABLE, HIGH);
+    
+    LOG_MSG("Paper motors DISABLED (GPIO26=HIGH, Q1=HIGH)");
 }
 
 /**
