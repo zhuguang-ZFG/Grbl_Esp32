@@ -31,10 +31,11 @@ void user_define_mcode1000() {
         // 测试所有模式
         motor_current_mode_t modes[] = {
             MOTOR_MODE_STANDBY, MOTOR_MODE_PRECISION, MOTOR_MODE_NORMAL,
-            MOTOR_MODE_HIGH_TORQUE, MOTOR_MODE_MAXIMUM
+            MOTOR_MODE_HIGH_TORQUE, MOTOR_MODE_MAXIMUM, MOTOR_MODE_ADAPTIVE
         };
         
-        for (int i = 0; i < MOTOR_MODE_COUNT; i++) {
+        const int mode_count = sizeof(modes) / sizeof(modes[0]);
+        for (int i = 0; i < mode_count; i++) {
             grbl_sendf(CLIENT_ALL, "[MSG: Testing %s mode]\r\n", 
                          hr4988_simple_get_mode_name(modes[i]));
             

@@ -481,9 +481,8 @@ void handle_error(paper_error_type_t error_type, const char* description, paper_
         snprintf(error_info->error_description, sizeof(error_info->error_description), 
                 "%s", description);
     } else {
-        strncpy(error_info->error_description, "Unknown error", 
-                sizeof(error_info->error_description) - 1);
-        error_info->error_description[sizeof(error_info->error_description) - 1] = '\0';
+        snprintf(error_info->error_description, sizeof(error_info->error_description), 
+                "%s", "Unknown error");
     }
     
     // 发送错误报告
