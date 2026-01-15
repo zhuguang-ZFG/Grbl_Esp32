@@ -206,7 +206,13 @@ void limits_go_home(uint8_t cycle_mask) {
                     break;
                 }
             }
-        } while (STEP_MASK & axislock);
+        } while ((STEP_MASK & axislock) && !sys.abort);
+        
+        // 检查是否因超时而中止
+        if ((STEP_MASK & axislock) && sys.abort) {
+            grbl_msg_sendf(CLIENT_ALL, MsgLevel::Debug, "Homing cycle timeout or aborted");
+            return;
+        }
 #ifdef USE_I2S_STEPS
         if (current_stepper == ST_I2S_STREAM) {
             if (!approach) {
