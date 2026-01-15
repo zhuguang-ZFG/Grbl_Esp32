@@ -401,7 +401,7 @@ bool hr4988_simple_self_test() {
     for (int i = 0; i < test_count; i++) {
         if (hr4988_simple_set_current(test_currents[i])) {
             LOG_MSG_F("Test %d: %.2fA - OK", i + 1, test_currents[i]);
-            delay(100); // 等待DAC稳定
+            delay(DAC_STABILIZATION_DELAY_MS); // 等待DAC稳定
         } else {
             LOG_ERROR_F("Test %d: %.2fA - FAILED", i + 1, test_currents[i]);
             return false;
