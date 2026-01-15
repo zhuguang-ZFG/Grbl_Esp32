@@ -22,7 +22,7 @@
 - 74HC595D Clear Pin: VCC (SRCLR input) - 74HC595D Pin 10 (高电平，不复位)
 - 74HC595D OE Pin: GND (OE input) - 74HC595D Pin 13 (低电平，使能输出)
     - Paper Sensor: GPIO34 (paper presence detection)
-    - One-Click Button: GPIO35 (input only pin, with pull-down resistor)
+    - One-Click Button: GPIO35 (input only pin, LOW=pressed, with pull-up)
     - Button LED Control: HC595 Q0 - 按钮指示灯控制
     - Paper Motors Enable: GPIO26 + HC595 Q1 (互斥使能控制)
     - Feed Motor: HC595 pins Q6/Q7 (DIR/STEP)
@@ -115,15 +115,8 @@
 // Q6 (pin 6):  FEED_MOTOR_DIR_PIN       - 进纸器电机方向控制
 // Q7 (pin 7):  FEED_MOTOR_STEP_PIN      - 进纸器电机步进控制
 
-// Bit positions in 74HC595D shift register (0-7)
-#define BIT_BUTTON_LED_CONTROL       0    // Q0 - 按钮指示灯控制
-#define BIT_PAPER_MOTORS_ENABLE    1    // Q1 - 换纸电机使能
-#define BIT_PAPER_CLAMP_DIR         2    // Q2 - 压纸抬落电机方向
-#define BIT_PAPER_CLAMP_STEP        3    // Q3 - 压纸抬落电机步进
-#define BIT_PANEL_MOTOR_DIR        4    // Q4 - 面板电机方向
-#define BIT_PANEL_MOTOR_STEP        5    // Q5 - 面板电机步进
-#define BIT_FEED_MOTOR_DIR          6    // Q6 - 进纸器电机方向
-#define BIT_FEED_MOTOR_STEP         7    // Q7 - 进纸器电机步进
+// Note: Bit positions are defined in PaperChangeConfig.h
+// This avoids duplicate definitions and ensures consistency
 
 // Note: No limit switches are used in this configuration
 // Uncomment and configure if you add limit switches later
@@ -210,3 +203,6 @@
 #define M0_CONTENT_CHECK_TIMEOUT_MS   2000     // ms - timeout for checking content after M0
 #define M0_COMMAND_QUEUE_SIZE         16       // Number of commands to check ahead for content
 #define PAPER_CHANGE_AUTO_OK_REPLY    1        // Automatically send OK after paper change completes
+
+// Note: Bit positions are defined in PaperChangeConfig.h
+// PaperChangeConfig.h will be included by the system during compilation

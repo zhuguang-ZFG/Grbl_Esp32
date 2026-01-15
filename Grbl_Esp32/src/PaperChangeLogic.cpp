@@ -262,9 +262,10 @@ void handle_feeding_state() {
     
     CHECK_STATE_SAFETY(1000, "FEEDING");
     
-    // 步骤1：启动进纸 - 等待纸张感应器检测到纸张
+    // 步骤1：启动进纸 - 等待纸张感应器检测到纸张（高→低跳变）
+    // paper_sensor_state=true表示检测到纸张(低电平)
     if (ctrl->paper_sensor_state && !ctrl->last_paper_sensor_state) {
-        LOG_MSG("Paper detected by sensor, entering unclamp state");
+        LOG_MSG("Paper detected by sensor (HIGH->LOW transition), entering unclamp state");
         STOP_ALL_MOTORS();
         enter_state(PAPER_UNCLAMP_FEED);
     } else if (ctrl->step_counter > 500) {

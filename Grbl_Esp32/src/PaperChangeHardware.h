@@ -103,4 +103,16 @@ void disable_paper_motors();
  */
 bool is_paper_motors_enabled();
 
+/**
+ * @brief 设置按钮LED状态
+ * @param on true=LED亮，false=LED灭
+ */
+void set_button_led(bool on);
+
+/**
+ * @brief 获取按钮LED状态
+ * @return true=LED亮，false=LED灭
+ */
+bool get_button_led();
+
 #endif // AUTO_PAPER_CHANGE_ENABLE

@@ -289,4 +289,23 @@ bool is_paper_motors_enabled() {
     #endif
 }
 
+/**
+ * @brief 设置按钮LED状态
+ * @param on true=LED亮，false=LED灭
+ */
+void set_button_led(bool on) {
+    hc595_set_bit(BIT_BUTTON_LED_CONTROL, !on);  // LOW=亮, HIGH=灭
+    hc595_update();
+    LOG_MSG("Button LED set to %s", on ? "ON" : "OFF");
+}
+
+/**
+ * @brief 获取按钮LED状态
+ * @return true=LED亮，false=LED灭
+ */
+bool get_button_led() {
+    uint8_t current_output = paper_ctrl.hc595_output;
+    return !(current_output & (1 << BIT_BUTTON_LED_CONTROL));  // LOW=亮
+}
+
 #endif // AUTO_PAPER_CHANGE_ENABLE
