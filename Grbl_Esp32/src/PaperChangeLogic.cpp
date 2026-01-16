@@ -334,22 +334,25 @@ static void handle_no_paper_detected(paper_change_ctrl_t* ctrl, bool* eject_dete
  */
 void handle_ejecting_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
+    if (!ctrl) return;
+    
     bool pos_init_val, eject_detected_val, reverse_complete_val;
     bool* pos_init = &pos_init_val;
     bool* eject_detected = &eject_detected_val;
     bool* reverse_complete = &reverse_complete_val;
     get_static_flags(pos_init, eject_detected, reverse_complete);
     
-    if (!ctrl || !eject_detected) return;
-    
     CHECK_STATE_SAFETY(PAPER_EJECT_CHECK_STEPS + PAPER_MAX_REVERSE_STEPS + 
                       PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS + 200, "EJECTING");
     
     // 步骤0：出纸预检 - 面板电机反转3cm检测是否有纸
+    // 预检完成后会重置step_counter=0，然后进入步骤1
     if (!*eject_detected && ctrl->step_counter < PAPER_EJECT_CHECK_STEPS) {
         handle_eject_pre_check(ctrl, eject_detected);
     }
-    // 步骤1：检测纸张后边缘位置
+    // 步骤1：检测纸张后边缘位置（预检完成后，从step_counter=0开始继续反转）
+    // 注意：预检完成后step_counter被重置为0，所以这里检查step_counter < (PAPER_MAX_REVERSE_STEPS - PAPER_EJECT_CHECK_STEPS)
+    // 但实际上应该检查是否完成了预检，使用一个更简单的方法：检查step_counter是否小于最大反转步数
     else if (!*eject_detected && ctrl->step_counter < PAPER_MAX_REVERSE_STEPS) {
         handle_edge_detection(ctrl, eject_detected);
     }
@@ -357,7 +360,7 @@ void handle_ejecting_state() {
     else if (*eject_detected && ctrl->step_counter < (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS)) {
         handle_full_ejection(ctrl, eject_detected);
     }
-    // 步骤3：如果反转没有检测到纸张
+    // 步骤3：如果反转没有检测到纸张（超过最大反转步数）
     else if (!*eject_detected && ctrl->step_counter >= PAPER_MAX_REVERSE_STEPS) {
         handle_no_paper_detected(ctrl, eject_detected);
     }
@@ -610,12 +613,13 @@ void handle_full_feed_state() {
 void handle_reposition_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
     motor_timing_t* panel_timing = get_panel_motor_timing();
+    if (!ctrl || !panel_timing) return;
+    
     bool pos_init_val, eject_detected_val, reverse_complete_val;
     bool* pos_init = &pos_init_val;
     bool* eject_detected = &eject_detected_val;
     bool* reverse_complete = &reverse_complete_val;
     get_static_flags(pos_init, eject_detected, reverse_complete);
-    if (!ctrl || !panel_timing || !reverse_complete) return;
     
     CHECK_STATE_SAFETY(PAPER_MAX_REVERSE_STEPS + PAPER_3CM_STEPS + 100, "REPOSITION");
     
