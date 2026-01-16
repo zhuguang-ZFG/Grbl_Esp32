@@ -52,6 +52,11 @@
 #define ADAPTIVE_MIN_INTERVAL_US  300        // 最小步进间隔 (μs)
 #define ADAPTIVE_MAX_INTERVAL_US  5000       // 最大步进间隔 (μs)
 
+// 延迟参数
+#define DAC_STABILIZATION_DELAY_MS 100        // DAC稳定延时 (ms)
+#define PAPER_MOTOR_STEP_DELAY_MS  100        // 换纸电机步进延时 (ms)
+#define HC595_UPDATE_DELAY_US      10         // HC595更新延时 (μs)
+
 // ================================================================================
 // 电机工作模式枚举
 // ================================================================================
