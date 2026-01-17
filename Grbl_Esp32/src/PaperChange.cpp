@@ -310,10 +310,6 @@ void paper_change_update() {
     // 基于传感器状态和当前状态，执行相应的业务逻辑
     paper_state_machine_update();
     
-    // 步骤2.5：HR4988 VREF控制更新
-    // 更新动态电流控制状态
-    update_hr4988_vref();
-    
     // 步骤3：用户交互检查
     // 检查一键换纸按钮是否被按下
     check_button_press();

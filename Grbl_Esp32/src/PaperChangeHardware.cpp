@@ -526,15 +526,7 @@ bool get_button_led() {
 
 bool init_hr4988_vref() {
 #ifdef HR4988_VREF_PIN
-    bool result = hr4988_simple_init();
-    
-    if (result) {
-        // 设置换纸系统的默认工作模式
-        hr4988_simple_set_mode(MOTOR_MODE_NORMAL);
-        LOG_MSG("HR4988 VREF (Simple) initialized for paper change system");
-    }
-    
-    return result;
+    return hr4988_simple_init();
 #else
     LOG_WARNING("HR4988 VREF pin not defined, current control disabled");
     return false;
@@ -543,52 +535,28 @@ bool init_hr4988_vref() {
 
 bool set_paper_motor_current(float current) {
 #ifdef HR4988_VREF_PIN
-    bool result = hr4988_simple_set_current(current);
-    
-    if (result) {
-        LOG_MSG_F("Paper motor current set to %.2fA", current);
-    } else {
-        LOG_ERROR_F("Failed to set paper motor current to %.2fA", current);
-    }
-    
-    return result;
+    LOG_WARNING("VREF is fixed at 0.64V, cannot change current");
+    return false;
 #else
-    LOG_WARNING("HR4988 VREF not available, cannot set current");
     return false;
 #endif
 }
 
-bool set_paper_motor_mode(motor_current_mode_t mode) {
+bool set_paper_motor_mode(int mode) {
 #ifdef HR4988_VREF_PIN
-    bool result = hr4988_simple_set_mode(mode);
-    
-    if (result) {
-        LOG_MSG_F("Paper motor mode set to %s", hr4988_simple_get_mode_name(mode));
-    } else {
-        LOG_ERROR_F("Failed to set paper motor mode to %d", mode);
-    }
-    
-    return result;
+    LOG_WARNING("VREF is fixed at 0.64V, cannot change mode");
+    return false;
 #else
-    LOG_WARNING("HR4988 VREF not available, cannot set mode");
     return false;
 #endif
 }
 
 void set_current_for_paper_phase(paper_change_state_t phase) {
-#ifdef HR4988_VREF_PIN
-    // 使用简化版的VREF控制
-    hr4988_simple_set_current_for_phase(phase);
-#else
-    LOG_DEBUG("HR4988 VREF not available, using default current");
-#endif
+    // VREF固定输出0.64V，无需根据阶段调整（空函数保持接口兼容性）
 }
 
 void update_hr4988_vref() {
-#ifdef HR4988_VREF_PIN
-    // 简化版本暂时不需要定期更新
-    // 可以添加节能检查等功能
-#endif
+    // VREF固定输出0.64V，无需定期更新（空函数保持接口兼容性）
 }
 
 void print_hr4988_vref_status() {

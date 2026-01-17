@@ -294,8 +294,7 @@ void handle_pre_check_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
     HANDLE_NULL_POINTER(ctrl, "handle_pre_check_state");
     
-    // 设置适合预检阶段的电流
-    set_current_for_paper_phase(PAPER_PRE_CHECK);
+    // VREF固定输出0.64V，无需根据阶段调整
     
     // 安全检查：防止预检过程卡死
     CHECK_STATE_SAFETY(PAPER_PRE_CHECK_STEPS + 50, "PRE_CHECK");

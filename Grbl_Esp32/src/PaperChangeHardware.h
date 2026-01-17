@@ -134,11 +134,11 @@ bool init_hr4988_vref();
 bool set_paper_motor_current(float current);
 
 /**
- * @brief 设置换纸系统工作模式
- * @param mode 工作模式
- * @return true=成功, false=失败
+ * @brief 设置换纸系统工作模式（已废弃：VREF固定输出0.64V，不支持模式切换）
+ * @param mode 工作模式（已废弃）
+ * @return false（不支持）
  */
-bool set_paper_motor_mode(motor_current_mode_t mode);
+bool set_paper_motor_mode(int mode);  // 使用int避免类型依赖
 
 /**
  * @brief 为特定换纸阶段设置合适的电流
