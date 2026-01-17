@@ -96,6 +96,25 @@ void set_static_flags(bool positioning_init_val, bool eject_detected_val, bool r
     reverse_complete = reverse_complete_val;
 }
 
+/**
+ * @brief 安全更新单个静态标志（辅助函数）
+ * @param flag_type 标志类型（'p'=positioning_init, 'e'=eject_detected, 'r'=reverse_complete）
+ * @param value 新值
+ */
+void update_static_flag(char flag_type, bool value) {
+    bool pos, eject, reverse;
+    get_static_flags(&pos, &eject, &reverse);
+    
+    switch (flag_type) {
+        case 'p': pos = value; break;
+        case 'e': eject = value; break;
+        case 'r': reverse = value; break;
+        default: return;
+    }
+    
+    set_static_flags(pos, eject, reverse);
+}
+
 // ================================================================================
 // 公共接口函数实现 - 供外部调用
 // ================================================================================

@@ -119,7 +119,7 @@ bool hr4988_simple_init() {
     }
     
     // 初始化控制结构
-    vref_ctrl.target_voltage = 0.4f;              // 默认1.0A电流
+    vref_ctrl.target_voltage = 0.16f;             // 默认0.4A电流（防止电机过热）
     vref_ctrl.current_amps = 0.0f;
     vref_ctrl.mode = MOTOR_MODE_NORMAL;
     vref_ctrl.adaptive_enabled = true;               // 默认启用自适应
@@ -209,15 +209,14 @@ bool hr4988_simple_set_current(float current) {
         return false;
     }
     
-    // 计算对应VREF电压
-    float voltage = hr4988_simple_current_to_voltage(current);
-    
-    // 应用温度补偿
+    // 应用温度补偿（对电流进行补偿）
+    float compensated_current = current;
     if (vref_ctrl.thermal_protection_enabled) {
-        voltage = hr4988_simple_voltage_to_current(voltage);
-        voltage = calculate_thermal_compensation(voltage, vref_ctrl.motor_temperature);
-        voltage = hr4988_simple_current_to_voltage(voltage);
+        compensated_current = calculate_thermal_compensation(current, vref_ctrl.motor_temperature);
     }
+    
+    // 将补偿后的电流转换为VREF电压
+    float voltage = hr4988_simple_current_to_voltage(compensated_current);
     
     return update_dac_output(voltage);
 }

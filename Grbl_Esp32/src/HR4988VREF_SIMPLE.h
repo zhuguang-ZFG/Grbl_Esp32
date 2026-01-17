@@ -33,11 +33,11 @@
 #define VREF_MIN_VOLTAGE            0.1f      // 最小VREF电压 (V)
 #define VREF_MAX_VOLTAGE            3.3f      // 最大VREF电压 (V)
 
-// 电流限制 (根据电机规格调整)
-#define CURRENT_MIN_AMPS           0.1f      // 最小电流 (A)
-#define CURRENT_NORMAL_AMPS         1.0f      // 正常工作电流 (A)
-#define CURRENT_HIGH_AMPS          1.5f      // 高扭矩电流 (A)
-#define CURRENT_MAX_AMPS          2.0f      // 最大电流 (A)
+// 电流限制 (根据电机规格调整，防止过热)
+#define CURRENT_MIN_AMPS           0.05f     // 最小电流 (A)
+#define CURRENT_NORMAL_AMPS         0.4f      // 正常工作电流 (A) - 降低防过热
+#define CURRENT_HIGH_AMPS          0.6f      // 高扭矩电流 (A) - 降低防过热
+#define CURRENT_MAX_AMPS          0.8f      // 最大电流 (A) - 降低防过热
 
 // 节能参数
 #define ENERGY_SAVE_TIMEOUT_MS    300000     // 5分钟无操作进入节能
