@@ -300,7 +300,7 @@ void handle_pre_check_state() {
     // 安全检查：防止预检过程卡死
     CHECK_STATE_SAFETY(PAPER_PRE_CHECK_STEPS + 50, "PRE_CHECK");
     
-    // 步骤1：预检反转2.5mm，清除可能的干扰
+    // 步骤1：预检反转3mm，检测面板是否有纸
     if (ctrl->step_counter < PAPER_PRE_CHECK_STEPS) {
         if (nonblocking_panel_step(false)) {
             ctrl->step_counter++;
@@ -320,7 +320,6 @@ void handle_pre_check_state() {
 }
 
 // 出纸状态子函数声明
-static void handle_eject_pre_check(paper_change_ctrl_t* ctrl, bool* eject_detected);
 static void handle_edge_detection(paper_change_ctrl_t* ctrl, bool* eject_detected);
 static void handle_full_ejection(paper_change_ctrl_t* ctrl, bool* eject_detected);
 static void handle_no_paper_detected(paper_change_ctrl_t* ctrl, bool* eject_detected);
@@ -328,61 +327,27 @@ static void handle_no_paper_detected(paper_change_ctrl_t* ctrl, bool* eject_dete
 /**
  * @brief 处理出纸状态逻辑
  * 
- * 出纸流程分为三个阶段：
- * 1. 预检反转(3cm) → 2. 边沿检测 → 3. 完全出纸(A4+4cm)
+ * 完全出纸：面板电机正转，送出A4(297mm) + 预留(40mm) = 337mm
+ * 
+ * @note PRE_CHECK已经检测到有纸，直接完全出纸，无需边缘检测
  */
 void handle_ejecting_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
     if (!ctrl) return;
     
-    // 直接获取静态标志，避免使用局部变量指针
-    bool pos_init_val, eject_detected_val, reverse_complete_val;
-    get_static_flags(&pos_init_val, &eject_detected_val, &reverse_complete_val);
-    bool* eject_detected = &eject_detected_val;  // 需要修改，所以保留指针
+    CHECK_STATE_SAFETY(PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS + 200, "EJECTING");
     
-    CHECK_STATE_SAFETY(PAPER_EJECT_CHECK_STEPS + PAPER_MAX_REVERSE_STEPS + 
-                      PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS + 200, "EJECTING");
-    
-    // 步骤0：出纸预检 - 面板电机反转3cm检测是否有纸
-    // 预检完成后会重置step_counter=0，然后进入步骤1
-    if (!eject_detected_val && ctrl->step_counter < PAPER_EJECT_CHECK_STEPS) {
-        handle_eject_pre_check(ctrl, eject_detected);
-    }
-    // 步骤1：检测纸张后边缘位置（预检完成后，从step_counter=0开始继续反转）
-    // 注意：预检完成后step_counter被重置为0，边缘检测阶段从0开始计数
-    // 最大反转步数限制：PAPER_MAX_REVERSE_STEPS（不包括预检步数）
-    else if (!eject_detected_val && ctrl->step_counter < PAPER_MAX_REVERSE_STEPS) {
-        handle_edge_detection(ctrl, eject_detected);
-    }
-    // 步骤2：完全出纸 - 面板电机快速正转
-    else if (eject_detected_val && ctrl->step_counter < (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS)) {
-        handle_full_ejection(ctrl, eject_detected);
-    }
-    // 步骤3：如果反转没有检测到纸张（超过最大反转步数）
-    else if (!eject_detected_val && ctrl->step_counter >= PAPER_MAX_REVERSE_STEPS) {
-        handle_no_paper_detected(ctrl, eject_detected);
-    }
-}
-
-/**
- * @brief 出纸预检 - 反转3cm检测传感器状态
- */
-static void handle_eject_pre_check(paper_change_ctrl_t* ctrl, bool* eject_detected) {
-    HANDLE_NULL_POINTER(ctrl, "handle_eject_pre_check");
-    HANDLE_NULL_POINTER(eject_detected, "handle_eject_pre_check");
-    
-    if (nonblocking_panel_step(false)) {
-        ctrl->step_counter++;
-        
-        if (ctrl->step_counter % 100 == 0) {
-            float check_mm = steps_to_mm(ctrl->step_counter, DEFAULT_PANEL_STEPS_PER_MM);
-            LOG_PROGRESS("Ejection pre-check reverse: %.1fmm", check_mm);
-        }
-        
-        if (ctrl->step_counter >= PAPER_EJECT_CHECK_STEPS) {
-            LOG_MSG("Ejection pre-check complete (3cm reverse), starting full detection");
-            ctrl->step_counter = 0;
-        }
+    // 完全出纸 - 面板电机快速正转
+    // 距离：A4(297mm) + 预留(40mm) = 337mm
+    // 步数：26960步（337mm × 80 steps/mm）
+    if (ctrl->step_counter < (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS)) {
+        handle_full_ejection(ctrl, nullptr);  // 不需要eject_detected标志
+    } else {
+        // 出纸完成
+        LOG_MSG("Paper ejection complete - A4(297mm) + reserve(40mm) = total(337mm), %lu steps", 
+                 (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS));
+        STOP_ALL_MOTORS();
+        enter_state(PAPER_FEEDING);
     }
 }
 
@@ -405,6 +370,12 @@ static void handle_edge_detection(paper_change_ctrl_t* ctrl, bool* eject_detecte
             ctrl->step_counter = 0;
             *eject_detected = true;
             
+            // 保存标志到全局静态变量
+            // 注意：eject_detected已经通过指针修改为true，现在保存到全局
+            bool pos_init_val, eject_detected_val, reverse_complete_val;
+            get_static_flags(&pos_init_val, &eject_detected_val, &reverse_complete_val);
+            set_static_flags(pos_init_val, true, reverse_complete_val);  // 保存eject_detected=true（使用true而非从get获取的值）
+            
             // 设置快速正转速度
             motor_timing_t* panel_timing = get_panel_motor_timing();
             if (panel_timing) {
@@ -421,22 +392,24 @@ static void handle_edge_detection(paper_change_ctrl_t* ctrl, bool* eject_detecte
 
 /**
  * @brief 完全出纸 - 快速正转A4+4cm距离
+ * 
+ * @param ctrl 控制结构体指针
+ * @param eject_detected 边缘检测标志指针（已废弃，保留参数以保持兼容性）
  */
 static void handle_full_ejection(paper_change_ctrl_t* ctrl, bool* eject_detected) {
+    // 设置快速正转速度（2kHz）
+    motor_timing_t* panel_timing = get_panel_motor_timing();
+    if (panel_timing) {
+        panel_timing->step_interval = 500; // 2kHz快速出纸
+    }
+    
     if (nonblocking_panel_step(true)) {
         ctrl->step_counter++;
         
         if (ctrl->step_counter % 1000 == 0) {
             float progress = (float)ctrl->step_counter / (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS) * 100.0;
-            LOG_PROGRESS("Ejection progress: %.1f%% (Step %d/%d)", 
+            LOG_PROGRESS("Ejection progress: %.1f%% (Step %lu/%lu)", 
                        progress, ctrl->step_counter, (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS));
-        }
-        
-        if (ctrl->step_counter >= (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS)) {
-            LOG_MSG("Paper ejection complete - A4(297mm) + reserve(40mm) = total(337mm), %d steps", 
-                     (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS));
-            *eject_detected = false;
-            enter_state(PAPER_FEEDING);
         }
     }
 }
@@ -447,6 +420,14 @@ static void handle_full_ejection(paper_change_ctrl_t* ctrl, bool* eject_detected
 static void handle_no_paper_detected(paper_change_ctrl_t* ctrl, bool* eject_detected) {
     LOG_MSG("No paper detected in reverse, proceeding to feed");
     *eject_detected = false;
+    
+    // 保存标志到全局静态变量
+    bool pos_init_val, eject_detected_val, reverse_complete_val;
+    get_static_flags(&pos_init_val, &eject_detected_val, &reverse_complete_val);
+    set_static_flags(pos_init_val, false, reverse_complete_val);  // 保存eject_detected=false
+    
+    // 停止所有电机，确保状态转换时电机已停止
+    STOP_ALL_MOTORS();
     enter_state(PAPER_FEEDING);
 }
 
@@ -461,7 +442,8 @@ static void handle_no_paper_detected(paper_change_ctrl_t* ctrl, bool* eject_dete
  * 2. 监控纸张传感器，等待检测到纸张前边缘
  * 3. 检测到纸张后立即停止，准备松开夹紧机构
  * 
- * @warning 进纸超时保护：500步内未检测到纸张将报错
+ * @warning 进纸超时保护：至少2900步（约36.25mm）内未检测到纸张将报错
+ * 考虑进纸器电机到传感器的距离3cm（2400步）+ 安全余量500步
  * 这防止了电机空转导致的硬件损坏
  * 
  * @example 实际场景：
@@ -471,8 +453,8 @@ void handle_feeding_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
     HANDLE_NULL_POINTER(ctrl, "handle_feeding_state");
     
-    // 安全检查：防止进纸过程卡死，最多1000步
-    CHECK_STATE_SAFETY(1000, "FEEDING");
+    // 安全检查：防止进纸过程卡死，考虑进纸器电机到传感器距离3cm（2400步）+ 超时步数（2900步）+ 安全余量（500步）
+    CHECK_STATE_SAFETY(PAPER_FEED_TIMEOUT_STEPS + 500, "FEEDING");
     
     // 步骤1：等待纸张前边缘检测
     // 传感器跳变检测：HIGH→LOW电平跳变表示检测到纸张前边缘
@@ -481,8 +463,9 @@ void handle_feeding_state() {
         LOG_MSG("Paper front edge detected by sensor (HIGH->LOW transition), entering unclamp state");
         STOP_ALL_MOTORS();              // 立即停止所有电机，精确定位
         enter_state(PAPER_UNCLAMP_FEED); // 进入松开状态，准备夹紧机构操作
-    } else if (ctrl->step_counter > 500) {
-        // 超时保护：500步（约6.25mm）内未检测到纸张
+    } else if (ctrl->step_counter > PAPER_FEED_TIMEOUT_STEPS) {
+        // 超时保护：至少2900步（约36.25mm）内未检测到纸张
+        // 考虑进纸器电机到传感器的距离3cm（2400步）+ 安全余量500步
         // 这通常表示纸张盒为空或传感器故障
         handle_error(ERROR_SENSOR_TIMEOUT, "Feed operation timeout - no paper detected", PAPER_FEEDING);
     } else {
@@ -496,20 +479,23 @@ void handle_feeding_state() {
 
 /**
  * @brief 处理松开进纸状态逻辑
- * 按照文档步骤2：检测到纸张后 - 夹紧电机正转1.5cm松开夹子，面板电机同步运行，纸张经过传感器后继续运行3.5cm
+ * 按照文档步骤5a和5b：
+ * 步骤5a：夹紧电机正转1.5cm松开夹具（1200步）
+ * 步骤5b：送纸器电机正转4cm送纸（3200步）
+ * 注意：拾落电机松开后，面板电机无法带动纸张，必须使用送纸器电机
  */
 void handle_unclamp_feed_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
     HANDLE_NULL_POINTER(ctrl, "handle_unclamp_feed_state");
     
     motor_timing_t* clamp_timing = get_clamp_motor_timing();
-    motor_timing_t* panel_timing = get_panel_motor_timing();
-    if (!clamp_timing || !panel_timing) return;
+    motor_timing_t* feed_timing = get_feed_motor_timing();
+    if (!clamp_timing || !feed_timing) return;
     
-    CHECK_STATE_SAFETY(PAPER_1_5CM_STEPS + PAPER_3_5CM_STEPS + 100, "UNCLAMP_FEED");
+    CHECK_STATE_SAFETY(PAPER_1_5CM_STEPS + PAPER_4CM_STEPS + 100, "UNCLAMP_FEED");
     
     if (ctrl->step_counter < PAPER_1_5CM_STEPS) {
-        // 步骤2a：夹紧电机正转1.5cm松开夹子（初始为夹紧态）
+        // 步骤5a：夹紧电机正转1.5cm松开夹具（拾落电机松开，为新纸张准备空间）
         if (nonblocking_clamp_step(true)) {
             ctrl->step_counter++;
             
@@ -522,19 +508,19 @@ void handle_unclamp_feed_state() {
                 LOG_MSG("Clamp motor released (1.5cm forward)");
             }
         }
-    } else if (ctrl->step_counter < PAPER_1_5CM_STEPS + PAPER_3_5CM_STEPS) {
-        // 步骤2b：面板电机同步运行，纸张经过传感器后继续运行3.5cm
-        if (nonblocking_panel_step(true)) {
+    } else if (ctrl->step_counter < PAPER_1_5CM_STEPS + PAPER_4CM_STEPS) {
+        // 步骤5b：送纸器电机正转4cm送纸（拾落电机松开后，面板电机无法带动纸张，必须使用送纸器电机）
+        if (nonblocking_feed_step(true)) {
             ctrl->step_counter++;
             
             // 每100步报告一次进度
             if ((ctrl->step_counter - PAPER_1_5CM_STEPS) % 100 == 0) {
-                float progress_mm = steps_to_mm(ctrl->step_counter - PAPER_1_5CM_STEPS, DEFAULT_PANEL_STEPS_PER_MM);
-                LOG_PROGRESS("Panel motor transporting: %.1fmm", progress_mm);
+                float progress_mm = steps_to_mm(ctrl->step_counter - PAPER_1_5CM_STEPS, DEFAULT_FEED_STEPS_PER_MM);
+                LOG_PROGRESS("Feed motor transporting: %.1fmm", progress_mm);
             }
             
-            if (ctrl->step_counter == PAPER_1_5CM_STEPS + PAPER_3_5CM_STEPS) {
-                LOG_MSG("Panel motor transport complete (3.5cm forward)");
+            if (ctrl->step_counter == PAPER_1_5CM_STEPS + PAPER_4CM_STEPS) {
+                LOG_MSG("Feed motor transport complete (4cm forward)");
             }
         }
     } else {
@@ -577,11 +563,12 @@ void handle_clamp_feed_state() {
  * @brief 处理完整进给状态逻辑
  * 
  * 在此状态中，进纸电机和面板电机同步运行，将纸张完全送入系统
- * 直到纸张脱离传感器位置，表示纸张已经完全进入系统
+ * 直到纸张脱离传感器位置，然后进纸器电机停止，面板电机单独运行3cm
  * 
  * @note 完成条件：
  * 1. 步进计数器 >= A4纸张长度步数（PAPER_EJECT_STEPS）
  * 2. 传感器状态为无纸（!paper_sensor_state），表示纸张已脱离传感器位置
+ * 3. 纸张脱离传感器后，进纸器电机停止，面板电机单独运行3cm
  */
 void handle_full_feed_state() {
     paper_change_ctrl_t* ctrl = get_paper_control();
@@ -589,39 +576,82 @@ void handle_full_feed_state() {
     motor_timing_t* panel_timing = get_panel_motor_timing();
     if (!ctrl || !feed_timing || !panel_timing) return;
     
-    CHECK_STATE_SAFETY(25000, "FULL_FEED");
+    // 直接获取静态标志，用于跟踪面板电机单独运行阶段
+    bool pos_init_val, eject_detected_val, reverse_complete_val;
+    get_static_flags(&pos_init_val, &eject_detected_val, &reverse_complete_val);
+    bool* panel_alone_complete = &reverse_complete_val;  // 复用reverse_complete标志表示面板单独运行完成
     
-    // 设置两个电机同步运行，相同步进间隔
-    feed_timing->step_interval = 1000;
-    panel_timing->step_interval = 1000;
+    CHECK_STATE_SAFETY(25000 + PAPER_3CM_STEPS + 100, "FULL_FEED");
     
-    // 检查完成条件：
-    // 1. 已进给A4长度且纸张已脱离传感器（正常情况）
-    // 2. 或者纸张提前脱离传感器（提前完成，也需要至少进给80%的距离）
-    uint32_t min_feed_steps = (uint32_t)(PAPER_EJECT_STEPS * 0.8f);  // 至少进给80%
-    if ((ctrl->step_counter >= PAPER_EJECT_STEPS && !ctrl->paper_sensor_state) ||
-        (!ctrl->paper_sensor_state && ctrl->step_counter >= min_feed_steps)) {
-        LOG_MSG("Full feed complete, paper detached from sensor");
-        STOP_ALL_MOTORS();
-        enter_state(PAPER_REPOSITION);
-    } else {
-        // 只有当两个电机都到了应该步进的时间时，才同步执行步进
-        if (millis() - feed_timing->last_step_time >= feed_timing->step_interval &&
-            millis() - panel_timing->last_step_time >= panel_timing->step_interval) {
+    // 阶段1：同步运行阶段 - 两个电机同步运行，直到纸张脱离传感器
+    if (!reverse_complete_val) {
+        // 设置两个电机同步运行，相同步进间隔
+        feed_timing->step_interval = 1000;
+        panel_timing->step_interval = 1000;
+        
+        // 检查完成条件：
+        // 1. 已进给A4长度且纸张已脱离传感器（正常情况）
+        // 2. 或者纸张提前脱离传感器（提前完成，也需要至少进给80%的距离）
+        uint32_t min_feed_steps = (uint32_t)(PAPER_EJECT_STEPS * 0.8f);  // 至少进给80%
+        if ((ctrl->step_counter >= PAPER_EJECT_STEPS && !ctrl->paper_sensor_state) ||
+            (!ctrl->paper_sensor_state && ctrl->step_counter >= min_feed_steps)) {
+            LOG_MSG("Full feed sync phase complete, paper detached from sensor. Stopping feed motor, panel motor continues 3cm");
+            // 停止进纸器电机
+            feed_timing->last_step_time = 0;  // 禁用进纸器电机
+            // 重置计数器，准备面板电机单独运行
+            ctrl->step_counter = 0;
+            *panel_alone_complete = true;
+            set_static_flags(pos_init_val, eject_detected_val, true);  // 保存标志
+        } else {
+            // 只有当两个电机都到了应该步进的时间时，才同步执行步进
+            // 安全处理millis()溢出（虽然步进间隔很短，溢出可能性极低，但为了安全仍处理）
+            uint32_t current_time = millis();
+            uint32_t feed_elapsed = (current_time >= feed_timing->last_step_time) ? 
+                                    (current_time - feed_timing->last_step_time) :
+                                    (UINT32_MAX - feed_timing->last_step_time + current_time + 1);
+            uint32_t panel_elapsed = (current_time >= panel_timing->last_step_time) ? 
+                                     (current_time - panel_timing->last_step_time) :
+                                     (UINT32_MAX - panel_timing->last_step_time + current_time + 1);
             
-            // 同步步进两个电机
-            motor_step_control(BIT_FEED_MOTOR_STEP, BIT_FEED_MOTOR_DIR, true, feed_timing->step_interval);
-            motor_step_control(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true, panel_timing->step_interval);
+            if (feed_elapsed >= feed_timing->step_interval && 
+                panel_elapsed >= panel_timing->step_interval) {
+                
+                // 同步步进两个电机
+                motor_step_control(BIT_FEED_MOTOR_STEP, BIT_FEED_MOTOR_DIR, true, feed_timing->step_interval);
+                motor_step_control(BIT_PANEL_MOTOR_STEP, BIT_PANEL_MOTOR_DIR, true, panel_timing->step_interval);
+                
+                // 更新时序和计数器
+                feed_timing->last_step_time = current_time;
+                panel_timing->last_step_time = current_time;
+                ctrl->step_counter++;  // 每次两个电机同步步进时，计数器加1
+                
+                if (ctrl->step_counter % 1000 == 0) {
+                    float progress = (float)ctrl->step_counter / PAPER_EJECT_STEPS * 100.0;
+                    LOG_PROGRESS("Full feed sync progress: %.1f%% (Step %lu/%lu)", 
+                               progress, ctrl->step_counter, PAPER_EJECT_STEPS);
+                }
+            }
+        }
+    }
+    // 阶段2：面板电机单独运行阶段 - 面板电机单独运行3cm
+    else if (reverse_complete_val && ctrl->step_counter < PAPER_3CM_STEPS) {
+        // 面板电机单独运行，进纸器电机已停止
+        panel_timing->step_interval = 1000;  // 保持1kHz速度
+        
+        if (nonblocking_panel_step(true)) {
+            ctrl->step_counter++;
             
-            // 更新时序和计数器
-            feed_timing->last_step_time = millis();
-            panel_timing->last_step_time = millis();
-            ctrl->step_counter++;  // 每次两个电机同步步进时，计数器加1
+            if (ctrl->step_counter % 200 == 0) {
+                float progress_mm = steps_to_mm(ctrl->step_counter, DEFAULT_PANEL_STEPS_PER_MM);
+                LOG_PROGRESS("Panel motor alone: %.1fmm", progress_mm);
+            }
             
-            if (ctrl->step_counter % 1000 == 0) {
-                float progress = (float)ctrl->step_counter / PAPER_EJECT_STEPS * 100.0;
-                LOG_PROGRESS("Full feed progress: %.1f%% (Step %lu/%lu)", 
-                           progress, ctrl->step_counter, PAPER_EJECT_STEPS);
+            if (ctrl->step_counter >= PAPER_3CM_STEPS) {
+                LOG_MSG("Panel motor 3cm movement complete, entering reposition state");
+                *panel_alone_complete = false;
+                set_static_flags(pos_init_val, eject_detected_val, false);  // 重置标志
+                STOP_ALL_MOTORS();
+                enter_state(PAPER_REPOSITION);
             }
         }
     }
@@ -656,6 +686,9 @@ void handle_reposition_state() {
                 ctrl->step_counter = 0;
                 reverse_complete_val = true;
                 *reverse_complete = true;  // 更新标志
+                
+                // 立即保存标志到全局静态变量，避免状态丢失
+                set_static_flags(pos_init_val, eject_detected_val, true);  // 保存reverse_complete=true
             }
             
             if (ctrl->step_counter % 200 == 0) {
@@ -689,6 +722,20 @@ void handle_reposition_state() {
         set_static_flags(pos_init_val, eject_detected_val, reverse_complete_val);  // 保存到全局
         enter_state(PAPER_COMPLETE);
     }
+    // 边界情况处理 - reverse_complete=true但step_counter已达到或超过最大值
+    // 这通常不应该发生（当达到PAPER_3CM_STEPS时会转换到COMPLETE状态），
+    // 但如果发生，强制进入COMPLETE状态以避免状态卡住
+    else {
+        LOG_WARNING_F("REPOSITION state: positioning complete but counter exceeded (%lu/%lu), forcing completion", 
+                     ctrl->step_counter, PAPER_3CM_STEPS);
+        reverse_complete_val = false;
+        *reverse_complete = false;
+        set_static_flags(pos_init_val, eject_detected_val, false);  // 保存reverse_complete=false
+        
+        // 停止所有电机，确保状态转换时电机已停止
+        STOP_ALL_MOTORS();
+        enter_state(PAPER_COMPLETE);
+    }
 }
 
 /**
@@ -716,8 +763,12 @@ void handle_error_state() {
     uint32_t current_time = millis();
     
     // 处理紧急停止：2秒后自动恢复
+    // 安全处理millis()溢出（虽然2秒很短，溢出可能性极低，但为了安全仍处理）
     if (ctrl->emergency_stop) {
-        if (current_time - ctrl->state_timer > 2000) {
+        uint32_t elapsed = (current_time >= ctrl->state_timer) ? 
+                          (current_time - ctrl->state_timer) :
+                          (UINT32_MAX - ctrl->state_timer + current_time + 1);
+        if (elapsed > 2000) {
             LOG_MSG("Emergency stop timeout, auto-resuming");
             ctrl->emergency_stop = false;
             enter_state(PAPER_IDLE);
@@ -749,7 +800,15 @@ void check_button_press() {
     if (button_pressed && !last_button_state) {
         button_press_time = millis();
     } else if (!button_pressed && last_button_state) {
-        uint32_t press_duration = millis() - button_press_time;
+        // 安全处理millis()溢出（虽然2秒很短，溢出可能性极低，但为了代码一致性仍处理）
+        uint32_t current_time = millis();
+        uint32_t press_duration;
+        if (current_time >= button_press_time) {
+            press_duration = current_time - button_press_time;
+        } else {
+            // 处理millis()溢出情况（49天后）
+            press_duration = (UINT32_MAX - button_press_time) + current_time + 1;
+        }
         
         if (press_duration < PAPER_BUTTON_LONG_PRESS_MS) {
             paper_change_one_click();

@@ -357,8 +357,15 @@ bool runtime_safety_check(uint32_t step_counter, uint32_t max_steps, const char*
         return false;
     }
     
-    // 状态时间检查
-    uint32_t state_duration = millis() - ctrl->state_timer;
+    // 状态时间检查（安全处理millis()溢出）
+    uint32_t current_time = millis();
+    uint32_t state_duration;
+    if (current_time >= ctrl->state_timer) {
+        state_duration = current_time - ctrl->state_timer;
+    } else {
+        // 处理millis()溢出情况（49天后）
+        state_duration = (UINT32_MAX - ctrl->state_timer) + current_time + 1;
+    }
     if (state_duration > PAPER_STATE_TIMEOUT_MS) {
         LOG_ERROR_F("State timeout in %s: %lums", operation_name, state_duration);
         STOP_ALL_MOTORS();

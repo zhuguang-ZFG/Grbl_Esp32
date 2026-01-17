@@ -107,19 +107,23 @@
 
 // 运动距离参数（精确控制的关键参数）- 根据文档更新
 #define PAPER_A4_LENGTH_MM          297.0  // A4纸张长度（毫米）
-#define PAPER_3_5CM_LENGTH_MM        35.0  // 3.5厘米距离（毫米）- 纸张经过传感器后继续运行距离
+#define PAPER_4CM_LENGTH_MM          40.0  // 4厘米距离（毫米）- 步骤5b送纸器电机送纸距离（用户修正：从3.5cm改为4cm）
 #define PAPER_3CM_LENGTH_MM          30.0  // 3厘米距离（毫米）- 传感器到夹紧电机距离+位置校准距离
 #define PAPER_1_5CM_LENGTH_MM        15.0  // 1.5厘米距离（毫米）- 夹紧电机正转松开距离
 #define PAPER_3TO5CM_LENGTH_MM       40.0  // 3-5厘米距离（毫米）- 出纸预留距离（取中间值4cm）
-#define PAPER_PRE_CHECK_MM           2.5   // 预检距离（毫米）
+#define PAPER_PRE_CHECK_MM           3.0   // 预检距离（毫米）- 用户修正：从2.5mm改为3mm
 
 // 步数计算（避免重定义）
 #ifndef PAPER_EJECT_STEPS
 #define PAPER_EJECT_STEPS            (uint32_t)(PAPER_A4_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)
 #endif
 
+#ifndef PAPER_4CM_STEPS
+#define PAPER_4CM_STEPS              (uint32_t)(PAPER_4CM_LENGTH_MM * DEFAULT_FEED_STEPS_PER_MM)  // 使用送纸器电机步数计算（步骤5b使用送纸器电机，用户修正：从3.5cm改为4cm）
+#endif
+// 保持向后兼容（如果其他地方还在使用PAPER_3_5CM_STEPS）
 #ifndef PAPER_3_5CM_STEPS
-#define PAPER_3_5CM_STEPS            (uint32_t)(PAPER_3_5CM_LENGTH_MM * DEFAULT_PANEL_STEPS_PER_MM)
+#define PAPER_3_5CM_STEPS            PAPER_4CM_STEPS  // 已改为4cm，保持兼容性
 #endif
 
 #ifndef PAPER_3CM_STEPS
@@ -159,6 +163,7 @@
 // 超时保护参数（安全机制）
 #define PAPER_FEED_TIMEOUT_MS       5000   // 进纸超时（毫秒）
 #define PAPER_STATE_TIMEOUT_MS      30000  // 单状态最大时间（毫秒）
+#define PAPER_FEED_TIMEOUT_STEPS    (PAPER_3CM_STEPS + 500)  // 进纸超时步数（2900步，考虑进纸器电机到传感器距离3cm=2400步+安全余量500步）
 
 // ================================================================================
 // 控制参数配置 - 用户体验相关
