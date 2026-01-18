@@ -275,6 +275,16 @@ bool read_paper_sensor_raw() {
 
 /**
  * @brief 读取带去抖动的纸张传感器状态
+ * 
+ * 采用时间延迟法去抖动：状态必须稳定50ms才认定为有效
+ * 
+ * @return true=稳定检测到纸张，false=稳定无纸张
+ * 
+ * @note 去抖动算法：
+ * 1. 检测到状态变化 → 记录变化时间
+ * 2. 状态保持不变 → 检查是否超过去抖动时间
+ * 3. 超过去抖动时间 → 更新稳定状态
+ * 4. 否则 → 保持上次稳定状态
  */
 bool read_paper_sensor_debounced() {
     static bool last_state = false;
@@ -284,10 +294,24 @@ bool read_paper_sensor_debounced() {
     bool current_state = read_paper_sensor_raw();
     uint32_t current_time = millis();
     
+    // 步骤1：检测状态变化
     if (current_state != last_state) {
         last_change_time = current_time;
         last_state = current_state;
-    } else if (current_time - last_change_time > PAPER_SENSOR_DEBOUNCE_MS) {
+        return stable_state;  // 状态变化期间，返回上次稳定状态
+    }
+    
+    // 步骤2：状态未变化，检查去抖动时间（处理millis()溢出）
+    uint32_t stable_duration;
+    if (current_time >= last_change_time) {
+        stable_duration = current_time - last_change_time;
+    } else {
+        // 处理millis()溢出情况（49天后）
+        stable_duration = (UINT32_MAX - last_change_time) + current_time + 1;
+    }
+    
+    // 步骤3：超过去抖动时间，更新稳定状态
+    if (stable_duration > PAPER_SENSOR_DEBOUNCE_MS) {
         stable_state = current_state;
     }
     

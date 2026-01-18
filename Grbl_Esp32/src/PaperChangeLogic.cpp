@@ -458,7 +458,7 @@ void handle_unclamp_feed_state() {
             }
         }
     } else {
-        LOG_MSG("Unclamp and 3.5cm transport complete, entering clamp feed");
+        LOG_MSG("Unclamp and 4cm transport complete, entering clamp feed state");
         enter_state(PAPER_CLAMP_FEED);
     }
 }
@@ -524,8 +524,8 @@ void handle_full_feed_state() {
         
         // 检查完成条件：
         // 1. 已进给A4长度且纸张已脱离传感器（正常情况）
-        // 2. 或者纸张提前脱离传感器（提前完成，也需要至少进给80%的距离）
-        uint32_t min_feed_steps = (uint32_t)(PAPER_EJECT_STEPS * 0.8f);  // 至少进给80%
+        // 2. 或者纸张提前脱离传感器（提前完成，也需要至少进给最小比例的距离）
+        uint32_t min_feed_steps = (uint32_t)(PAPER_EJECT_STEPS * PAPER_MIN_FEED_RATIO);  // 至少进给配置的最小比例
         if ((ctrl->step_counter >= PAPER_EJECT_STEPS && !ctrl->paper_sensor_state) ||
             (!ctrl->paper_sensor_state && ctrl->step_counter >= min_feed_steps)) {
             LOG_MSG("Full feed sync phase complete, paper detached from sensor. Stopping feed motor, panel motor continues 3cm");
@@ -709,35 +709,78 @@ void handle_error_state() {
 // ================================================================================
 
 /**
- * @brief 检查按钮状态
+ * @brief 检查按钮状态（带去抖动）
+ * 
+ * 按键去抖动逻辑：
+ * 1. 检测到按下：记录按下时间，等待去抖动时间确认
+ * 2. 去抖动时间内状态保持稳定：确认为有效按下
+ * 3. 检测到释放：计算按压时长，区分短按和长按
+ * 4. 短按（<2秒）：触发一键换纸
+ * 5. 长按（≥2秒）：触发紧急停止
  */
 void check_button_press() {
-    static bool last_button_state = false;
-    static uint32_t button_press_time = 0;
+    static bool last_raw_state = false;          // 上次读取的原始状态
+    static bool last_stable_state = false;       // 上次确认的稳定状态
+    static uint32_t state_change_time = 0;       // 状态变化时间
+    static uint32_t button_press_time = 0;       // 按键按下时间（去抖动后）
+    static bool press_confirmed = false;         // 按下已确认标志
     
-    bool button_pressed = read_button_state();
+    bool current_raw_state = read_button_state();
+    uint32_t current_time = millis();
     
-    if (button_pressed && !last_button_state) {
-        button_press_time = millis();
-    } else if (!button_pressed && last_button_state) {
-        // 安全处理millis()溢出（虽然2秒很短，溢出可能性极低，但为了代码一致性仍处理）
-        uint32_t current_time = millis();
+    // 步骤1：检测原始状态变化
+    if (current_raw_state != last_raw_state) {
+        state_change_time = current_time;
+        last_raw_state = current_raw_state;
+        return;  // 等待去抖动时间
+    }
+    
+    // 步骤2：检查去抖动时间
+    uint32_t stable_duration;
+    if (current_time >= state_change_time) {
+        stable_duration = current_time - state_change_time;
+    } else {
+        // 处理millis()溢出
+        stable_duration = (UINT32_MAX - state_change_time) + current_time + 1;
+    }
+    
+    // 步骤3：状态未达到去抖动时间，继续等待
+    if (stable_duration < PAPER_BUTTON_DEBOUNCE_MS) {
+        return;
+    }
+    
+    // 步骤4：状态已稳定，处理按键事件
+    bool current_stable_state = current_raw_state;
+    
+    // 步骤5：检测稳定状态的边沿变化
+    if (current_stable_state && !last_stable_state) {
+        // 按下边沿（去抖动后）
+        button_press_time = current_time;
+        press_confirmed = true;
+        
+    } else if (!current_stable_state && last_stable_state && press_confirmed) {
+        // 释放边沿（去抖动后），计算按压时长
         uint32_t press_duration;
         if (current_time >= button_press_time) {
             press_duration = current_time - button_press_time;
         } else {
-            // 处理millis()溢出情况（49天后）
+            // 处理millis()溢出
             press_duration = (UINT32_MAX - button_press_time) + current_time + 1;
         }
         
+        // 步骤6：根据按压时长触发不同功能
         if (press_duration < PAPER_BUTTON_LONG_PRESS_MS) {
+            // 短按：一键换纸
             paper_change_one_click();
         } else {
+            // 长按：紧急停止
             smart_m0_emergency_stop();
         }
+        
+        press_confirmed = false;
     }
     
-    last_button_state = button_pressed;
+    last_stable_state = current_stable_state;
 }
 
 /**
