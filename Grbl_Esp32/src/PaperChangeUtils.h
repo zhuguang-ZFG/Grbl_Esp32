@@ -284,7 +284,10 @@ error_info_t* get_error_info();
 motor_timing_t* get_panel_motor_timing();
 motor_timing_t* get_feed_motor_timing();
 motor_timing_t* get_clamp_motor_timing();
-void get_static_flags(bool* positioning_init, bool* eject_detected, bool* reverse_complete);
-void set_static_flags(bool positioning_init, bool eject_detected, bool reverse_complete);
+void get_static_flags(bool* positioning_init, bool* panel_alone_complete, bool* reverse_complete);
+void set_static_flags(bool positioning_init, bool panel_alone_complete, bool reverse_complete);
+void set_panel_alone_complete(bool value);
+void set_reverse_complete(bool value);
+void set_positioning_init(bool value);
 
 #endif // AUTO_PAPER_CHANGE_ENABLE

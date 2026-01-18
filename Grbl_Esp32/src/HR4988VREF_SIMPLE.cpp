@@ -11,7 +11,7 @@
 #ifdef HR4988_VREF_PIN
 
 #include "HR4988VREF_SIMPLE.h"
-#include "PaperChangeUtils.h"
+#include "PaperChangeUtils.h"  // 需要LOG_MSG等宏定义
 
 // ================================================================================
 // 全局状态变量（极简版）
@@ -24,9 +24,9 @@ static bool vref_initialized = false;
 // ================================================================================
 
 bool hr4988_simple_init() {
-    // 检查GPIO25是否可用于DAC
-    if (HR4988_VREF_PIN != GPIO_NUM_25) {
-        LOG_ERROR("HR4988 VREF must be on GPIO25 for DAC functionality");
+    // ESP32只有GPIO25和GPIO26支持DAC
+    if (HR4988_VREF_PIN != GPIO_NUM_25 && HR4988_VREF_PIN != GPIO_NUM_26) {
+        LOG_ERROR_F("HR4988 VREF pin must be GPIO25 or GPIO26 for DAC (currently GPIO%d)", HR4988_VREF_PIN);
         return false;
     }
     

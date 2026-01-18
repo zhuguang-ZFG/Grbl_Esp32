@@ -18,7 +18,7 @@
 
 #define HR4988_FIXED_VREF_VOLTAGE   0.64f    // 固定VREF电压 (V)
 #define VREF_MAX_VOLTAGE            3.3f     // ESP32 DAC最大电压 (V)
-#define HR4988_FIXED_DAC_VALUE      49       // 固定DAC值 (0.64V / 3.3V * 255)
+#define HR4988_FIXED_DAC_VALUE      ((uint8_t)(HR4988_FIXED_VREF_VOLTAGE / VREF_MAX_VOLTAGE * 255.0f))  // 固定DAC值 (自动计算)
 
 // ================================================================================
 // VREF控制接口（极简版）

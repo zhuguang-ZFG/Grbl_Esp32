@@ -36,8 +36,8 @@ static motor_timing_t clamp_motor_timing = {0, 0, false};
 
 // 静态标志 - 用于状态间传递信息
 static bool positioning_init = false;
-static bool eject_detected = false;
-static bool reverse_complete = false;
+static bool panel_alone_complete = false;  // FULL_FEED状态：面板电机单独运行完成标志
+static bool reverse_complete = false;      // REPOSITION状态：反转完成标志
 
 // ================================================================================
 // 模块间接口函数实现 - 供其他模块调用
@@ -81,38 +81,54 @@ motor_timing_t* get_clamp_motor_timing() {
 /**
  * @brief 获取静态标志
  */
-void get_static_flags(bool* positioning_init_val, bool* eject_detected_val, bool* reverse_complete_val) {
+void get_static_flags(bool* positioning_init_val, bool* panel_alone_complete_val, bool* reverse_complete_val) {
     if (positioning_init_val) *positioning_init_val = positioning_init;
-    if (eject_detected_val) *eject_detected_val = eject_detected;
+    if (panel_alone_complete_val) *panel_alone_complete_val = panel_alone_complete;
     if (reverse_complete_val) *reverse_complete_val = reverse_complete;
 }
 
 /**
  * @brief 设置静态标志
  */
-void set_static_flags(bool positioning_init_val, bool eject_detected_val, bool reverse_complete_val) {
+void set_static_flags(bool positioning_init_val, bool panel_alone_complete_val, bool reverse_complete_val) {
     positioning_init = positioning_init_val;
-    eject_detected = eject_detected_val;
+    panel_alone_complete = panel_alone_complete_val;
     reverse_complete = reverse_complete_val;
 }
 
 /**
- * @brief 安全更新单个静态标志（辅助函数）
- * @param flag_type 标志类型（'p'=positioning_init, 'e'=eject_detected, 'r'=reverse_complete）
+ * @brief 设置面板单独运行完成标志（FULL_FEED状态使用）
+ */
+void set_panel_alone_complete(bool value) {
+    panel_alone_complete = value;
+}
+
+/**
+ * @brief 设置反转完成标志（REPOSITION状态使用）
+ */
+void set_reverse_complete(bool value) {
+    reverse_complete = value;
+}
+
+/**
+ * @brief 设置位置初始化标志
+ */
+void set_positioning_init(bool value) {
+    positioning_init = value;
+}
+
+/**
+ * @brief 安全更新单个静态标志（辅助函数，保留兼容性）
+ * @param flag_type 标志类型（'p'=positioning_init, 'a'=panel_alone_complete, 'r'=reverse_complete）
  * @param value 新值
  */
 void update_static_flag(char flag_type, bool value) {
-    bool pos, eject, reverse;
-    get_static_flags(&pos, &eject, &reverse);
-    
     switch (flag_type) {
-        case 'p': pos = value; break;
-        case 'e': eject = value; break;
-        case 'r': reverse = value; break;
+        case 'p': set_positioning_init(value); break;
+        case 'a': set_panel_alone_complete(value); break;
+        case 'r': set_reverse_complete(value); break;
         default: return;
     }
-    
-    set_static_flags(pos, eject, reverse);
 }
 
 // ================================================================================
@@ -137,9 +153,9 @@ static bool init_hardware_system() {
     hc595_init();
     sensor_system_init();
     
-    // HR4988 VREF动态电流控制初始化
+    // HR4988 VREF固定电压控制初始化（固定输出0.64V）
     if (!init_hr4988_vref()) {
-        LOG_WARNING("HR4988 VREF initialization failed, using default current");
+        LOG_WARNING("HR4988 VREF initialization failed, VREF may not be set correctly");
     }
     
     return true;
@@ -186,7 +202,7 @@ static void init_control_structures() {
     
     // 初始化静态标志
     positioning_init = false;
-    eject_detected = false;
+    panel_alone_complete = false;
     reverse_complete = false;
 }
 
@@ -355,7 +371,7 @@ void paper_change_reset() {
     
     // 重置静态标志
     positioning_init = false;
-    eject_detected = false;
+    panel_alone_complete = false;
     reverse_complete = false;
 }
 
