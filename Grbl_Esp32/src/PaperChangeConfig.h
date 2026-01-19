@@ -160,6 +160,17 @@
 #define PAPER_CLAMP_INTERVAL_US     2000   // 夹紧电机步进间隔（微秒）
 #define PAPER_PANEL_INTERVAL_US     1000   // 面板电机步进间隔（微秒）
 
+// FULL_FEED / EJECTING 阶段专用步进间隔（避免魔法数字）
+#define PAPER_FULL_FEED_SYNC_INTERVAL_US          1000  // FULL_FEED阶段进纸+面板同步运行步进间隔
+#define PAPER_FULL_FEED_PANEL_ALONE_INTERVAL_US   1000  // FULL_FEED阶段面板独立运行步进间隔
+#define PAPER_EJECT_FAST_INTERVAL_US              500   // EJECTING阶段快速出纸步进间隔
+
+// 进度日志步数间隔（避免在代码中散落使用 50/100/200/1000 这类魔法数字）
+#define PAPER_FULL_FEED_PROGRESS_STEP_INTERVAL            1000
+#define PAPER_PANEL_ALONE_PROGRESS_STEP_INTERVAL          200
+#define PAPER_CLAMP_PROGRESS_STEP_INTERVAL                 50
+#define PAPER_UNCLAMP_FEED_FEED_PROGRESS_STEP_INTERVAL    100
+
 // 超时保护参数（安全机制）
 #define PAPER_FEED_TIMEOUT_MS       5000   // 进纸超时（毫秒）
 #define PAPER_STATE_TIMEOUT_MS      30000  // 单状态最大时间（毫秒）
@@ -189,5 +200,7 @@
 // 阈值参数配置 - 判定条件
 // ================================================================================
 #define PAPER_MIN_FEED_RATIO        0.8f   // FULL_FEED状态最小进给比例（80%）- 允许提前完成
+// FULL_FEED阶段最小进给步数（用于提前完成判定），单独抽出常量避免在逻辑中重复计算
+#define PAPER_MIN_FEED_STEPS        ((uint32_t)(PAPER_EJECT_STEPS * PAPER_MIN_FEED_RATIO))
 
 #endif // AUTO_PAPER_CHANGE_ENABLE

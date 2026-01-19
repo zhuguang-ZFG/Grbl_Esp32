@@ -351,7 +351,10 @@ static void handle_full_ejection(paper_change_ctrl_t* ctrl) {
     // 设置快速正转速度（2kHz）
     motor_timing_t* panel_timing = get_panel_motor_timing();
     if (panel_timing) {
-        panel_timing->step_interval = 500; // 2kHz快速出纸
+        // 使用配置常量，避免魔法数字
+        if (panel_timing->step_interval != PAPER_EJECT_FAST_INTERVAL_US) {
+            panel_timing->step_interval = PAPER_EJECT_FAST_INTERVAL_US; // 2kHz快速出纸
+        }
     }
     
     if (nonblocking_panel_step(true)) {
@@ -433,7 +436,7 @@ void handle_unclamp_feed_state() {
         if (nonblocking_clamp_step(true)) {
             ctrl->step_counter++;
             
-            if (ctrl->step_counter % 50 == 0) {
+            if (ctrl->step_counter % PAPER_CLAMP_PROGRESS_STEP_INTERVAL == 0) {
                 float progress_mm = steps_to_mm(ctrl->step_counter, DEFAULT_CLAMP_STEPS_PER_MM);
                 LOG_PROGRESS("Clamp motor releasing: %.1fmm", progress_mm);
             }
@@ -447,8 +450,8 @@ void handle_unclamp_feed_state() {
         if (nonblocking_feed_step(true)) {
             ctrl->step_counter++;
             
-            // 每100步报告一次进度
-            if ((ctrl->step_counter - PAPER_1_5CM_STEPS) % 100 == 0) {
+            // 每固定步数报告一次进度（使用配置常量避免魔法数字）
+            if ((ctrl->step_counter - PAPER_1_5CM_STEPS) % PAPER_UNCLAMP_FEED_FEED_PROGRESS_STEP_INTERVAL == 0) {
                 float progress_mm = steps_to_mm(ctrl->step_counter - PAPER_1_5CM_STEPS, DEFAULT_FEED_STEPS_PER_MM);
                 LOG_PROGRESS("Feed motor transporting: %.1fmm", progress_mm);
             }
@@ -478,7 +481,7 @@ void handle_clamp_feed_state() {
         if (nonblocking_clamp_step(false)) {
             ctrl->step_counter++;
             
-            if (ctrl->step_counter % 50 == 0) {
+            if (ctrl->step_counter % PAPER_CLAMP_PROGRESS_STEP_INTERVAL == 0) {
                 float progress_mm = steps_to_mm(ctrl->step_counter, DEFAULT_CLAMP_STEPS_PER_MM);
                 LOG_PROGRESS("Clamp motor clamping: %.1fmm", progress_mm);
             }
@@ -518,16 +521,19 @@ void handle_full_feed_state() {
     
     // 阶段1：同步运行阶段 - 两个电机同步运行，直到纸张脱离传感器
     if (!panel_alone_complete_val) {
-        // 设置两个电机同步运行，相同步进间隔
-        feed_timing->step_interval = 1000;
-        panel_timing->step_interval = 1000;
+        // 设置两个电机同步运行，相同步进间隔（仅在需要时更新，避免每次循环重复赋值）
+        if (feed_timing->step_interval != PAPER_FULL_FEED_SYNC_INTERVAL_US) {
+            feed_timing->step_interval = PAPER_FULL_FEED_SYNC_INTERVAL_US;
+        }
+        if (panel_timing->step_interval != PAPER_FULL_FEED_SYNC_INTERVAL_US) {
+            panel_timing->step_interval = PAPER_FULL_FEED_SYNC_INTERVAL_US;
+        }
         
         // 检查完成条件：
         // 1. 已进给A4长度且纸张已脱离传感器（正常情况）
         // 2. 或者纸张提前脱离传感器（提前完成，也需要至少进给最小比例的距离）
-        uint32_t min_feed_steps = (uint32_t)(PAPER_EJECT_STEPS * PAPER_MIN_FEED_RATIO);  // 至少进给配置的最小比例
         if ((ctrl->step_counter >= PAPER_EJECT_STEPS && !ctrl->paper_sensor_state) ||
-            (!ctrl->paper_sensor_state && ctrl->step_counter >= min_feed_steps)) {
+            (!ctrl->paper_sensor_state && ctrl->step_counter >= PAPER_MIN_FEED_STEPS)) {
             LOG_MSG("Full feed sync phase complete, paper detached from sensor. Stopping feed motor, panel motor continues 3cm");
             // 停止进纸器电机
             feed_timing->last_step_time = 0;  // 禁用进纸器电机
@@ -536,8 +542,9 @@ void handle_full_feed_state() {
             set_panel_alone_complete(true);  // 标记面板单独运行阶段开始
         } else {
             // 只有当两个电机都到了应该步进的时间时，才同步执行步进
-            // 安全处理millis()溢出（虽然步进间隔很短，溢出可能性极低，但为了安全仍处理）
-            uint32_t current_time = millis();
+            // 使用micros()与init_motor_timing()保持一致（都是微秒单位）
+            // 安全处理micros()溢出（虽然步进间隔很短，溢出可能性极低，但为了安全仍处理）
+            uint32_t current_time = micros();
             uint32_t feed_elapsed = (current_time >= feed_timing->last_step_time) ? 
                                     (current_time - feed_timing->last_step_time) :
                                     (UINT32_MAX - feed_timing->last_step_time + current_time + 1);
@@ -557,7 +564,7 @@ void handle_full_feed_state() {
                 panel_timing->last_step_time = current_time;
                 ctrl->step_counter++;  // 每次两个电机同步步进时，计数器加1
                 
-                if (ctrl->step_counter % 1000 == 0) {
+                if (ctrl->step_counter % PAPER_FULL_FEED_PROGRESS_STEP_INTERVAL == 0) {
                     float progress = (float)ctrl->step_counter / PAPER_EJECT_STEPS * 100.0;
                     LOG_PROGRESS("Full feed sync progress: %.1f%% (Step %lu/%lu)", 
                                progress, ctrl->step_counter, PAPER_EJECT_STEPS);
@@ -568,12 +575,14 @@ void handle_full_feed_state() {
     // 阶段2：面板电机单独运行阶段 - 面板电机单独运行3cm
     else if (panel_alone_complete_val && ctrl->step_counter < PAPER_3CM_STEPS) {
         // 面板电机单独运行，进纸器电机已停止
-        panel_timing->step_interval = 1000;  // 保持1kHz速度
+        if (panel_timing->step_interval != PAPER_FULL_FEED_PANEL_ALONE_INTERVAL_US) {
+            panel_timing->step_interval = PAPER_FULL_FEED_PANEL_ALONE_INTERVAL_US;  // 保持1kHz速度
+        }
         
         if (nonblocking_panel_step(true)) {
             ctrl->step_counter++;
             
-            if (ctrl->step_counter % 200 == 0) {
+            if (ctrl->step_counter % PAPER_PANEL_ALONE_PROGRESS_STEP_INTERVAL == 0) {
                 float progress_mm = steps_to_mm(ctrl->step_counter, DEFAULT_PANEL_STEPS_PER_MM);
                 LOG_PROGRESS("Panel motor alone: %.1fmm", progress_mm);
             }
