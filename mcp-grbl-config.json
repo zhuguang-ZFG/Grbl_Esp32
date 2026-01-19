@@ -1,0 +1,42 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "node",
+      "args": ["-e", "console.log(\"filesystem\")"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_TOKEN_HERE"
+      }
+    },
+    "memory": {
+      "command": "node",
+      "args": ["-e", "console.log(\"memory\")"]
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"]
+    },
+    "puppeteer": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+    },
+    "esp32-tools": {
+      "command": "python",
+      "args": ["-m", "esp32_mcp_server"],
+      "cwd": "f:/BaiduNetdiskDownload/code/GRBL/Grbl_Esp32"
+    },
+    "grbl-analyzer": {
+      "command": "python",
+      "args": ["-m", "grbl_analyzer"],
+      "cwd": "f:/BaiduNetdiskDownload/code/GRBL/Grbl_Esp32"
+    },
+    "hr4988-calculator": {
+      "command": "python",
+      "args": ["-m", "hr4988_calculator"],
+      "cwd": "f:/BaiduNetdiskDownload/code/GRBL/Grbl_Esp32"
+    }
+  }
+}

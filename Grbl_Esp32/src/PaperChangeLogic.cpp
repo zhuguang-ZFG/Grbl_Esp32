@@ -360,7 +360,7 @@ static void handle_full_ejection(paper_change_ctrl_t* ctrl) {
     if (nonblocking_panel_step(true)) {
         ctrl->step_counter++;
         
-        if (ctrl->step_counter % 1000 == 0) {
+        if (ctrl->step_counter % PAPER_EJECT_PROGRESS_STEP_INTERVAL == 0) {
             float progress = (float)ctrl->step_counter / (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS) * 100.0;
             LOG_PROGRESS("Ejection progress: %.1f%% (Step %lu/%lu)", 
                        progress, ctrl->step_counter, (PAPER_EJECT_STEPS + PAPER_3TO5CM_STEPS));
@@ -626,7 +626,7 @@ void handle_reposition_state() {
                 set_reverse_complete(true);  // 标记反转完成，开始正转定位
             }
             
-            if (ctrl->step_counter % 200 == 0) {
+            if (ctrl->step_counter % PAPER_REPOSITION_REVERSE_PROGRESS_STEP_INTERVAL == 0) {
                 float reverse_mm = steps_to_mm(ctrl->step_counter, DEFAULT_PANEL_STEPS_PER_MM);
                 LOG_PROGRESS("Panel motor reversing: %.1fmm", reverse_mm);
             }
@@ -636,7 +636,7 @@ void handle_reposition_state() {
         if (nonblocking_panel_step(true)) {
             ctrl->step_counter++;
             
-            if (ctrl->step_counter % 50 == 0) {
+            if (ctrl->step_counter % PAPER_REPOSITION_FORWARD_PROGRESS_STEP_INTERVAL == 0) {
                 float position_mm = steps_to_mm(ctrl->step_counter, DEFAULT_PANEL_STEPS_PER_MM);
                 LOG_PROGRESS("Critical positioning: %.1fmm", position_mm);
             }
