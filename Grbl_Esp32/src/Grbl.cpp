@@ -121,11 +121,26 @@ static void reset_variables() {
     sys_pl_data_inflight = NULL;
 }
 
+/**
+ * @brief Executes the Grbl main loop once, resetting all system variables before starting.
+ *
+ * This function first resets all the system variables to their default state. It then
+ * initiates the Grbl main loop, which processes program inputs and executes them. If the
+ * system encounters an abort condition, it will exit the main loop, and this function
+ * should be called again to restart the process.
+ *
+ * The reset process includes clearing the system struct, setting override values to 100%,
+ * stopping the spindle, initializing coolant, limits, probe, planner, stepper subsystems,
+ * and syncing positions. This ensures that the system is in a clean state before starting
+ * the main loop.
+ *
+ * @note This function is typically called within a loop to continuously run the Grbl system.
+ */
 void run_once() {
     reset_variables();
-    // Start Grbl main loop. Processes program inputs and executes them.
-    // This can exit on a system abort condition, in which case run_once()
-    // is re-executed by an enclosing loop.
+// 启动 Grbl 主循环。处理程序输入并执行它们。
+// // 这可以在系统中止条件下退出，在这种情况下 run_once()
+// // 由封闭循环重新执行。
     protocol_main_loop();
 }
 

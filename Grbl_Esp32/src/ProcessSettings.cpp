@@ -613,6 +613,19 @@ Error system_execute_line(char* line, uint8_t client, WebUI::AuthenticationLevel
     return system_execute_line(line, &stream, auth_level);
 }
 
+/**
+ * @brief 执行系统的启动行。
+ *
+ * 该函数接受一个字符数组作为输入，在函数中没有使用该数组
+ * 当前实施。然后它检索并执行前两个
+ * 启动行，报告每次执行的结果。
+ *
+ * 该函数使用`gc_execute_line`来执行每个启动行并
+ * `report_execute_startup_message` 报告结果。如果启动行
+ * 为空，不会执行。
+ *
+ * @param line 指向字符数组的指针（函数中未使用）。
+ */
 void system_execute_startup(char* line) {
     Error status_code;
     char  gcline[256];

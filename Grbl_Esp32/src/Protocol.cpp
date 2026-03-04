@@ -110,8 +110,8 @@ bool can_park() {
 void protocol_main_loop() {
     client_reset_read_buffer(CLIENT_ALL);
     empty_lines();
-    //uint8_t client = CLIENT_SERIAL; // default client
-    // Perform some machine checks to make sure everything is good to go.
+  //uint8_t 客户端 = CLIENT_SERIAL; // 默认客户端
+    // 执行一些机器检查以确保一切正常。
 #ifdef CHECK_LIMITS_AT_INIT
     if (hard_limits->get()) {
         if (limits_get_state()) {
@@ -120,9 +120,9 @@ void protocol_main_loop() {
         }
     }
 #endif
-    // Check for and report alarm state after a reset, error, or an initial power up.
-    // NOTE: Sleep mode disables the stepper drivers and position can't be guaranteed.
-    // Re-initialize the sleep state as an ALARM mode to ensure user homes or acknowledges.
+   // 在重置、错误或初始上电后检查并报告警报状态。
+    // 注意：睡眠模式会禁用步进驱动器，并且无法保证位置。
+    // 将睡眠状态重新初始化为警报模式，以确保用户返回或确认。
     if (sys.state == State::Alarm || sys.state == State::Sleep) {
         report_feedback_message(Message::AlarmLock);
         sys.state = State::Alarm;  // Ensure alarm state is set.
@@ -131,14 +131,14 @@ void protocol_main_loop() {
         sys.state = State::Idle;
         if (system_check_safety_door_ajar()) {
             sys_rt_exec_state.bit.safetyDoor = true;
-            protocol_execute_realtime();  // Enter safety door mode. Should return as IDLE state.
+            protocol_execute_realtime();  // 进入安全门模式。应返回 IDLE 状态。
         }
         // All systems go!
-        system_execute_startup(line);  // Execute startup script.
+        system_execute_startup(line);  // 执行启动脚本。
     }
     // ---------------------------------------------------------------------------------
-    // Primary loop! Upon a system abort, this exits back to main() to reset the system.
-    // This is also where Grbl idles while waiting for something to do.
+   // 主循环！系统中止后，将返回到 main() 以重置系统。
+    // 这也是 Grbl 在等待做某事时空闲的地方。
     // ---------------------------------------------------------------------------------
     int c;
     for (;;) {
@@ -156,9 +156,9 @@ void protocol_main_loop() {
             }
         }
 #endif
-        // Receive one line of incoming serial data, as the data becomes available.
-        // Filtering, if necessary, is done later in gc_execute_line(), so the
-        // filtering is the same with serial and file input.
+       // 当数据可用时，接收一行传入的串行数据。
+        // 如有必要，稍后会在 gc_execute_line() 中完成过滤，因此
+        // 过滤与串行和文件输入相同。
         uint8_t client = CLIENT_SERIAL;
         char*   line;
         for (client = 0; client < CLIENT_COUNT; client++) {
