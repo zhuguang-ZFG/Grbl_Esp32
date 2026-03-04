@@ -22,6 +22,7 @@
 #include <WiFi.h>
 
 #ifdef AUTO_PAPER_CHANGE_ENABLE
+// 写字机扩展：启用智能 M0 解析和自动换纸子系统
 #include "SmartM0.h"
 #include "PaperChange.h"
 #endif
@@ -108,6 +109,7 @@ static void reset_variables() {
     st_reset();    // Clear stepper subsystem variables
     
     // Initialize paper change systems
+    // 写字机专用：在 Grbl 主系统完全重置后，再初始化自动换纸子系统
     #ifdef AUTO_PAPER_CHANGE_ENABLE
     paper_change_init();
     #endif

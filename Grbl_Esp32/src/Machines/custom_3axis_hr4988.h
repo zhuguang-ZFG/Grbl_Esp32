@@ -42,6 +42,14 @@
     - 74HC595D provides expanded GPIO for multiple motor control
 */
 
+/* 中文总览说明
+ * - 本文件是“3 轴 A4 写字机 + 自动换纸系统”的整机配置文件
+ * - 负责把 ESP32 的 GPIO 引脚映射到步进电机、传感器、74HC595D 输出位等硬件资源
+ * - 负责配置三轴的步距（steps/mm）、最大速度、加速度和行程，刚好覆盖一张 A4 纸的工作范围
+ * - 自动换纸只是在此打开功能和提供引脚，具体状态机逻辑见 PaperChange*.cpp
+ * - 若更换主控板、改线或调整机械参数，应优先修改本文件及 PaperChangeConfig.h 中的相关宏
+ */
+
 #define MACHINE_NAME "Custom 3-Axis HR4988"
 
 // Enable software debounce since no hardware R/C filters
@@ -151,21 +159,26 @@
 #define DEFAULT_LASER_MODE           0       // false
 
 // Motor parameters (adjusted for plotter/pen writing machine)
+// 写字机三轴运动学参数说明：
+//  - X/Y 步距 200 steps/mm：典型 1.8° 步进电机 + 细分 + 皮带传动组合，覆盖整张 A4 时有足够分辨率
+//  - Z  步距 400 steps/mm：抬笔行程短但要求更细腻，步距翻倍以提升抬/落精度和柔和度
+//  - 最大速度/加速度：X/Y 相对较快以提高写字效率，Z 略慢以避免剧烈冲击
+//  - 最大行程：严格对应 A4 宽/长 和笔抬升高度，防止超程撞车
 #define DEFAULT_X_STEPS_PER_MM       200.0
 #define DEFAULT_Y_STEPS_PER_MM       200.0
 #define DEFAULT_Z_STEPS_PER_MM       400.0   // Higher resolution for pen control
 
-#define DEFAULT_X_MAX_RATE           5000.0  // mm/min
-#define DEFAULT_Y_MAX_RATE           5000.0  // mm/min
-#define DEFAULT_Z_MAX_RATE           1500.0  // Slower for pen up/down control
+#define DEFAULT_X_MAX_RATE           5000.0  // mm/min  —— X 轴最大运行速度
+#define DEFAULT_Y_MAX_RATE           5000.0  // mm/min  —— Y 轴最大运行速度
+#define DEFAULT_Z_MAX_RATE           1500.0  // mm/min  —— Z 轴抬笔速度适当降低，减小冲击
 
-#define DEFAULT_X_ACCELERATION       500.0   // mm/sec^2
+#define DEFAULT_X_ACCELERATION       500.0   // mm/sec^2 —— X/Y 相同加速度，保证走斜线时手感一致
 #define DEFAULT_Y_ACCELERATION       500.0   // mm/sec^2
-#define DEFAULT_Z_ACCELERATION       800.0   // Faster acceleration for pen lift
+#define DEFAULT_Z_ACCELERATION       800.0   // mm/sec^2 —— Z 轴加速度略高，抬笔/落笔响应更及时
 
-#define DEFAULT_X_MAX_TRAVEL         210.0   // mm - A4 width (short side)
-#define DEFAULT_Y_MAX_TRAVEL         297.0   // mm - A4 height (long side)
-#define DEFAULT_Z_MAX_TRAVEL         20.0    // mm - pen lift height (0-20mm)
+#define DEFAULT_X_MAX_TRAVEL         210.0   // mm —— A4 宽度（短边）210mm
+#define DEFAULT_Y_MAX_TRAVEL         297.0   // mm —— A4 长度（长边）297mm
+#define DEFAULT_Z_MAX_TRAVEL         20.0    // mm —— 笔从 0~20mm 的可用抬升空间
 
 // === Paper Change System Parameters ===
 
