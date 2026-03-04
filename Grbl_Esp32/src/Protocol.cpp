@@ -104,9 +104,25 @@ bool can_park() {
         homing_enable->get() && !spindle->inLaserMode();
 }
 
-/*
-  GRBL PRIMARY LOOP:
-*/
+/**
+ * @brief 协议的主循环，负责处理所有传入的命令和系统状态。
+ *
+ * 该函数是通信协议的核心，管理系统的状态，
+ * 处理来自各种客户端（例如串口、SD卡）的传入数据，并执行
+ * 实时命令。它还处理安全检查，例如检查硬限制和
+ * 安全门状态，确保系统处于安全状态后再继续
+ * 进一步的操作。
+ *
+ * 循环不断运行，从可用客户端读取数据，添加字符
+ * 行缓冲区，并在检测到行尾 (EOL) 字符后执行行。
+ * 支持自动循环启动、智能M0检测、换纸更新等功能，
+ * 取决于配置。
+ *
+ * 如果系统进入中止状态，循环将退出，允许系统重置。
+ *
+ * @note 该函数在正常操作下不会返回；它无限期地运行直到
+ * 系统中止或断电。
+ */
 void protocol_main_loop() {
     client_reset_read_buffer(CLIENT_ALL);
     empty_lines();
@@ -168,15 +184,15 @@ void protocol_main_loop() {
                     case Error::Ok:
                         break;
                     case Error::Eol:
-                        protocol_execute_realtime();  // Runtime command check point.
+                        protocol_execute_realtime();  // R取消命令检查点的时间。
                         if (sys.abort) {
-                            return;  // Bail to calling function upon system abort
+                            return;  //系统中止时调用函数的保释
                         }
                         line = client_lines[client].buffer;
 #ifdef REPORT_ECHO_RAW_LINE_RECEIVED
                         report_echo_line_received(line, client);
 #endif
-                        // auth_level can be upgraded by supplying a password on the command line
+                        // 可以通过在命令行上提供密码来升级 auth_level
                         report_status_message(execute_line(line, client, WebUI::AuthenticationLevel::LEVEL_GUEST), client);
                         empty_line(client);
                         break;
@@ -189,9 +205,9 @@ void protocol_main_loop() {
                 }
             }  // while serial read
         }      // for clients
-        // If there are no more characters in the serial read buffer to be processed and executed,
-        // this indicates that g-code streaming has either filled the planner buffer or has
-        // completed. In either case, auto-cycle start, if enabled, any queued moves.
+// 如果串行读缓冲区中没有更多字符需要处理和执行，
+        // 这表明 g 代码流要么已填充规划器缓冲区，要么已
+        // 完成。无论哪种情况，如果启用，都会自动循环启动任何排队的移动。
         protocol_auto_cycle_start();
         
 #ifdef AUTO_PAPER_CHANGE_ENABLE

@@ -124,19 +124,12 @@ static void reset_variables() {
 }
 
 /**
- * @brief Executes the Grbl main loop once, resetting all system variables before starting.
+ * @brief 启动 Grbl 主循环。
  *
- * This function first resets all the system variables to their default state. It then
- * initiates the Grbl main loop, which processes program inputs and executes them. If the
- * system encounters an abort condition, it will exit the main loop, and this function
- * should be called again to restart the process.
+ * 该函数首先重置系统变量，然后启动 Grbl 的主循环。主循环处理程序输入并执行它们。
+ * 如果在运行过程中遇到系统中止条件，此函数将退出，并由外部循环重新调用。
  *
- * The reset process includes clearing the system struct, setting override values to 100%,
- * stopping the spindle, initializing coolant, limits, probe, planner, stepper subsystems,
- * and syncing positions. This ensures that the system is in a clean state before starting
- * the main loop.
- *
- * @note This function is typically called within a loop to continuously run the Grbl system.
+ * @note 此函数内部调用了 `reset_variables()` 和 `protocol_main_loop()`。
  */
 void run_once() {
     reset_variables();
@@ -154,7 +147,7 @@ void __attribute__((weak)) user_m30() {}
 
 void __attribute__((weak)) user_tool_change(uint8_t new_tool) {}
 /*
-  setup() and loop() in the Arduino .ino implements this control flow:
+  Arduino .ino 中的 setup() 和 Loop() 实现了此控制流程：
 
   void main() {
      init();          // setup()
