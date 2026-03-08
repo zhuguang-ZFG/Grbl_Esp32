@@ -6,7 +6,7 @@
     Part of Grbl_ESP32
 
     Pin assignments for custom 3-axis CNC with HR4988 drivers
-    ESP32-WROOM-32E with 40MHz crystal
+    ESP32-WROVER series (or WROOM; pin-compatible, 40MHz crystal)
     Integrated 74HC595D-based automatic paper change system
 
     === A4 Size Writing Plotter ===
