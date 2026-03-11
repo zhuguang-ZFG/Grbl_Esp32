@@ -59,9 +59,9 @@
 
 // Define this to use the Arduino serial (UART) driver instead
 // of the one in Uart.cpp, which uses the ESP-IDF UART driver.
-// This is for regression testing, and can be removed after
-// testing is complete.
-// #define REVERT_TO_ARDUINO_SERIAL
+// 在你的板子上，使用 Arduino 自带的 Serial 驱动（与极简回显程序一致）更稳定，
+// 所以这里直接启用回退选项，避免 Uart0 封装带来的兼容性问题。
+#define REVERT_TO_ARDUINO_SERIAL
 
 portMUX_TYPE myMutex = portMUX_INITIALIZER_UNLOCKED;
 
@@ -136,6 +136,12 @@ static uint8_t getClientChar(uint8_t* data) {
     if (client_buffer[CLIENT_SERIAL].availableforwrite() && (res = Uart0.read()) != -1) {
 #endif
         *data = res;
+        // 调试：串口每收到一个字节，在调试输出一行，便于确认 UART0 接收是否正常
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[DBG RX] 0x%02X '%c'",
+                       *data,
+                       (*data >= 32 && *data <= 126) ? *data : '.');
         return CLIENT_SERIAL;
     }
     if (WebUI::inputBuffer.available()) {
