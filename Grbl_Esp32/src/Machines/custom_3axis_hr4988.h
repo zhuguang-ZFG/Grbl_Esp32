@@ -8,15 +8,16 @@
     Pin assignments for custom 3-axis CNC with HR4988 drivers
     ESP32-D0WDQ6 with 40MHz crystal
 
-    Hardware Configuration:
-    - X Axis:  GPIO27 (STEP), GPIO26 (DIR)
-    - Y1Y2 Axis: 32K_XN (GPIO33/STEP), 32K_XP (GPIO32/DIR) - dual motor ganged
-    - Z Axis:  MTMS (GPIO14/STEP), MTDI (GPIO12/DIR) - Pen up/down control
-    - Enable:   GPIO25 (shared for all 4 HR4988 drivers, nENABLE active low)
+    Hardware Configuration (matching user wiring):
+    - X Axis:  GPIO2  (STEP), GPIO15 (DIR)
+    - Y Axis:  GPIO13 (STEP), GPIO12 (DIR) - dual motor ganged (both motors share STEP/DIR)
+    - Z Axis:  MTMS (GPIO14/STEP), GPIO27 (DIR) - Pen up/down control
+    - Enable:  GPIO4 (shared for all 4 HR4988 drivers, nENABLE active low)
+    - Driver REF: Connected to ESP32 GPIO25 (used only as analog reference, not toggled by firmware)
 
     Note: No limit switches or position sensors are used.
     Enable pin: Output LOW to enable steppers, HIGH to disable
-    
+
     Pen Control:
     - Z=0mm: Pen down (writing position)
     - Z=20mm: Pen up (travel position)
@@ -35,24 +36,24 @@
 // === Stepper Motor Definitions ===
 
 // X Axis
-#define X_STEP_PIN              GPIO_NUM_27
-#define X_DIRECTION_PIN         GPIO_NUM_26
+#define X_STEP_PIN              GPIO_NUM_2
+#define X_DIRECTION_PIN         GPIO_NUM_15
 
 // Y Axis (Hardware ganged - both motors share STEP/DIR signals)
-// Connected to 32K_XN (GPIO33) and 32K_XP (GPIO32) crystal pins
-// NOTE: These are 32.768kHz crystal pins, may interfere with RTC functionality
-#define Y_STEP_PIN              GPIO_NUM_33
-#define Y_DIRECTION_PIN         GPIO_NUM_32
+// Both Y motors are driven in parallel from these signals
+#define Y_STEP_PIN              GPIO_NUM_13
+#define Y_DIRECTION_PIN         GPIO_NUM_12
 
 // Z Axis
-// Connected to MTMS (GPIO14) and MTDI (GPIO12) JTAG pins
-// NOTE: May interfere with debugging functionality
+// STEP on MTMS (GPIO14) JTAG pin, DIR on GPIO27 (pen up/down control)
+// NOTE: Using MTMS may interfere with debugging functionality
 #define Z_STEP_PIN              GPIO_NUM_14
-#define Z_DIRECTION_PIN         GPIO_NUM_12
+#define Z_DIRECTION_PIN         GPIO_NUM_27
 
 // Shared stepper enable pin for all HR4988 drivers
+// Connected to GPIO4 (ESP32-WROOM-32 pin P26)
 // Active LOW (nENABLE): Output LOW to enable, HIGH to disable (HR4988 standard)
-#define STEPPERS_DISABLE_PIN    GPIO_NUM_25
+#define STEPPERS_DISABLE_PIN    GPIO_NUM_4
 
 // Note: No limit switches are used in this configuration
 // Uncomment and configure if you add limit switches later
