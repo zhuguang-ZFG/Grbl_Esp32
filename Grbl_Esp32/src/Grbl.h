@@ -112,6 +112,10 @@ void motors_to_cartesian(float* cartestian, float* motors, int n_axis);  // weak
 // Called if MACRO_BUTTON_0_PIN or MACRO_BUTTON_1_PIN or MACRO_BUTTON_2_PIN is defined
 void user_defined_macro(uint8_t index);
 
-// Paper system M701/M711/M712/M713 (PaperSystem.cpp)
+// Paper system M701/M711/M712/M713 and [ESP901/911/912/913] (PaperSystem.cpp)
 Error paper_system_mcode(uint16_t code);
 void paper_system_init(void);
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+void paper_get_status_str(char* buf, size_t len);
+Error paper_run_motor(uint8_t motor_ix);
+#endif

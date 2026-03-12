@@ -506,7 +506,7 @@ static void IRAM_ATTR i2sOutTask(void* parameter) {
                 // Tail of the DMA descriptor found
                 // I2S TX module has alrewdy stopped by ISR
                 i2s_out_stop();
-                i2s_clear_o_dma_buffers(0);  // 0 for static I2S control mode (right ch. data is always 0)
+                i2s_clear_o_dma_buffers(atomic_load(&i2s_out_port_data));  // use current pin state for 74HC595
                 // You need to set the status before calling i2s_out_start()
                 // because the process in i2s_out_start() is different depending on the status.
                 i2s_out_pulser_status = PASSTHROUGH;
@@ -519,10 +519,11 @@ static void IRAM_ATTR i2sOutTask(void* parameter) {
                 dma_desc->qe.stqe_next = NULL;      // Cut the DMA descriptor ring. This allow us to identify the tail of the buffer.
             }
         } else {
-            // Stepper paused (passthrough state, static I2S control mode)
-            // In the passthrough mode, there is no need to fill the buffer with port_data.
-            i2s_clear_dma_buffer(dma_desc, 0);  // Essentially, no clearing is required. I'll make sure I know when I've written something.
-            o_dma.rw_pos = 0;                   // If someone calls i2s_out_push_sample, make sure there is no buffer overflow
+            // Stepper paused (passthrough state): send current port_data so 74HC595 reflects digitalWrite()
+            uint32_t port_data = atomic_load(&i2s_out_port_data);
+            i2s_clear_dma_buffer(dma_desc, port_data);
+            dma_desc->length = I2S_OUT_DMABUF_LEN;
+            o_dma.rw_pos     = 0;
         }
         I2S_OUT_PULSER_EXIT_CRITICAL();  // Unlock pulser status
 

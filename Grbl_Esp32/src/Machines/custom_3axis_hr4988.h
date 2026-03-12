@@ -45,7 +45,7 @@
 */
 
 #define MACHINE_NAME "Custom 3-Axis HR4988"
-#define GRBL_PAPER_SYSTEM 1  /* 换纸系统 M701/M711/M712/M713 在 GCode.cpp 中直写实现 */
+#define GRBL_PAPER_SYSTEM 1  /* æ¢çº¸ç³»ç» M701/M711/M712/M713 å?GCode.cpp ä¸­ç´åå®ç?*/
 
 // Use custom machine code (Custom/paper_system.cpp)
 #define CUSTOM_CODE_FILENAME "Custom/paper_system.cpp"
@@ -63,12 +63,12 @@
 #define USE_I2S_OUT
 
 // Map I2S signals to your wiring
-// DATA (SI)  -> GPIO32
-// BCK (SRCLK)-> GPIO3   (note: shares with UART0 RX, avoid using serial RX0 when paper system active)
-// WS  (RCLK) -> GPIO5
-#define I2S_OUT_DATA            GPIO_NUM_32
-#define I2S_OUT_BCK             GPIO_NUM_3
-#define I2S_OUT_WS              GPIO_NUM_5
+// DATA (SI)  -> GPIO21
+// BCK (SRCLK)-> GPIO16
+// WS  (RCLK) -> GPIO17
+#define I2S_OUT_DATA            GPIO_NUM_21
+#define I2S_OUT_BCK             GPIO_NUM_16
+#define I2S_OUT_WS              GPIO_NUM_17
 
 // Initial state of 74HC595 outputs after reset/latch:
 // - Q0 LED:    HIGH = off
@@ -78,7 +78,9 @@
 
 // Logical names for 74HC595 expanded outputs (Q0..Q7)
 #define PAPER_LED_PIN           I2SO(0)  // Q0: paper-change button LED (HIGH=off, LOW=on)
-#define PAPER_ENABLE_PIN        I2SO(1)  // Q1: paper system HR4988 enable (LOW=enable, HIGH=disable)
+#define PAPER_PANEL_ENABLE_PIN   I2SO(1)
+#define PAPER_DRIVER_ENABLE_PIN  GPIO_NUM_26
+#define PAPER_ENABLE_PIN         PAPER_PANEL_ENABLE_PIN  // Q1: paper system HR4988 enable (LOW=enable, HIGH=disable)
 #define CLAMP_MOTOR_DIR_PIN     I2SO(2)  // Q2: clamp (press roller) up/down motor DIR
 #define CLAMP_MOTOR_STEP_PIN    I2SO(3)  // Q3: clamp up/down motor STEP
 #define PANEL_MOTOR_DIR_PIN     I2SO(4)  // Q4: panel motor DIR
@@ -91,8 +93,8 @@
 #define PAPER_CHANGE_BTN_PIN    GPIO_NUM_35  // LOW=pressed (with external pulldown)
 
 // Map paper sensor to a macro button input so its state appears in status reports:
-// When PAPER_SENSOR_PIN is HIGH (有纸), status line will include "Pn:0"
-// When LOW (无纸), "0" will不出现.
+// When PAPER_SENSOR_PIN is HIGH (æçº¸), status line will include "Pn:0"
+// When LOW (æ çº¸), "0" willä¸åºç?
 #define MACRO_BUTTON_0_PIN      PAPER_SENSOR_PIN
 
 // Map user digital outputs (M62..M65 Px) to paper-handling signals

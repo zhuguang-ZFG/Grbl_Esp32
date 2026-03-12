@@ -548,7 +548,10 @@ Error gc_execute_line(char* line, uint8_t client) {
                         mg_word_bit               = ModalGroup::MM10;
                         break;
                     default: {
-                        uint16_t m_code = (uint16_t)trunc(value);
+                        uint16_t m_code = (uint16_t)(value + 0.5f);
+                        if (value >= 700.0f && value < 720.0f) {
+                            m_code = (uint16_t)value;
+                        }
                         {
                             Error e = paper_system_mcode(m_code);
                             if (e == Error::Ok) {

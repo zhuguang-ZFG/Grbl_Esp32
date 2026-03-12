@@ -1004,6 +1004,31 @@ namespace WebUI {
     }
 #endif
 
+#ifdef GRBL_PAPER_SYSTEM
+    static Error paperStatusHandler(char* parameter, AuthenticationLevel auth_level) {
+        char buf[64];
+        paper_get_status_str(buf, sizeof(buf));
+        webPrintln(buf);
+        return Error::Ok;
+    }
+    static Error paperMotorHandler(char* parameter, AuthenticationLevel auth_level, uint8_t motor_ix) {
+        Error e = paper_run_motor(motor_ix);
+        if (e == Error::Ok) {
+            webPrintln("done");
+        }
+        return e;
+    }
+    static Error paperMotor0Handler(char* parameter, AuthenticationLevel auth_level) {
+        return paperMotorHandler(parameter, auth_level, 0);
+    }
+    static Error paperMotor1Handler(char* parameter, AuthenticationLevel auth_level) {
+        return paperMotorHandler(parameter, auth_level, 1);
+    }
+    static Error paperMotor2Handler(char* parameter, AuthenticationLevel auth_level) {
+        return paperMotorHandler(parameter, auth_level, 2);
+    }
+#endif
+
     static Error showWebHelp(char* parameter, AuthenticationLevel auth_level) {  // ESP0
         webPrintln("Persistent web settings - $name to show, $name=value to set");
         webPrintln("ESPname FullName         Description");
@@ -1070,6 +1095,12 @@ namespace WebUI {
 #ifdef WEB_COMMON
         new WebCommand("RESTART", WEBCMD, WA, "ESP444", "System/Control", setSystemMode);
         new WebCommand(NULL, WEBCMD, WU, "ESP420", "System/Stats", showSysStats, anyState);
+#endif
+#ifdef GRBL_PAPER_SYSTEM
+        new WebCommand(NULL, WEBCMD, WG, "ESP901", "Paper/Status", paperStatusHandler, anyState);
+        new WebCommand(NULL, WEBCMD, WG, "ESP911", "Paper/ClampMotor", paperMotor0Handler, anyState);
+        new WebCommand(NULL, WEBCMD, WG, "ESP912", "Paper/PanelMotor", paperMotor1Handler, anyState);
+        new WebCommand(NULL, WEBCMD, WG, "ESP913", "Paper/FeederMotor", paperMotor2Handler, anyState);
 #endif
 #ifdef ENABLE_WIFI
         new WebCommand(NULL, WEBCMD, WU, "ESP410", "WiFi/ListAPs", listAPs);
