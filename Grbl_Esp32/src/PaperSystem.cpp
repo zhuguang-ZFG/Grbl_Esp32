@@ -11,15 +11,30 @@
 
 static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
 #ifdef USE_I2S_OUT
-    // 面板电机与进纸器电机使用相同的高速步进时序（150us 高/低），拾落电机保持较慢 2ms
+    // 面板/进纸器：前若干步用较慢脉宽起步，之后切换到高速 150us；拾落电机保持 2ms
+    const uint16_t ramp_steps      = 40u;    // 起步缓慢的步数（可按需要调整）
+    const uint32_t ramp_hi_us      = 400u;   // 起步阶段脉宽（高电平时间）
+    const uint32_t ramp_lo_us      = 400u;   // 起步阶段低电平时间
+    const uint32_t normal_hi_us    = 150u;   // 面板/进纸器正常高速脉宽
+    const uint32_t normal_lo_us    = 150u;
+    const uint32_t clamp_hi_us     = 2000u;  // 拾落电机脉宽
+    const uint32_t clamp_lo_us     = 2000u;
+
     uint32_t hi_us, lo_us;
     for (uint16_t i = 0; i < steps; i++) {
         if (step_pin == PANEL_MOTOR_STEP_PIN || step_pin == FEEDER_MOTOR_STEP_PIN) {
-            hi_us = 150u;
-            lo_us = 150u;
+            // 起步阶段：用更大的脉宽，减小冲击
+            if (i < ramp_steps) {
+                hi_us = ramp_hi_us;
+                lo_us = ramp_lo_us;
+            } else {
+                hi_us = normal_hi_us;
+                lo_us = normal_lo_us;
+            }
         } else {
-            hi_us = 2000u;
-            lo_us = 2000u;
+            // 拾落电机保持原来的 2ms 脉宽
+            hi_us = clamp_hi_us;
+            lo_us = clamp_lo_us;
         }
         digitalWrite(step_pin, HIGH);
         i2s_out_delay();
@@ -55,7 +70,7 @@ void paper_system_init(void) {
         int initial_value = digitalRead(PAPER_SENSOR_PIN);
         grbl_msg_sendf(CLIENT_SERIAL,
                        MsgLevel::Info,
-                       "[Paper] System ready - GPIO34(HIGH=NoP LOW=HavP) initial=%d [ESP901] [ESP911/912/913] [ESP930] [ESP910]",
+                       "[Paper] System ready vM716 - GPIO34(HIGH=NoP LOW=HavP) initial=%d [ESP901] [ESP911/912/913] [ESP930] [ESP910]",
                        initial_value);
     } else {
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning, "[Paper] PAPER_SENSOR_PIN disabled (255)");
@@ -187,6 +202,7 @@ Error paper_auto_change(void) {
     paper_enable_drivers();
 
     // 1. 面板电机先运动，弹出旧纸（A4 长度 + 余量）
+    // 方向：按你的机械，出旧纸与进新纸同向运动 → 使用 PANEL_DIR_EJECT（等于 PANEL_DIR_FEED）
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-1] Ejecting old paper (%u steps)...", (unsigned)PANEL_EJECT_STEPS);
     paper_dir_steps(PANEL_MOTOR_DIR_PIN, PANEL_DIR_EJECT, PANEL_MOTOR_STEP_PIN, PANEL_EJECT_STEPS);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-1] Done");
@@ -232,8 +248,8 @@ Error paper_auto_change(void) {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-5] Done");
 
     // 6. 面板电机 + 送纸器快速送纸，直到传感器“看不到纸”为止或达到上限
-    // 面板电机是主动力（比例 3:1），进纸器是辅助，保证纸张不倾斜
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Fast feeding until sensor loses paper (max %u steps)...", (unsigned)PANEL_FAST_STEPS_MAX);
+    // 电机同速运行（1:1），保证纸张不倾斜
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Fast feeding (panel+feeder 1:1) until sensor loses paper (max %u steps)...", (unsigned)PANEL_FAST_STEPS_MAX);
     {
         uint32_t steps = 0;
         digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_FEED);
@@ -243,10 +259,8 @@ Error paper_auto_change(void) {
         delay(2);
 #endif
         while (paper_sensor_stable() && steps < PANEL_FAST_STEPS_MAX) {
-            // 电机交织比例 3:1（面板:进纸），确保纸张直进而不倾斜
-            for (int i = 0; i < 3; i++) {
-                paper_step_pulses(PANEL_MOTOR_STEP_PIN, 1);
-            }
+            // 面板与进纸器 1:1 交替单步，确保纸张直进
+            paper_step_pulses(PANEL_MOTOR_STEP_PIN, 1);
             paper_step_pulses(FEEDER_MOTOR_STEP_PIN, 1);
             steps++;
         }
@@ -258,7 +272,8 @@ Error paper_auto_change(void) {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel reverse to find paper again (max %u steps)...", (unsigned)PANEL_BACK_STEPS_MAX);
     {
         uint32_t steps = 0;
-        digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_EJECT /* 反向：与 FEED 相反，若极性不对可调整配置宏 */);
+        // 第7步专用反向方向：PANEL_DIR_REVERSE，不再与 EJECT/FEED 共用，避免相互影响
+        digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_REVERSE);
 #ifdef USE_I2S_OUT
         i2s_out_delay();
         delay(2);
@@ -289,7 +304,7 @@ Error paper_auto_change(void) {
     return Error::Ok;
 }
 
-Error paper_system_mcode(uint16_t code, uint16_t steps) {
+Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
     if (code == 189) {
         code = 701;
     } else if (code == 199) {
@@ -348,6 +363,30 @@ Error paper_system_mcode(uint16_t code, uint16_t steps) {
             paper_step_pulses(step_pin, nsteps);
             paper_disable_drivers();
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M%u (%s): jog complete", (unsigned)code, motor_name);
+            return Error::Ok;
+        }
+        case 716: {  // 新增：M716 Qd Pd - 拾落电机单独控制方向和步数
+            if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M716: paper system not configured");
+                return Error::Ok;
+            }
+            // 步数：0 表示使用 CLAMP_TOGGLE_STEPS
+            uint16_t nsteps = (steps > 0 && steps <= 10000) ? steps : 220;  // 默认 220 步（夹紧和松开都一样）
+            // 方向逻辑：Q=0 为夹紧(clamp)，Q=1 为松开(release)；默认为 0(夹紧)
+            bool do_clamp = (clamp_dir != 1);  // Q=0 或未提供 → 夹紧; Q=1 → 松开
+            
+            bool dir_level = do_clamp ? CLAMP_DIR_CLAMP : CLAMP_DIR_RELEASE;
+
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info,
+                           "M716: Clamp motor %s %u steps (Q=%d)",
+                           do_clamp ? "CLAMP(Q0)" : "RELEASE(Q1)",
+                           (unsigned)nsteps,
+                           (int)clamp_dir);
+            paper_enable_drivers();
+            paper_dir_steps(CLAMP_MOTOR_DIR_PIN, dir_level, CLAMP_MOTOR_STEP_PIN, nsteps);
+            paper_disable_drivers();
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M716: done");
+
             return Error::Ok;
         }
         default:

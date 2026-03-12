@@ -112,8 +112,10 @@ void motors_to_cartesian(float* cartestian, float* motors, int n_axis);  // weak
 // Called if MACRO_BUTTON_0_PIN or MACRO_BUTTON_1_PIN or MACRO_BUTTON_2_PIN is defined
 void user_defined_macro(uint8_t index);
 
-// Paper system M701/M711/M712/M713 and [ESP901/911/912/913] (PaperSystem.cpp)
-Error paper_system_mcode(uint16_t code, uint16_t steps = 0);
+// Paper system M701/M711/M712/M713/M716 and [ESP901/911/912/913] (PaperSystem.cpp)
+// steps:  用于 711/712/713/716 的可选步数 (0=使用默认)
+// clamp_dir: 仅用于 M716，-1=忽略，0=release，1=clamp
+Error paper_system_mcode(uint16_t code, uint16_t steps = 0, int8_t clamp_dir = -1);
 void  paper_system_init(void);
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
 void  paper_get_status_str(char* buf, size_t len);

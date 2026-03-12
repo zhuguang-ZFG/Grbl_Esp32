@@ -24,9 +24,6 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="Add and enhance paper auto-change functionality with step parameter support and update documentation">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/Machines/custom_3axis_hr4988.h" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/Machines/custom_3axis_hr4988.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/PaperSystem.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/PaperSystem.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/配置.md" beforeDir="false" afterPath="$PROJECT_DIR$/配置.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -133,7 +130,7 @@
       <workItem from="1772943846137" duration="1604000" />
       <workItem from="1773218072555" duration="7090000" />
       <workItem from="1773238892930" duration="6436000" />
-      <workItem from="1773284347032" duration="16395000" />
+      <workItem from="1773284347032" duration="18115000" />
     </task>
     <task id="LOCAL-00001" summary="删除MCP相关脚本和配置文件">
       <option name="closed" value="true" />

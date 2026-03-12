@@ -40,6 +40,11 @@ static const uint8_t MaxToolNumber = 255;  // Limited by max unsigned 8-bit valu
 parser_state_t gc_state;
 parser_block_t gc_block;
 
+// Paper system M-command tracking: Store M code and params for processing after parameter parsing
+static uint16_t pending_m_code = 0;
+static uint16_t pending_m_steps = 0;
+static int8_t pending_m_clamp_dir = -1;
+
 #define FAIL(status) return (status);
 
 void gc_init() {
@@ -195,7 +200,7 @@ Error gc_execute_line(char* line, uint8_t client) {
         // a good enough compromise and catch most all non-integer errors. To make it compliant,
         // we would simply need to change the mantissa to int16, but this add compiled flash space.
         // Maybe update this later.
-        int_value = trunc(value);
+        int_value = round(value);  // 使用四舍五入而非截断，处理浮点数精度问题
         mantissa  = round(100 * (value - int_value));  // Compute mantissa for Gxx.x commands.
         // NOTE: Rounding must be used to catch small floating point errors.
         // Check if the g-code word is supported or errors due to modal group violations or has
@@ -435,7 +440,8 @@ Error gc_execute_line(char* line, uint8_t client) {
                     default:
                         FAIL(Error::GcodeUnsupportedCommand);  // [Unsupported G command]
                 }
-                if (mantissa > 0) {
+                // 允许微小的浮点数误差，只要值接近整数
+                if (fabs(value - round(value)) > 0.001) {
                     FAIL(Error::GcodeCommandValueNotInteger);  // [Unsupported or invalid Gxx.x command]
                 }
                 // Check for more than one command per modal group violations in the current block
@@ -448,7 +454,8 @@ Error gc_execute_line(char* line, uint8_t client) {
                 break;
             case 'M':
                 // Determine 'M' command and its modal group
-                if (mantissa > 0) {
+                // 允许微小的浮点数误差，只要值接近整数
+                if (fabs(value - round(value)) > 0.001) {
                     FAIL(Error::GcodeCommandValueNotInteger);  // [No Mxx.x commands]
                 }
                 switch (int_value) {
@@ -553,18 +560,22 @@ Error gc_execute_line(char* line, uint8_t client) {
                             m_code = (uint16_t)value;
                         }
                         {
-                            uint16_t steps = 0;
-                            if ((m_code == 711 || m_code == 712 || m_code == 713) &&
-                                gc_block.values.p > 0 && gc_block.values.p <= 10000) {
-                                steps = (uint16_t)gc_block.values.p;
-                            }
-                            Error e = paper_system_mcode(m_code, steps);
-                            if (e == Error::Ok) {
+                            uint16_t steps     = 0;
+                            int8_t   clamp_dir = -1;
+                            
+                            // M700-720 范围的命令支持 P 和 Q 参数
+                            if (m_code >= 700 && m_code < 720) {
+                                // Store for later processing in STEP 3 when parameters are parsed
+                                pending_m_code = m_code;
+                                pending_m_steps = 0;  // Will be filled from gc_block.values.p in STEP 3
+                                pending_m_clamp_dir = -1;  // Will be filled from gc_block.values.q in STEP 3
+                                
+                                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "DEBUG: M700-720 command pending (M%u): awaiting parameter parsing", (unsigned)m_code);
+                                
+                                // Mark that we have a pending paper system command
+                                // Clear possible errors from paper_system_mcode call
                                 mg_word_bit = ModalGroup::MM10;
                                 break;
-                            }
-                            if (e != Error::GcodeUnsupportedCommand) {
-                                FAIL(e);
                             }
                         }
                         {
@@ -664,7 +675,6 @@ Error gc_execute_line(char* line, uint8_t client) {
                     case 'Q':
                         axis_word_bit     = GCodeWord::Q;
                         gc_block.values.q = value;
-                        //grbl_msg_sendf(CLIENT_SERIAL, MSG_LEVEL_INFO, "Q %2.2f", value);
                         break;
                     case 'R':
                         axis_word_bit     = GCodeWord::R;
@@ -848,6 +858,24 @@ Error gc_execute_line(char* line, uint8_t client) {
             FAIL(Error::GcodeValueWordMissing);  // [P word missing]
         }
         bit_false(value_words, bit(GCodeWord::P));
+    }
+    
+    // [Paper System M716/M711/M712/M713]: Consume P and Q parameters if used by paper system commands
+    // These parameters are consumed in STEP 2, but parameters are parsed here in STEP 3.
+    // For now, unconditionally clear P and Q if they were in the command, as a workaround.
+    // TODO: Properly move M716 execution to post-parameter-parsing phase
+    if (bit_istrue(command_words, bit(ModalGroup::MM10))) {
+        // An M command was issued in this block
+        if (bit_istrue(value_words, bit(GCodeWord::P))) {
+            // P was provided; assume it's for the M command
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "DEBUG: Clearing P parameter (value=%.0f)", gc_block.values.p);
+            bit_false(value_words, bit(GCodeWord::P));
+        }
+        if (bit_istrue(value_words, bit(GCodeWord::Q))) {
+            // Q was provided; assume it's for the M command
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "DEBUG: Clearing Q parameter (value=%.1f)", gc_block.values.q);
+            bit_false(value_words, bit(GCodeWord::Q));
+        }
     }
     if ((gc_block.modal.io_control == IoControl::DigitalOnSync) || (gc_block.modal.io_control == IoControl::DigitalOffSync) ||
         (gc_block.modal.io_control == IoControl::DigitalOnImmediate) || (gc_block.modal.io_control == IoControl::DigitalOffImmediate)) {
@@ -1278,6 +1306,44 @@ Error gc_execute_line(char* line, uint8_t client) {
     // [21. Program flow ]: No error checks required.
     // [0. Non-specific error-checks]: Complete unused value words check, i.e. IJK used when in arc
     // radius mode, or axis words that aren't used in the block.
+    
+    // [Paper System M716/M711/M712/M713 Deferred Execution]:
+    // These M-commands are marked as pending in STEP 2 (before parameter parsing).
+    // Now in STEP 3, with all parameters parsed, execute them with correct parameter values.
+    if (pending_m_code >= 700 && pending_m_code < 720) {
+        uint16_t steps = 0;
+        int8_t clamp_dir = -1;
+        
+        // Extract parameters from gc_block now that they've been parsed
+        if ((pending_m_code == 711 || pending_m_code == 712 || pending_m_code == 713 || pending_m_code == 716) &&
+            gc_block.values.p > 0 && gc_block.values.p <= 10000) {
+            steps = (uint16_t)gc_block.values.p;
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "DEBUG: M%u using P parameter: steps=%u", (unsigned)pending_m_code, (unsigned)steps);
+        }
+        
+        // Q parameter for M716
+        if (pending_m_code == 716) {
+            clamp_dir = (gc_block.values.q != 0.0f) ? 1 : 0;
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "DEBUG: M716 using Q parameter: clamp_dir=%d", (int)clamp_dir);
+        }
+        
+        // Now execute the M command with proper parameters
+        Error e = paper_system_mcode(pending_m_code, steps, clamp_dir);
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "DEBUG: paper_system_mcode(M%u) executed in STEP 3, result=%d", 
+                       (unsigned)pending_m_code, (int)e);
+        
+        if (e != Error::Ok && e != Error::GcodeUnsupportedCommand) {
+            FAIL(e);
+        }
+        
+        // Clear the pending command
+        pending_m_code = 0;
+        
+        // Mark that these parameters were consumed
+        bit_false(value_words, bit(GCodeWord::P));
+        bit_false(value_words, bit(GCodeWord::Q));
+    }
+    
     if (gc_parser_flags & GCParserJogMotion) {
         // Jogging only uses the F feed rate and XYZ value words. N is valid, but S and T are invalid.
         bit_false(value_words, (bit(GCodeWord::N) | bit(GCodeWord::F)));
