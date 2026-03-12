@@ -33,7 +33,7 @@
     - Q7 (bit7):   Feeder motor STEP (HR4988 pin 16)
 
     Sensors:
-    - Paper sensor:         GPIO34 (HIGH=paper present, LOW=no paper)
+    - Paper sensor:         GPIO34 (HIGH=no paper, LOW=paper present)
     - Paper-change button:  GPIO35 (LOW=pressed, with pulldown)
 
     Note: No limit switches or position sensors are used.
@@ -102,29 +102,29 @@
 // 面板电机：最终微调到位的步数
 #define PANEL_FINAL_STEPS       500u
 
-// 进纸器电机：寻找新纸到感应器的最大步数
-#define FEEDER_FIND_STEPS_MAX   8000u
+// 进纸器电机：寻找新纸到感应器的最大步数（超时时间，可根据实际距离调大）
+#define FEEDER_FIND_STEPS_MAX   12000u
 // 进纸器电机：纸到感应器后继续送入的步数（约 5cm）
 #define FEEDER_EXTRA_STEPS      2000u
 
-// 拾落电机：压纸 / 抬纸的步数（一次完整动作）
-#define CLAMP_TOGGLE_STEPS      600u
+// 拾落电机：压纸 / 抬纸的步数（一次完整动作），行程偏大可根据机构减小
+#define CLAMP_TOGGLE_STEPS      300u
 
-// 方向极性（如方向相反，可将 true/false 互换）
+// 方向极性（如方向相反，可将 true/false 互换；若看起来反了，就把这两个再对调）
 #define PANEL_DIR_EJECT         false  // 面板电机“弹出旧纸”方向（反向）
 #define PANEL_DIR_FEED          true   // 面板电机“送入新纸”方向
 #define FEEDER_DIR_FORWARD      false  // 进纸器“送纸进入机器”方向（反向）
-#define CLAMP_DIR_RELEASE       false  // 拾落电机“松开纸张”方向（已反向）
-#define CLAMP_DIR_CLAMP         true   // 拾落电机“压紧纸张”方向
+#define CLAMP_DIR_RELEASE       true   // 拾落电机“松开纸张”方向（再次反向）
+#define CLAMP_DIR_CLAMP         false  // 拾落电机“压紧纸张”方向
 
 // Sensor and input pins for paper system
-#define PAPER_SENSOR_PIN        GPIO_NUM_34  // HIGH=paper present, LOW=no paper
+// 实测接法：挡住传感器时为 LOW，松开为 HIGH；代码里已按“LOW=paper present, HIGH=no paper”处理
+#define PAPER_SENSOR_PIN        GPIO_NUM_34
 #define PAPER_CHANGE_BTN_PIN    GPIO_NUM_35  // LOW=pressed (with external pulldown)
 
-// Map paper sensor to a macro button input so its state appears in status reports:
-// When PAPER_SENSOR_PIN is HIGH (æçº¸), status line will include "Pn:0"
-// When LOW (æ çº¸), "0" willä¸åºç?
-#define MACRO_BUTTON_0_PIN      PAPER_SENSOR_PIN
+// 如需将纸张传感器映射为 Macro0 按钮，可启用下列宏，但在传感器抖动时会频繁输出 [MSG:Macro0]。
+// 默认关闭，只通过状态行里的 Pn:0 反映纸张状态，避免刷屏。
+// #define MACRO_BUTTON_0_PIN      PAPER_SENSOR_PIN
 
 // Map user digital outputs (M62..M65 Px) to paper-handling signals
 // M62/M64 Px = ON (HIGH), M63/M65 Px = OFF (LOW)
