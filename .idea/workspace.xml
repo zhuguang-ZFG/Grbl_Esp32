@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="BackendCodeEditorMiscSettings">
+    <option name="/Default/Environment/Hierarchy/GeneratedFilesCacheKey/Timestamp/@EntryValue" value="3" type="long" />
+    <option name="/Default/Housekeeping/FeatureSuggestion/FeatureSuggestionManager/DisabledSuggesters/=SwitchToGoToActionSuggester/@EntryIndexedValue" value="true" type="bool" />
+    <option name="/Default/Housekeeping/GlobalSettingsUpgraded/IsUpgraded/@EntryValue" value="true" type="bool" />
+    <option name="/Default/RiderDebugger/RiderRestoreDecompile/RestoreDecompileSetting/@EntryValue" value="false" type="bool" />
+  </component>
+  <component name="CMakeProjectFlavorService">
+    <option name="flavorId" value="CMakePlainProjectFlavor" />
+  </component>
+  <component name="CMakeRunConfigurationManager">
+    <generated>
+      <config projectName="Grbl_Esp32" targetName="PlatformIO" />
+    </generated>
+  </component>
+  <component name="CMakeSettings">
+    <configurations>
+      <configuration PROFILE_NAME="Debug" ENABLED="true" CONFIG_NAME="Debug" />
+    </configurations>
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="更新硬件配置以匹配用户接线">
+      <change afterPath="$PROJECT_DIR$/.idea/editor.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/CustomCode.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/CustomCode.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/GCode.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/GCode.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/Machines/custom_3axis_hr4988.h" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/Machines/custom_3axis_hr4988.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/写字机配置.md" beforeDir="false" afterPath="$PROJECT_DIR$/写字机配置.md" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ClangdSettings">
+    <option name="formatViaClangd" value="false" />
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="398" />
+    <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
+  </component>
+  <component name="ExecutionTargetManager" SELECTED_TARGET="release" />
+  <component name="ExternalProjectsData">
+    <projectState path="$PROJECT_DIR$">
+      <ProjectState />
+    </projectState>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="MacroExpansionManager">
+    <option name="directoryName" value="jSMyh42X" />
+  </component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="ProjectApplicationVersion">
+    <option name="ide" value="CLion" />
+    <option name="majorVersion" value="2025" />
+    <option name="minorVersion" value="3.3" />
+    <option name="productBranch" value="Classic" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 2
+}</component>
+  <component name="ProjectId" id="3AIRlquesvYpGZIXggK9tyWztbx" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "PlatformIO.PlatformIO.executor": "Debug",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.RadMigrateCodeStyle": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "cf.advertisement.text.overridden": "true",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "git-widget-placeholder": "Branch__8429e7c0",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.jetbrains.cidr.rtos.config",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RtosSettings">
+    <option name="rtosEnabled" value="true" />
+  </component>
+  <component name="RunManager">
+    <configuration default="true" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="PlatformIO" type="platformio" factoryName="PlatformIO Debug" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="Grbl_Esp32" TARGET_NAME="PlatformIO" CONFIG_NAME="PlatformIO">
+      <method v="2" />
+    </configuration>
+    <configuration name="PlatformIO" type="platformio" factoryName="PlatformIO Debug" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="Grbl_Esp32" TARGET_NAME="PlatformIO" CONFIG_NAME="PlatformIO">
+      <method v="2">
+        <option name="PlatformioBuildBeforeRun" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="PlatformIO" type="platformio" factoryName="PlatformIO Debug" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="Grbl_Esp32" TARGET_NAME="PlatformIO" CONFIG_NAME="PlatformIO">
+      <method v="2">
+        <option name="PlatformioBuildBeforeRun" enabled="true" />
+      </method>
+    </configuration>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="默认任务">
+      <changelist id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="" />
+      <created>1772278252977</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1772278252977</updated>
+      <workItem from="1772278262432" duration="456000" />
+      <workItem from="1772279565002" duration="246000" />
+      <workItem from="1772327395743" duration="1028000" />
+      <workItem from="1772328474614" duration="693000" />
+      <workItem from="1772329798782" duration="5927000" />
+      <workItem from="1772611765288" duration="2741000" />
+      <workItem from="1772940105933" duration="2158000" />
+      <workItem from="1772943771523" duration="40000" />
+      <workItem from="1772943846137" duration="1604000" />
+      <workItem from="1773218072555" duration="7090000" />
+      <workItem from="1773238892930" duration="2118000" />
+    </task>
+    <task id="LOCAL-00001" summary="删除MCP相关脚本和配置文件">
+      <option name="closed" value="true" />
+      <created>1772329870292</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1772329870292</updated>
+    </task>
+    <task id="LOCAL-00002" summary="删除MCP相关脚本和配置文件">
+      <option name="closed" value="true" />
+      <created>1772612750198</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1772612750198</updated>
+    </task>
+    <task id="LOCAL-00003" summary="删除MCP相关脚本和配置文件">
+      <option name="closed" value="true" />
+      <created>1772612907870</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1772612907870</updated>
+    </task>
+    <task id="LOCAL-00004" summary="添加中文注释和说明，优化3轴写字机配置参数">
+      <option name="closed" value="true" />
+      <created>1772613624471</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1772613624471</updated>
+    </task>
+    <task id="LOCAL-00005" summary="添加中文注释和说明，优化 `run_once` 和 `protocol_main_loop` 函数描述">
+      <option name="closed" value="true" />
+      <created>1772613924361</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1772613924361</updated>
+    </task>
+    <task id="LOCAL-00006" summary="更新硬件平台支持：ESP32-WROVER 系列及 PSRAM 配置说明">
+      <option name="closed" value="true" />
+      <created>1772944205424</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1772944205424</updated>
+    </task>
+    <task id="LOCAL-00007" summary="更新硬件配置以匹配用户接线">
+      <option name="closed" value="true" />
+      <created>1773238935910</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1773238935910</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="删除MCP相关脚本和配置文件" />
+    <MESSAGE value="添加中文注释和说明，优化3轴写字机配置参数" />
+    <MESSAGE value="添加中文注释和说明，优化 `run_once` 和 `protocol_main_loop` 函数描述" />
+    <MESSAGE value="更新硬件平台支持：ESP32-WROVER 系列及 PSRAM 配置说明" />
+    <MESSAGE value="更新硬件配置以匹配用户接线" />
+    <option name="LAST_COMMIT_MESSAGE" value="更新硬件配置以匹配用户接线" />
+  </component>
+  <component name="XSLT-Support.FileAssociations.UIState">
+    <expand />
+    <select />
+  </component>
+</project>
