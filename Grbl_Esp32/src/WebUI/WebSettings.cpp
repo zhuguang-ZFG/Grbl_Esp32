@@ -1027,6 +1027,13 @@ namespace WebUI {
     static Error paperMotor2Handler(char* parameter, AuthenticationLevel auth_level) {
         return paperMotorHandler(parameter, auth_level, 2);
     }
+    static Error paperAutoHandler(char* parameter, AuthenticationLevel auth_level) {
+        Error e = paper_auto_change();
+        if (e == Error::Ok) {
+            webPrintln("done");
+        }
+        return e;
+    }
 #endif
 
     static Error showWebHelp(char* parameter, AuthenticationLevel auth_level) {  // ESP0
@@ -1097,6 +1104,7 @@ namespace WebUI {
         new WebCommand(NULL, WEBCMD, WU, "ESP420", "System/Stats", showSysStats, anyState);
 #endif
 #ifdef GRBL_PAPER_SYSTEM
+        new WebCommand(NULL, WEBCMD, WG, "ESP910", "Paper/AutoChange", paperAutoHandler, anyState);
         new WebCommand(NULL, WEBCMD, WG, "ESP901", "Paper/Status", paperStatusHandler, anyState);
         new WebCommand(NULL, WEBCMD, WG, "ESP911", "Paper/ClampMotor", paperMotor0Handler, anyState);
         new WebCommand(NULL, WEBCMD, WG, "ESP912", "Paper/PanelMotor", paperMotor1Handler, anyState);

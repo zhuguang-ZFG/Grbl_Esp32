@@ -88,6 +88,33 @@
 #define FEEDER_MOTOR_DIR_PIN    I2SO(6)  // Q6: feeder motor DIR
 #define FEEDER_MOTOR_STEP_PIN   I2SO(7)  // Q7: feeder motor STEP
 
+// === Paper auto-change flow parameters（按机型可调整） ===
+// 步数需根据实际机构行程微调
+
+// 面板电机：弹出旧纸（A4 长度 + 余量）
+#define PANEL_EJECT_STEPS       8000u
+// 面板电机：快速送纸阶段的最大步数上限（防止传感器异常时跑飞）
+#define PANEL_FAST_STEPS_MAX    16000u
+// 面板电机：反向找感应点的最大步数
+#define PANEL_BACK_STEPS_MAX    4000u
+// 面板电机：最终微调到位的步数
+#define PANEL_FINAL_STEPS       500u
+
+// 进纸器电机：寻找新纸到感应器的最大步数
+#define FEEDER_FIND_STEPS_MAX   8000u
+// 进纸器电机：纸到感应器后继续送入的步数（约 5cm）
+#define FEEDER_EXTRA_STEPS      2000u
+
+// 拾落电机：压纸 / 抬纸的步数（一次完整动作）
+#define CLAMP_TOGGLE_STEPS      600u
+
+// 方向极性（如方向相反，可将 true/false 互换）
+#define PANEL_DIR_EJECT         false  // 面板电机“弹出旧纸”方向（反向）
+#define PANEL_DIR_FEED          true   // 面板电机“送入新纸”方向
+#define FEEDER_DIR_FORWARD      false  // 进纸器“送纸进入机器”方向（反向）
+#define CLAMP_DIR_RELEASE       true   // 拾落电机“松开纸张”方向
+#define CLAMP_DIR_CLAMP         false  // 拾落电机“压紧纸张”方向
+
 // Sensor and input pins for paper system
 #define PAPER_SENSOR_PIN        GPIO_NUM_34  // HIGH=paper present, LOW=no paper
 #define PAPER_CHANGE_BTN_PIN    GPIO_NUM_35  // LOW=pressed (with external pulldown)

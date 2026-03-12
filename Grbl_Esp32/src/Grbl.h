@@ -114,8 +114,9 @@ void user_defined_macro(uint8_t index);
 
 // Paper system M701/M711/M712/M713 and [ESP901/911/912/913] (PaperSystem.cpp)
 Error paper_system_mcode(uint16_t code);
-void paper_system_init(void);
+void  paper_system_init(void);
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-void paper_get_status_str(char* buf, size_t len);
+void  paper_get_status_str(char* buf, size_t len);
 Error paper_run_motor(uint8_t motor_ix);
+Error paper_auto_change(void);  // 一键自动换纸流程
 #endif
