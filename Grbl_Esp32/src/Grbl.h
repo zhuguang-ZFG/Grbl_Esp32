@@ -111,3 +111,7 @@ void motors_to_cartesian(float* cartestian, float* motors, int n_axis);  // weak
 
 // Called if MACRO_BUTTON_0_PIN or MACRO_BUTTON_1_PIN or MACRO_BUTTON_2_PIN is defined
 void user_defined_macro(uint8_t index);
+
+// Paper system M701/M711/M712/M713 (PaperSystem.cpp)
+Error paper_system_mcode(uint16_t code);
+void paper_system_init(void);

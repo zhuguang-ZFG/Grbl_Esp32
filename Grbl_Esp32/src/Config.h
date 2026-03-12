@@ -65,6 +65,15 @@ Some features should not be changed. See notes below.
 // machine.h must be edited to choose the desired file.
 #include "Machine.h"
 
+// Paper system: if machine does not define these, use sentinel 255 so PaperSystem.cpp has a single implementation
+#ifndef PAPER_SENSOR_PIN
+#    define PAPER_SENSOR_PIN        255
+#    define PAPER_ENABLE_PIN        255
+#    define CLAMP_MOTOR_STEP_PIN    255
+#    define PANEL_MOTOR_STEP_PIN    255
+#    define FEEDER_MOTOR_STEP_PIN   255
+#endif
+
 // machine_common.h contains settings that do not change
 #include "MachineCommon.h"
 

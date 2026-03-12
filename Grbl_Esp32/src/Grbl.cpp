@@ -38,6 +38,10 @@ void grbl_init() {
 #ifdef MACHINE_NAME
     report_machine_type(CLIENT_SERIAL);
 #endif
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "Paper system: M701 M711 M712 M713");
+    paper_system_init();
+#endif
     settings_init();  // Load Grbl settings from non-volatile storage
     stepper_init();   // Configure stepper pins and interrupt timers
     system_ini();     // Configure pinout pins and pin-change interrupt (Renamed due to conflict with esp32 files)

@@ -45,6 +45,7 @@
 */
 
 #define MACHINE_NAME "Custom 3-Axis HR4988"
+#define GRBL_PAPER_SYSTEM 1  /* 换纸系统 M701/M711/M712/M713 在 GCode.cpp 中直写实现 */
 
 // Use custom machine code (Custom/paper_system.cpp)
 #define CUSTOM_CODE_FILENAME "Custom/paper_system.cpp"

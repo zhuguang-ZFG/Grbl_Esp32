@@ -23,13 +23,12 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="更新硬件配置以匹配用户接线">
-      <change afterPath="$PROJECT_DIR$/.idea/editor.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/CustomCode.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/CustomCode.cpp" afterDir="false" />
+    <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="Add custom paper handling system and IDE configuration">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/Config.h" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/Config.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/GCode.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/GCode.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/Grbl.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/Grbl.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/Machines/custom_3axis_hr4988.h" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/Machines/custom_3axis_hr4988.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/写字机配置.md" beforeDir="false" afterPath="$PROJECT_DIR$/写字机配置.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -77,7 +76,7 @@
   "keyToString": {
     "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
     "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "PlatformIO.PlatformIO.executor": "Debug",
+    "PlatformIO.PlatformIO.executor": "Run",
     "RunOnceActivity.MCP Project settings loaded": "true",
     "RunOnceActivity.RadMigrateCodeStyle": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
@@ -139,7 +138,7 @@
       <workItem from="1772943771523" duration="40000" />
       <workItem from="1772943846137" duration="1604000" />
       <workItem from="1773218072555" duration="7090000" />
-      <workItem from="1773238892930" duration="2118000" />
+      <workItem from="1773238892930" duration="3386000" />
     </task>
     <task id="LOCAL-00001" summary="删除MCP相关脚本和配置文件">
       <option name="closed" value="true" />
@@ -197,7 +196,23 @@
       <option name="project" value="LOCAL" />
       <updated>1773238935910</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="Add editor settings for code inspection severities">
+      <option name="closed" value="true" />
+      <created>1773274962385</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1773274962385</updated>
+    </task>
+    <task id="LOCAL-00009" summary="Add custom paper handling system and IDE configuration">
+      <option name="closed" value="true" />
+      <created>1773274981381</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1773274981381</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -209,7 +224,9 @@
     <MESSAGE value="添加中文注释和说明，优化 `run_once` 和 `protocol_main_loop` 函数描述" />
     <MESSAGE value="更新硬件平台支持：ESP32-WROVER 系列及 PSRAM 配置说明" />
     <MESSAGE value="更新硬件配置以匹配用户接线" />
-    <option name="LAST_COMMIT_MESSAGE" value="更新硬件配置以匹配用户接线" />
+    <MESSAGE value="Add editor settings for code inspection severities" />
+    <MESSAGE value="Add custom paper handling system and IDE configuration" />
+    <option name="LAST_COMMIT_MESSAGE" value="Add custom paper handling system and IDE configuration" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

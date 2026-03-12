@@ -548,16 +548,27 @@ Error gc_execute_line(char* line, uint8_t client) {
                         mg_word_bit               = ModalGroup::MM10;
                         break;
                     default: {
-                        // 自定义 M 码：传入完整数值（int_value 为 uint8_t 会截断 701/713）
-                        extern Error user_m_code(uint16_t code);
                         uint16_t m_code = (uint16_t)trunc(value);
-                        Error     e     = user_m_code(m_code);
-                        if (e == Error::Ok) {
-                            mg_word_bit = ModalGroup::MM10;
-                            break;
+                        {
+                            Error e = paper_system_mcode(m_code);
+                            if (e == Error::Ok) {
+                                mg_word_bit = ModalGroup::MM10;
+                                break;
+                            }
+                            if (e != Error::GcodeUnsupportedCommand) {
+                                FAIL(e);
+                            }
                         }
-                        if (e != Error::GcodeUnsupportedCommand) {
-                            FAIL(e);
+                        {
+                            extern Error user_m_code(uint16_t code);
+                            Error e = user_m_code(m_code);
+                            if (e == Error::Ok) {
+                                mg_word_bit = ModalGroup::MM10;
+                                break;
+                            }
+                            if (e != Error::GcodeUnsupportedCommand) {
+                                FAIL(e);
+                            }
                         }
                         FAIL(Error::GcodeUnsupportedCommand);
                     }
