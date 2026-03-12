@@ -1012,7 +1012,15 @@ namespace WebUI {
         return Error::Ok;
     }
     static Error paperMotorHandler(char* parameter, AuthenticationLevel auth_level, uint8_t motor_ix) {
-        Error e = paper_run_motor(motor_ix);
+        uint16_t steps = 0;
+        if (parameter) {
+            while (*parameter == ' ' || *parameter == '\t') parameter++;
+            if (*parameter >= '0' && *parameter <= '9') {
+                unsigned long v = strtoul(parameter, NULL, 10);
+                if (v > 0 && v <= 10000) steps = (uint16_t)v;
+            }
+        }
+        Error e = paper_run_motor(motor_ix, steps);
         if (e == Error::Ok) {
             webPrintln("done");
         }
@@ -1026,6 +1034,11 @@ namespace WebUI {
     }
     static Error paperMotor2Handler(char* parameter, AuthenticationLevel auth_level) {
         return paperMotorHandler(parameter, auth_level, 2);
+    }
+    static Error paperEnableOnlyHandler(char* parameter, AuthenticationLevel auth_level) {
+        paper_enable_drivers_only();
+        webPrintln("MotorEn=On (no motion). Use M64/M65 P1/P2/P3 then [ESP911/912/913] to jog.");
+        return Error::Ok;
     }
     static Error paperAutoHandler(char* parameter, AuthenticationLevel auth_level) {
         Error e = paper_auto_change();
@@ -1106,9 +1119,10 @@ namespace WebUI {
 #ifdef GRBL_PAPER_SYSTEM
         new WebCommand(NULL, WEBCMD, WG, "ESP910", "Paper/AutoChange", paperAutoHandler, anyState);
         new WebCommand(NULL, WEBCMD, WG, "ESP901", "Paper/Status", paperStatusHandler, anyState);
-        new WebCommand(NULL, WEBCMD, WG, "ESP911", "Paper/ClampMotor", paperMotor0Handler, anyState);
-        new WebCommand(NULL, WEBCMD, WG, "ESP912", "Paper/PanelMotor", paperMotor1Handler, anyState);
-        new WebCommand(NULL, WEBCMD, WG, "ESP913", "Paper/FeederMotor", paperMotor2Handler, anyState);
+        new WebCommand("steps", WEBCMD, WG, "ESP911", "Paper/ClampMotor", paperMotor0Handler, anyState);
+        new WebCommand("steps", WEBCMD, WG, "ESP912", "Paper/PanelMotor", paperMotor1Handler, anyState);
+        new WebCommand("steps", WEBCMD, WG, "ESP913", "Paper/FeederMotor", paperMotor2Handler, anyState);
+        new WebCommand(NULL, WEBCMD, WG, "ESP930", "Paper/EnableOnly", paperEnableOnlyHandler, anyState);
 #endif
 #ifdef ENABLE_WIFI
         new WebCommand(NULL, WEBCMD, WU, "ESP410", "WiFi/ListAPs", listAPs);

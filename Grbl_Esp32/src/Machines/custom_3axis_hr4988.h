@@ -13,7 +13,7 @@
     - Y Axis:  GPIO13 (STEP), GPIO12 (DIR) - dual motor ganged (both motors share STEP/DIR)
     - Z Axis:  MTMS (GPIO14/STEP), GPIO27 (DIR) - Pen up/down control
     - Enable:  GPIO4 (shared for all 4 HR4988 drivers, nENABLE active low)
-    - Driver REF: Connected to ESP32 GPIO25 (used only as analog reference, not toggled by firmware)
+    - Driver REF: Connected to ESP32 GPIO25 (DAC) — firmware must output voltage for feeder current
 
     74HC595D Shift Register (paper handling system):
     - DATA (SI):   GPIO32 -> 74HC595 Pin 14
@@ -80,6 +80,8 @@
 #define PAPER_LED_PIN           I2SO(0)  // Q0: paper-change button LED (HIGH=off, LOW=on)
 #define PAPER_PANEL_ENABLE_PIN   I2SO(1)
 #define PAPER_DRIVER_ENABLE_PIN  GPIO_NUM_26
+#define PAPER_DRIVER_REF_PIN    GPIO_NUM_25   // DAC 直连 HR4988 REF，无分压；0–255 → 0–3.3V
+#define PAPER_DRIVER_REF_DAC    60          // 直连时建议 80–150（≈1.0–1.9V），过大易过流发热
 #define PAPER_ENABLE_PIN         PAPER_PANEL_ENABLE_PIN  // Q1: paper system HR4988 enable (LOW=enable, HIGH=disable)
 #define CLAMP_MOTOR_DIR_PIN     I2SO(2)  // Q2: clamp (press roller) up/down motor DIR
 #define CLAMP_MOTOR_STEP_PIN    I2SO(3)  // Q3: clamp up/down motor STEP
@@ -112,8 +114,8 @@
 #define PANEL_DIR_EJECT         false  // 面板电机“弹出旧纸”方向（反向）
 #define PANEL_DIR_FEED          true   // 面板电机“送入新纸”方向
 #define FEEDER_DIR_FORWARD      false  // 进纸器“送纸进入机器”方向（反向）
-#define CLAMP_DIR_RELEASE       true   // 拾落电机“松开纸张”方向
-#define CLAMP_DIR_CLAMP         false  // 拾落电机“压紧纸张”方向
+#define CLAMP_DIR_RELEASE       false  // 拾落电机“松开纸张”方向（已反向）
+#define CLAMP_DIR_CLAMP         true   // 拾落电机“压紧纸张”方向
 
 // Sensor and input pins for paper system
 #define PAPER_SENSOR_PIN        GPIO_NUM_34  // HIGH=paper present, LOW=no paper

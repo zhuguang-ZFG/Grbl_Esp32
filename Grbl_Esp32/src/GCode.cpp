@@ -553,7 +553,12 @@ Error gc_execute_line(char* line, uint8_t client) {
                             m_code = (uint16_t)value;
                         }
                         {
-                            Error e = paper_system_mcode(m_code);
+                            uint16_t steps = 0;
+                            if ((m_code == 711 || m_code == 712 || m_code == 713) &&
+                                gc_block.values.p > 0 && gc_block.values.p <= 10000) {
+                                steps = (uint16_t)gc_block.values.p;
+                            }
+                            Error e = paper_system_mcode(m_code, steps);
                             if (e == Error::Ok) {
                                 mg_word_bit = ModalGroup::MM10;
                                 break;

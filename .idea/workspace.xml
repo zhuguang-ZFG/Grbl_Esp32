@@ -23,8 +23,9 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="Add and enhance paper handling system with IDE configuration updates">
+    <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="Add and enhance paper auto-change functionality and update documentation">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/GCode.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/GCode.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/Grbl.h" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/Grbl.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/Machines/custom_3axis_hr4988.h" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/Machines/custom_3axis_hr4988.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/PaperSystem.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/PaperSystem.cpp" afterDir="false" />
@@ -135,7 +136,7 @@
       <workItem from="1772943846137" duration="1604000" />
       <workItem from="1773218072555" duration="7090000" />
       <workItem from="1773238892930" duration="6436000" />
-      <workItem from="1773284347032" duration="2914000" />
+      <workItem from="1773284347032" duration="5481000" />
     </task>
     <task id="LOCAL-00001" summary="删除MCP相关脚本和配置文件">
       <option name="closed" value="true" />
@@ -225,7 +226,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773285470753</updated>
     </task>
-    <option name="localTasksCounter" value="12" />
+    <task id="LOCAL-00012" summary="Add and enhance paper auto-change functionality and update documentation">
+      <option name="closed" value="true" />
+      <created>1773294481467</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1773294481467</updated>
+    </task>
+    <option name="localTasksCounter" value="13" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -241,7 +250,8 @@
     <MESSAGE value="Add custom paper handling system and IDE configuration" />
     <MESSAGE value="Add paper handling system and update IDE configuration" />
     <MESSAGE value="Add and enhance paper handling system with IDE configuration updates" />
-    <option name="LAST_COMMIT_MESSAGE" value="Add and enhance paper handling system with IDE configuration updates" />
+    <MESSAGE value="Add and enhance paper auto-change functionality and update documentation" />
+    <option name="LAST_COMMIT_MESSAGE" value="Add and enhance paper auto-change functionality and update documentation" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

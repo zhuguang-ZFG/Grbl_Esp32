@@ -11,10 +11,16 @@
 
 static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
 #ifdef USE_I2S_OUT
-    // 面板电机用微秒延时，步频高、更顺滑少卡顿；拾落/进纸器保持 2ms 稳妥
-    const uint32_t hi_us = (step_pin == PANEL_MOTOR_STEP_PIN) ? 150u : 2000u;
-    const uint32_t lo_us = (step_pin == PANEL_MOTOR_STEP_PIN) ? 150u : 2000u;
+    // 面板电机与进纸器电机使用相同的高速步进时序（150us 高/低），拾落电机保持较慢 2ms
+    uint32_t hi_us, lo_us;
     for (uint16_t i = 0; i < steps; i++) {
+        if (step_pin == PANEL_MOTOR_STEP_PIN || step_pin == FEEDER_MOTOR_STEP_PIN) {
+            hi_us = 150u;
+            lo_us = 150u;
+        } else {
+            hi_us = 2000u;
+            lo_us = 2000u;
+        }
         digitalWrite(step_pin, HIGH);
         i2s_out_delay();
         delayMicroseconds(hi_us);
@@ -33,10 +39,16 @@ static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
 }
 
 void paper_system_init(void) {
+#ifdef PAPER_DRIVER_REF_PIN
+    // REF 接 GPIO25 (DAC)：输出参考电压，进纸器驱动电流由此处决定
+    pinMode((int)PAPER_DRIVER_REF_PIN, OUTPUT);
+    dacWrite((int)PAPER_DRIVER_REF_PIN, PAPER_DRIVER_REF_DAC);
+#endif
     if (PAPER_SENSOR_PIN != PAPER_DISABLED) {
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "Paper: [ESP901] [ESP911] [ESP912] [ESP913] [ESP910]");
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "Paper: [ESP901] [ESP911/912/913] [ESP930] [ESP910]");
     }
 }
+
 
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
 void paper_get_status_str(char* buf, size_t len) {
@@ -52,9 +64,15 @@ void paper_get_status_str(char* buf, size_t len) {
     snprintf(buf, len, "Paper=%s MotorEn=%s", paper_ok ? "OK" : "No", en_ok ? "On" : "Off");
 }
 
-Error paper_run_motor(uint8_t motor_ix) {
+Error paper_run_motor(uint8_t motor_ix, uint16_t steps) {
     if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
         return Error::GcodeUnsupportedCommand;
+    }
+    if (steps == 0) {
+        steps = 200;
+    }
+    if (steps > 10000) {
+        steps = 10000;
     }
     uint8_t step_pin;
     if (motor_ix == 0) {
@@ -79,8 +97,25 @@ Error paper_run_motor(uint8_t motor_ix) {
     i2s_out_delay();
     delay(5);
 #endif
-    paper_step_pulses(step_pin, 200);
+    paper_step_pulses(step_pin, steps);
     return Error::Ok;
+}
+
+// 仅使能换纸驱动（I2S passthrough + 拉低 EN），不动作；便于用 M64/M65 设方向后单独点动调试
+void paper_enable_drivers_only(void) {
+#ifdef USE_I2S_OUT
+    i2s_out_set_passthrough();
+    delay(I2S_OUT_DELAY_MS * 2);
+    i2s_out_delay();
+#endif
+    digitalWrite(PAPER_ENABLE_PIN, LOW);
+#ifdef PAPER_DRIVER_ENABLE_PIN
+    digitalWrite(PAPER_DRIVER_ENABLE_PIN, LOW);
+#endif
+#ifdef USE_I2S_OUT
+    i2s_out_delay();
+    delay(5);
+#endif
 }
 #endif
 
@@ -192,7 +227,7 @@ Error paper_auto_change(void) {
 }
 #endif
 
-Error paper_system_mcode(uint16_t code) {
+Error paper_system_mcode(uint16_t code, uint16_t steps) {
     if (code == 189) {
         code = 701;
     } else if (code == 199) {
@@ -225,6 +260,7 @@ Error paper_system_mcode(uint16_t code) {
                 grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M%u: paper system not configured", (unsigned)code);
                 return Error::Ok;
             }
+            uint16_t nsteps = (steps > 0 && steps <= 10000) ? steps : 200;
 #ifdef USE_I2S_OUT
             i2s_out_set_passthrough();
             delay(I2S_OUT_DELAY_MS * 2);
@@ -232,15 +268,15 @@ Error paper_system_mcode(uint16_t code) {
 #endif
             digitalWrite(PAPER_ENABLE_PIN, LOW);
 #ifdef PAPER_DRIVER_ENABLE_PIN
-    digitalWrite(PAPER_DRIVER_ENABLE_PIN, LOW);
+            digitalWrite(PAPER_DRIVER_ENABLE_PIN, LOW);
 #endif
 #ifdef USE_I2S_OUT
             i2s_out_delay();
             delay(5);
 #endif
             uint8_t step_pin = (code == 711) ? CLAMP_MOTOR_STEP_PIN : (code == 712) ? PANEL_MOTOR_STEP_PIN : FEEDER_MOTOR_STEP_PIN;
-            paper_step_pulses(step_pin, 200);
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M%u: done", (unsigned)code);
+            paper_step_pulses(step_pin, nsteps);
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M%u: %u steps done", (unsigned)code, (unsigned)nsteps);
             return Error::Ok;
         }
         default:
