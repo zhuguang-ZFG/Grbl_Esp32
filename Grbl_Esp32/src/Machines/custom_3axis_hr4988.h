@@ -15,6 +15,27 @@
     - Enable:  GPIO4 (shared for all 4 HR4988 drivers, nENABLE active low)
     - Driver REF: Connected to ESP32 GPIO25 (used only as analog reference, not toggled by firmware)
 
+    74HC595D Shift Register (paper handling system):
+    - DATA (SI):   GPIO32 -> 74HC595 Pin 14
+    - SRCLK:       GPIO3  -> 74HC595 Pin 11
+    - RCLK:        GPIO5  -> 74HC595 Pin 12
+    - SRCLR:       VCC    -> 74HC595 Pin 10 (always enabled)
+    - OE:          GND    -> 74HC595 Pin 13 (outputs always enabled)
+
+    74HC595D outputs (Q0..Q7):
+    - Q0 (bit0):   Paper change button LED  (HIGH=off, LOW=on)
+    - Q1 (bit1):   Paper-change HR4988 enable (LOW=enabled, HIGH=disabled)
+    - Q2 (bit2):   Clamp lift motor DIR (HR4988 pin 19)
+    - Q3 (bit3):   Clamp lift motor STEP (HR4988 pin 16)
+    - Q4 (bit4):   Panel motor DIR (HR4988 pin 19)
+    - Q5 (bit5):   Panel motor STEP (HR4988 pin 16)
+    - Q6 (bit6):   Feeder motor DIR (HR4988 pin 19)
+    - Q7 (bit7):   Feeder motor STEP (HR4988 pin 16)
+
+    Sensors:
+    - Paper sensor:         GPIO34 (HIGH=paper present, LOW=no paper)
+    - Paper-change button:  GPIO35 (LOW=pressed, with pulldown)
+
     Note: No limit switches or position sensors are used.
     Enable pin: Output LOW to enable steppers, HIGH to disable
 
@@ -25,8 +46,75 @@
 
 #define MACHINE_NAME "Custom 3-Axis HR4988"
 
+// Use custom machine code (Custom/paper_system.cpp)
+#define CUSTOM_CODE_FILENAME "Custom/paper_system.cpp"
+// Enable user-defined M codes (handled in paper_system.cpp)
+#define USE_USER_M_CODES
+
 // Enable software debounce since no hardware R/C filters
 #define ENABLE_SOFTWARE_DEBOUNCE
+
+// === I2S-based GPIO expander (74HC595D) for paper-handling system ===
+// Use ESP32 I2S peripheral to drive 74HC595D, expanding 8 output-only pins (Q0..Q7).
+// These pins are only used for the paper change / feed system, not for main XYZ steppers.
+
+// Enable I2S output-only expander
+#define USE_I2S_OUT
+
+// Map I2S signals to your wiring
+// DATA (SI)  -> GPIO32
+// BCK (SRCLK)-> GPIO3   (note: shares with UART0 RX, avoid using serial RX0 when paper system active)
+// WS  (RCLK) -> GPIO5
+#define I2S_OUT_DATA            GPIO_NUM_32
+#define I2S_OUT_BCK             GPIO_NUM_3
+#define I2S_OUT_WS              GPIO_NUM_5
+
+// Initial state of 74HC595 outputs after reset/latch:
+// - Q0 LED:    HIGH = off
+// - Q1 Enable: HIGH = paper-change disabled (safe)
+// Others default LOW.
+#define I2S_OUT_INIT_VAL        (bit(0) | bit(1))
+
+// Logical names for 74HC595 expanded outputs (Q0..Q7)
+#define PAPER_LED_PIN           I2SO(0)  // Q0: paper-change button LED (HIGH=off, LOW=on)
+#define PAPER_ENABLE_PIN        I2SO(1)  // Q1: paper system HR4988 enable (LOW=enable, HIGH=disable)
+#define CLAMP_MOTOR_DIR_PIN     I2SO(2)  // Q2: clamp (press roller) up/down motor DIR
+#define CLAMP_MOTOR_STEP_PIN    I2SO(3)  // Q3: clamp up/down motor STEP
+#define PANEL_MOTOR_DIR_PIN     I2SO(4)  // Q4: panel motor DIR
+#define PANEL_MOTOR_STEP_PIN    I2SO(5)  // Q5: panel motor STEP
+#define FEEDER_MOTOR_DIR_PIN    I2SO(6)  // Q6: feeder motor DIR
+#define FEEDER_MOTOR_STEP_PIN   I2SO(7)  // Q7: feeder motor STEP
+
+// Sensor and input pins for paper system
+#define PAPER_SENSOR_PIN        GPIO_NUM_34  // HIGH=paper present, LOW=no paper
+#define PAPER_CHANGE_BTN_PIN    GPIO_NUM_35  // LOW=pressed (with external pulldown)
+
+// Map paper sensor to a macro button input so its state appears in status reports:
+// When PAPER_SENSOR_PIN is HIGH (有纸), status line will include "Pn:0"
+// When LOW (无纸), "0" will不出现.
+#define MACRO_BUTTON_0_PIN      PAPER_SENSOR_PIN
+
+// Map user digital outputs (M62..M65 Px) to paper-handling signals
+// M62/M64 Px = ON (HIGH), M63/M65 Px = OFF (LOW)
+// P0: Paper-change HR4988 enable (LOW=enable at driver, HIGH=disable)
+// P1: Clamp motor DIR
+// P2: Panel motor DIR
+// P3: Feeder motor DIR
+#define USER_DIGITAL_PIN_0      PAPER_ENABLE_PIN
+#define USER_DIGITAL_PIN_1      CLAMP_MOTOR_DIR_PIN
+#define USER_DIGITAL_PIN_2      PANEL_MOTOR_DIR_PIN
+#define USER_DIGITAL_PIN_3      FEEDER_MOTOR_DIR_PIN
+
+// Map user digital outputs (M62..M65 Px) to paper-handling signals
+// M62/M64 Px = ON (HIGH), M63/M65 Px = OFF (LOW)
+// P0: Paper-change HR4988 enable (LOW=enable, HIGH=disable) - note: logic is active LOW at driver side
+// P1: Clamp motor DIR
+// P2: Panel motor DIR
+// P3: Feeder motor DIR
+#define USER_DIGITAL_PIN_0      PAPER_ENABLE_PIN
+#define USER_DIGITAL_PIN_1      CLAMP_MOTOR_DIR_PIN
+#define USER_DIGITAL_PIN_2      PANEL_MOTOR_DIR_PIN
+#define USER_DIGITAL_PIN_3      FEEDER_MOTOR_DIR_PIN
 
 // NOTE: This configuration uses HARDWARE ganged motors (both Y motors share
 // the same STEP/DIR signals). Therefore, Y2_STEP_PIN and Y2_DIRECTION_PIN
