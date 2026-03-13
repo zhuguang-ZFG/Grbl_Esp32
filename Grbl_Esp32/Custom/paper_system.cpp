@@ -1,4 +1,4 @@
-﻿// paper_system.cpp
+// paper_system.cpp
 // Custom code for paper-handling system (paper sensor + paper-change motors)
 // Enabled via CUSTOM_CODE_FILENAME in custom_3axis_hr4988.h
 //
@@ -12,13 +12,51 @@ Error user_m_code(uint16_t code) {
     return Error::GcodeUnsupportedCommand;
 }
 
-// Macro 按钮回调（Macro0 映射纸张传感器）
+// 一键换纸物理按键（接在 GPIO35，对应 Macro0）回调。
+// 要求：“按键按下松开后去抖，加入到一键换纸流程中”
+//
+// 设计说明：
+// - 硬件：PAPER_CHANGE_BTN_PIN = GPIO35，实测接法为 LOW=按下，HIGH=松开（外部下拉）。
+// - 上面在 custom_3axis_hr4988.h 中把 MACRO_BUTTON_0_PIN 映射为 PAPER_CHANGE_BTN_PIN，
+//   并通过 INVERT_CONTROL_PIN_MASK 让 Macro0 变为“低电平有效”，仅在按下时产生事件。
+// - 这里再做一次软件去抖：两次有效触发之间至少间隔 200ms，防止抖动或多次触发。
+// - 为了复用现有 [ESP910] 逻辑，这里不直接调用 paper_auto_change()，
+//   而是向 WebUI::inputBuffer 注入一行 “[ESP910]”，由原有处理流程执行一键换纸。
 void user_defined_macro(uint8_t index) {
-    if (index == 0) {
-        bool paper_present = (digitalRead(PAPER_SENSOR_PIN) == 0);  // LOW = 有纸, HIGH = 无纸
+    if (index != 0) {
+        return;
+    }
+
+    // 必须在 Idle 状态才能开始一键换纸
+    if (sys.state != State::Idle) {
         grbl_msg_sendf(CLIENT_SERIAL,
                        MsgLevel::Info,
-                       "纸张传感器(Macro0): %s",
-                       paper_present ? "有纸" : "无纸");
+                       "[PaperBtn] Ignored: system not idle (state=%d)",
+                       (int)sys.state);
+        return;
     }
+
+    // 简单的软件去抖：200ms 内只响应一次
+    static uint32_t last_trigger_ms = 0;
+    uint32_t        now_ms          = millis();
+    if (now_ms - last_trigger_ms < 200u) {
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[PaperBtn] Ignored: debounce (%lu ms since last)",
+                       (unsigned long)(now_ms - last_trigger_ms));
+        return;
+    }
+    last_trigger_ms = now_ms;
+
+    // 记录当前按键电平，便于调试（LOW=按下，HIGH=松开）
+    int raw_level = digitalRead(PAPER_CHANGE_BTN_PIN);
+    grbl_msg_sendf(CLIENT_SERIAL,
+                   MsgLevel::Info,
+                   "[PaperBtn] Triggered (GPIO35=%d), queuing [ESP910] auto-change...",
+                   raw_level);
+
+    // 向 WebUI 输入缓冲区注入一条 [ESP910] 命令，由已有 paperAutoHandler -> paper_auto_change() 执行换纸流程
+    char line[16];
+    strcpy(line, "[ESP910]\r");
+    WebUI::inputBuffer.push(line);
 }

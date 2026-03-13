@@ -52,6 +52,17 @@
 // Enable user-defined M codes (handled in paper_system.cpp)
 #define USE_USER_M_CODES
 
+// === Control pin invert mask ===
+// 默认在 Config.h 中定义为 B00001111（仅反相 SafetyDoor/Reset/FeedHold/CycleStart）。
+// 本机型的“一键换纸”按键接在 GPIO35，实际接法为 LOW=按下、HIGH=松开（外部下拉），
+// 所以需要把 Macro0 也设置为“低电平有效”，避免松开时被视为按下。
+#ifdef INVERT_CONTROL_PIN_MASK
+#    undef INVERT_CONTROL_PIN_MASK
+#endif
+// 位顺序: Macro3 | Macro2 | Macro1 | Macro0 | CycleStart | FeedHold | Reset | SafetyDoor
+// 这里在原来的低 4 位基础上，额外打开 Macro0（bit4），得到 B00011111。
+#define INVERT_CONTROL_PIN_MASK B00011111
+
 // Enable software debounce since no hardware R/C filters
 #define ENABLE_SOFTWARE_DEBOUNCE
 
@@ -94,19 +105,19 @@
 // 步数需根据实际机构行程微调
 
 // 面板电机：弹出旧纸（A4 长度 + 余量）
-#define PANEL_EJECT_STEPS       8000u
+#define PANEL_EJECT_STEPS       12000u
 // 面板电机：快速送纸阶段的最大步数上限（防止传感器异常时跑飞）
 #define PANEL_FAST_STEPS_MAX    16000u
 // 面板电机：反向找感应点的最大步数（需覆盖第6步快进的最远位置）
 // 快进约 8.5k 步时脱离传感器，这里给到 9000 步保证能退回到感应点
 #define PANEL_BACK_STEPS_MAX    9000u
 // 面板电机：最终微调到位的步数
-#define PANEL_FINAL_STEPS       1200u
+#define PANEL_FINAL_STEPS       1100u
 
 // 进纸器电机：寻找新纸到感应器的最大步数（超时时间，可根据实际距离调大）
 #define FEEDER_FIND_STEPS_MAX   12000u
 // 进纸器电机：纸到感应器后继续送入的步数（约 8cm）
-#define FEEDER_EXTRA_STEPS      3000u
+#define FEEDER_EXTRA_STEPS      9000u
 
 // 拾落电机：压纸 / 抬纸的步数（一次完整动作），经实测约 220 步
 #define CLAMP_TOGGLE_STEPS      470u
@@ -128,9 +139,9 @@
 #define PAPER_SENSOR_PIN        GPIO_NUM_34
 #define PAPER_CHANGE_BTN_PIN    GPIO_NUM_35  // LOW=pressed (with external pulldown)
 
-// 如需将纸张传感器映射为 Macro0 按钮，可启用下列宏，但在传感器抖动时会频繁输出 [MSG:Macro0]。
-// 默认关闭，只通过状态行里的 Pn:0 反映纸张状态，避免刷屏。
-// #define MACRO_BUTTON_0_PIN      PAPER_SENSOR_PIN
+// 一键换纸物理按键 → Macro0，后端在 Custom/paper_system.cpp 里做了额外软件去抖。
+// 注意：按键为“低电平按下”，已在上方 INVERT_CONTROL_PIN_MASK 中把 Macro0 置为低电平有效。
+#define MACRO_BUTTON_0_PIN      PAPER_CHANGE_BTN_PIN
 
 // Map user digital outputs (M62..M65 Px) to paper-handling signals
 // M62/M64 Px = ON (HIGH), M63/M65 Px = OFF (LOW)

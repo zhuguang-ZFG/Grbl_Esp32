@@ -64,6 +64,14 @@ void paper_system_init(void) {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] DAC REF initialized: GPIO%u = %u (0-255)", 
                    (unsigned)PAPER_DRIVER_REF_PIN, (unsigned)PAPER_DRIVER_REF_DAC);
 #endif
+    // 默认关闭所有纸路电机使能（互斥两组的初始状态：全部失能）
+    pinMode((int)PAPER_ENABLE_PIN, OUTPUT);
+    digitalWrite(PAPER_ENABLE_PIN, HIGH);  // 面板 EN=HIGH → 禁用
+#ifdef PAPER_DRIVER_ENABLE_PIN
+    pinMode((int)PAPER_DRIVER_ENABLE_PIN, OUTPUT);
+    digitalWrite(PAPER_DRIVER_ENABLE_PIN, HIGH);  // 拾落 + 进纸器 EN=HIGH → 禁用
+#endif
+
     if (PAPER_SENSOR_PIN != PAPER_DISABLED) {
         // GPIO34: 3.3V=NoP(无纸), 0V=HavP(有纸)
         pinMode((int)PAPER_SENSOR_PIN, INPUT);
@@ -136,6 +144,7 @@ static void paper_enable_panel_only(void) {
     // 拾落 + 进纸器失能
     digitalWrite(PAPER_DRIVER_ENABLE_PIN, HIGH);
 #endif
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperEn] panel_only: Q1=LOW, DRV_EN=HIGH");
 }
 
 // 仅使能拾落 + 进纸器（互斥：关闭面板）
@@ -147,6 +156,7 @@ static void paper_enable_clamp_feeder_only(void) {
     // 拾落 + 进纸器使能
     digitalWrite(PAPER_DRIVER_ENABLE_PIN, LOW);
 #endif
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperEn] clamp_feeder_only: Q1=HIGH, DRV_EN=LOW");
 }
 
 Error paper_run_motor(uint8_t motor_ix, uint16_t steps) {
