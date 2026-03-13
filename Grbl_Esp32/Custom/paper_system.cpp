@@ -5,11 +5,56 @@
 // 注意：本文件通过 CustomCode.cpp 间接包含，那里已包含 Grbl.h，
 // 这里不需要再次 include。
 
+// 机器初始化钩子：在 Grbl 启动时调用（弱符号在 Grbl.cpp 中，这里覆盖）
+// 这里打印一次 ESP32 芯片 ID，后续可用于程序加密绑定。
+void machine_init() {
+    uint64_t chipid = ESP.getEfuseMac();  // Arduino-ESP32 提供的芯片唯一 ID（基于 MAC）
+    uint32_t id_high = (uint32_t)(chipid >> 32);
+    uint32_t id_low  = (uint32_t)(chipid & 0xFFFFFFFFULL);
+
+    grbl_msg_sendf(CLIENT_SERIAL,
+                   MsgLevel::Info,
+                   "[ESP32ID] ChipID (efuse MAC) = %08X%08X",
+                   (unsigned)id_high,
+                   (unsigned)id_low);
+}
+
 // Custom M-code handler
 // M701/M711/M712/M713/M716 等纸张系统命令由 PaperSystem.cpp 的 paper_system_mcode() 统一处理
 Error user_m_code(uint16_t code) {
     // 所有纸张相关命令都由 paper_system_mcode() 处理，此函数返回不支持
     return Error::GcodeUnsupportedCommand;
+}
+
+// 当 GCode 中遇到 M30（当前页 G 代码文件结束）时，GCode.cpp 会在
+// program_flow 处理完毕、缓冲区同步后调用 user_m30()。
+// 这里把“换纸 = 换页”接进来：每次 M30 结束自动执行一套换纸流程。
+void user_m30() {
+    // 必须在 Idle 状态、且纸张系统已配置时才自动换纸，避免在报警/检查模式下误动作。
+    if (sys.state != State::Idle) {
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[PaperM30] Skipped auto-change: system not idle (state=%d)",
+                       (int)sys.state);
+        return;
+    }
+    if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[PaperM30] Skipped auto-change: paper system not configured");
+        return;
+    }
+
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperM30] End of page (M30) detected, starting auto paper change...");
+    Error e = paper_auto_change();
+    if (e == Error::Ok) {
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperM30] Auto paper change completed.");
+    } else {
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Warning,
+                       "[PaperM30] Auto paper change returned error=%d",
+                       (int)e);
+    }
 }
 
 // 一键换纸物理按键（接在 GPIO35，对应 Macro0）回调。
