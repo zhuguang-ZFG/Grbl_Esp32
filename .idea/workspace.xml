@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="BackendCodeEditorMiscSettings">
-    <option name="/Default/Environment/Hierarchy/GeneratedFilesCacheKey/Timestamp/@EntryValue" value="8" type="long" />
+    <option name="/Default/Environment/Hierarchy/GeneratedFilesCacheKey/Timestamp/@EntryValue" value="10" type="long" />
     <option name="/Default/Housekeeping/FeatureSuggestion/FeatureSuggestionManager/DisabledSuggesters/=SwitchToGoToActionSuggester/@EntryIndexedValue" value="true" type="bool" />
     <option name="/Default/Housekeeping/GlobalSettingsUpgraded/IsUpgraded/@EntryValue" value="true" type="bool" />
     <option name="/Default/RiderDebugger/RiderRestoreDecompile/RestoreDecompileSetting/@EntryValue" value="false" type="bool" />
@@ -23,8 +23,8 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="Add and enhance paper auto-change functionality with step parameter support and update documentation">
-      <change beforePath="$PROJECT_DIR$/配置.md" beforeDir="false" afterPath="$PROJECT_DIR$/配置.md" afterDir="false" />
+    <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="Refactor paper system M-code handling and improve motor step pulses">
+      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/PaperSystem.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/PaperSystem.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -35,7 +35,7 @@
     <option name="formatViaClangd" value="false" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="398" />
+    <option name="cachedIndexableFilesCount" value="399" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="release" />
@@ -130,7 +130,7 @@
       <workItem from="1772943846137" duration="1604000" />
       <workItem from="1773218072555" duration="7090000" />
       <workItem from="1773238892930" duration="6436000" />
-      <workItem from="1773284347032" duration="18115000" />
+      <workItem from="1773284347032" duration="25130000" />
     </task>
     <task id="LOCAL-00001" summary="删除MCP相关脚本和配置文件">
       <option name="closed" value="true" />
@@ -236,7 +236,31 @@
       <option name="project" value="LOCAL" />
       <updated>1773297747561</updated>
     </task>
-    <option name="localTasksCounter" value="14" />
+    <task id="LOCAL-00014" summary="Add troubleshooting and repair records for GPIO34 paper sensor and auto bootloader issues">
+      <option name="closed" value="true" />
+      <created>1773321105146</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1773321105146</updated>
+    </task>
+    <task id="LOCAL-00015" summary="Refactor paper system M-code handling and improve motor step pulses">
+      <option name="closed" value="true" />
+      <created>1773414907548</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1773414907548</updated>
+    </task>
+    <task id="LOCAL-00016" summary="Refactor paper system M-code handling and improve motor step pulses">
+      <option name="closed" value="true" />
+      <created>1773414920988</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1773414920988</updated>
+    </task>
+    <option name="localTasksCounter" value="17" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -254,7 +278,9 @@
     <MESSAGE value="Add and enhance paper handling system with IDE configuration updates" />
     <MESSAGE value="Add and enhance paper auto-change functionality and update documentation" />
     <MESSAGE value="Add and enhance paper auto-change functionality with step parameter support and update documentation" />
-    <option name="LAST_COMMIT_MESSAGE" value="Add and enhance paper auto-change functionality with step parameter support and update documentation" />
+    <MESSAGE value="Add troubleshooting and repair records for GPIO34 paper sensor and auto bootloader issues" />
+    <MESSAGE value="Refactor paper system M-code handling and improve motor step pulses" />
+    <option name="LAST_COMMIT_MESSAGE" value="Refactor paper system M-code handling and improve motor step pulses" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

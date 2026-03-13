@@ -75,7 +75,7 @@ void paper_system_init(void) {
     } else {
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning, "[Paper] PAPER_SENSOR_PIN disabled (255)");
     }
-    // 注意：I2S_OUT已在Grbl.cpp中全局初始化，不在此重复初始化
+    // 注意：I2S_OUT已在Grbl.cpp中全局初始化，这里只在需要时切到 passthrough
 }
 
 
@@ -94,8 +94,8 @@ void paper_get_status_str(char* buf, size_t len) {
     snprintf(buf, len, "Paper=%s MotorEn=%s", paper_ok ? "OK" : "No", en_ok ? "On" : "Off");
 }
 
-// 内部辅助函数：启用 I2S passthrough 和驱动
-static void paper_enable_drivers(void) {
+// 内部辅助函数：确保 I2S 处于 passthrough 模式
+static void paper_ensure_i2s_passthrough(void) {
 #ifdef USE_I2S_OUT
     if (!paper_i2s_setup) {
         i2s_out_set_passthrough();  // I2S已在Grbl.cpp全局初始化，这里仅设置passthrough模式
@@ -104,6 +104,11 @@ static void paper_enable_drivers(void) {
     delay(I2S_OUT_DELAY_MS * 2);
     i2s_out_delay();
 #endif
+}
+
+// 内部辅助函数：启用所有纸路驱动（面板 + 拾落 + 进纸器）
+static void paper_enable_drivers(void) {
+    paper_ensure_i2s_passthrough();
     digitalWrite(PAPER_ENABLE_PIN, LOW);
 #ifdef PAPER_DRIVER_ENABLE_PIN
     digitalWrite(PAPER_DRIVER_ENABLE_PIN, LOW);
@@ -122,6 +127,28 @@ static void paper_disable_drivers(void) {
 #endif
 }
 
+// 仅使能面板电机（互斥：关闭拾落 + 进纸器）
+static void paper_enable_panel_only(void) {
+    paper_ensure_i2s_passthrough();
+    // 面板使能
+    digitalWrite(PAPER_ENABLE_PIN, LOW);
+#ifdef PAPER_DRIVER_ENABLE_PIN
+    // 拾落 + 进纸器失能
+    digitalWrite(PAPER_DRIVER_ENABLE_PIN, HIGH);
+#endif
+}
+
+// 仅使能拾落 + 进纸器（互斥：关闭面板）
+static void paper_enable_clamp_feeder_only(void) {
+    paper_ensure_i2s_passthrough();
+    // 面板失能
+    digitalWrite(PAPER_ENABLE_PIN, HIGH);
+#ifdef PAPER_DRIVER_ENABLE_PIN
+    // 拾落 + 进纸器使能
+    digitalWrite(PAPER_DRIVER_ENABLE_PIN, LOW);
+#endif
+}
+
 Error paper_run_motor(uint8_t motor_ix, uint16_t steps) {
     if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
         return Error::GcodeUnsupportedCommand;
@@ -132,22 +159,24 @@ Error paper_run_motor(uint8_t motor_ix, uint16_t steps) {
     if (steps > 10000) {
         steps = 10000;
     }
-    uint8_t step_pin;
+    uint8_t     step_pin;
     const char* motor_name;
     if (motor_ix == 0) {
-        step_pin = CLAMP_MOTOR_STEP_PIN;
+        step_pin   = CLAMP_MOTOR_STEP_PIN;
         motor_name = "Clamp";
+        paper_enable_clamp_feeder_only();
     } else if (motor_ix == 1) {
-        step_pin = PANEL_MOTOR_STEP_PIN;
+        step_pin   = PANEL_MOTOR_STEP_PIN;
         motor_name = "Panel";
+        paper_enable_panel_only();
     } else if (motor_ix == 2) {
-        step_pin = FEEDER_MOTOR_STEP_PIN;
+        step_pin   = FEEDER_MOTOR_STEP_PIN;
         motor_name = "Feeder";
+        paper_enable_clamp_feeder_only();
     } else {
         return Error::GcodeUnsupportedCommand;
     }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperMotor] %s: jog start (%u steps)", motor_name, (unsigned)steps);
-    paper_enable_drivers();
     paper_step_pulses(step_pin, steps);
     paper_disable_drivers();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperMotor] %s: jog complete", motor_name);
@@ -199,19 +228,22 @@ Error paper_auto_change(void) {
     }
 
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Starting auto paper change...");
-    paper_enable_drivers();
 
     // 1. 面板电机先运动，弹出旧纸（A4 长度 + 余量）
+    // 仅面板电机工作（组A），拾落 + 进纸器失能（组B）
+    paper_enable_panel_only();
     // 方向：按你的机械，出旧纸与进新纸同向运动 → 使用 PANEL_DIR_EJECT（等于 PANEL_DIR_FEED）
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-1] Ejecting old paper (%u steps)...", (unsigned)PANEL_EJECT_STEPS);
     paper_dir_steps(PANEL_MOTOR_DIR_PIN, PANEL_DIR_EJECT, PANEL_MOTOR_STEP_PIN, PANEL_EJECT_STEPS);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-1] Done");
 
     // 2. 进纸器开始运动，直到纸张传感器检测到纸或达到上限
+    // 仅进纸器工作（组B），面板失能（组A）
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-2] Feeder searching for paper (max %u steps)...", (unsigned)FEEDER_FIND_STEPS_MAX);
     {
         uint32_t steps = 0;
         bool     found = false;
+        paper_enable_clamp_feeder_only();
         digitalWrite(FEEDER_MOTOR_DIR_PIN, FEEDER_DIR_FORWARD);
 #ifdef USE_I2S_OUT
         i2s_out_delay();
@@ -232,36 +264,35 @@ Error paper_auto_change(void) {
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-2] Paper found at step %u", (unsigned)steps);
     }
 
-    // 3. 传感器感应到纸后，松开拾落电机
+    // 3. 传感器感应到纸后，松开拾落电机（仅拾落 + 进纸器组使能）
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-3] Releasing clamp (%u steps)...", (unsigned)CLAMP_TOGGLE_STEPS);
     paper_dir_steps(CLAMP_MOTOR_DIR_PIN, CLAMP_DIR_RELEASE, CLAMP_MOTOR_STEP_PIN, CLAMP_TOGGLE_STEPS);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-3] Done");
 
-    // 4. 送纸器继续送入一段（约 5cm）
+    // 4. 送纸器继续送入一段（约 5cm）（仍然只有拾落 + 进纸器组使能）
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-4] Feeder extra advance (%u steps)...", (unsigned)FEEDER_EXTRA_STEPS);
     paper_dir_steps(FEEDER_MOTOR_DIR_PIN, FEEDER_DIR_FORWARD, FEEDER_MOTOR_STEP_PIN, FEEDER_EXTRA_STEPS);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-4] Done");
 
-    // 5. 再次压紧拾落电机
+    // 5. 再次压紧拾落电机（仍然只有拾落 + 进纸器组使能）
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-5] Clamping paper (%u steps)...", (unsigned)CLAMP_TOGGLE_STEPS);
     paper_dir_steps(CLAMP_MOTOR_DIR_PIN, CLAMP_DIR_CLAMP, CLAMP_MOTOR_STEP_PIN, CLAMP_TOGGLE_STEPS);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-5] Done");
 
     // 6. 面板电机 + 送纸器快速送纸，直到传感器“看不到纸”为止或达到上限
-    // 电机同速运行（1:1），保证纸张不倾斜
+    // 仅面板电机工作（组A），拾落 + 进纸器失能（组B）以减小反拖阻力
+    paper_enable_panel_only();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Fast feeding (panel+feeder 1:1) until sensor loses paper (max %u steps)...", (unsigned)PANEL_FAST_STEPS_MAX);
     {
         uint32_t steps = 0;
         digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_FEED);
-        digitalWrite(FEEDER_MOTOR_DIR_PIN, FEEDER_DIR_FORWARD);
 #ifdef USE_I2S_OUT
         i2s_out_delay();
         delay(2);
 #endif
         while (paper_sensor_stable() && steps < PANEL_FAST_STEPS_MAX) {
-            // 面板与进纸器 1:1 交替单步，确保纸张直进
+            // 仅由面板电机送料，进纸器在本阶段保持不动，避免拖拽影响和带入第二张纸
             paper_step_pulses(PANEL_MOTOR_STEP_PIN, 1);
-            paper_step_pulses(FEEDER_MOTOR_STEP_PIN, 1);
             steps++;
         }
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Fast feed completed (%u steps, sensor=%s)", 
@@ -269,6 +300,8 @@ Error paper_auto_change(void) {
     }
 
     // 7. 面板电机反向，直到再次“感应到纸”或达到上限（回找定位点）
+    // 仅面板电机工作（组A）
+    paper_enable_panel_only();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel reverse to find paper again (max %u steps)...", (unsigned)PANEL_BACK_STEPS_MAX);
     {
         uint32_t steps = 0;
@@ -292,7 +325,7 @@ Error paper_auto_change(void) {
         }
     }
 
-    // 8. 面板电机再向送纸方向走固定步数，作为最终对位
+    // 8. 面板电机再向送纸方向走固定步数，作为最终对位（仍然只有面板电机使能）
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Final alignment (%u steps)...", (unsigned)PANEL_FINAL_STEPS);
     paper_dir_steps(PANEL_MOTOR_DIR_PIN, PANEL_DIR_FEED, PANEL_MOTOR_STEP_PIN, PANEL_FINAL_STEPS);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Done");
