@@ -38,7 +38,8 @@ void user_m30() {
                        (int)sys.state);
         return;
     }
-    if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
+    // 这里只做一个简单的“纸路是否配置”检查：默认未配置时 PAPER_SENSOR_PIN=255（见 Config.h）
+    if (PAPER_SENSOR_PIN == 255) {
         grbl_msg_sendf(CLIENT_SERIAL,
                        MsgLevel::Info,
                        "[PaperM30] Skipped auto-change: paper system not configured");
