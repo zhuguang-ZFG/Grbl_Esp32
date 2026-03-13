@@ -198,6 +198,9 @@ void protocol_main_loop() {
                 motors_set_disable(true);
             }
         }
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+        paper_led_update();
+#endif
     }
     return; /* Never reached */
 }

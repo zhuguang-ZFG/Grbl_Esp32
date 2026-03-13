@@ -112,7 +112,7 @@
 // 快进约 8.5k 步时脱离传感器，这里给到 9000 步保证能退回到感应点
 #define PANEL_BACK_STEPS_MAX    9000u
 // 面板电机：最终微调到位的步数
-#define PANEL_FINAL_STEPS       1100u
+#define PANEL_FINAL_STEPS       1140u
 
 // 进纸器电机：寻找新纸到感应器的最大步数（超时时间，可根据实际距离调大）
 #define FEEDER_FIND_STEPS_MAX   12000u
@@ -122,14 +122,13 @@
 // 拾落电机：压纸 / 抬纸的步数（一次完整动作），经实测约 220 步
 #define CLAMP_TOGGLE_STEPS      470u
 
-// 方向极性（如方向相反，可将 true/false 互换；若看起来反了，就把这两个再对调）
-// 单独定义三个方向，互不影响：
-// - PANEL_DIR_FEED:      正常送纸方向（你现在确认是正确的）
-// - PANEL_DIR_EJECT:     第1步“弹出旧纸”方向（与 FEED 相同）
-// - PANEL_DIR_REVERSE:   第7步“回找传感器”方向（与 FEED 反向）
-#define PANEL_DIR_FEED          false  // 面板电机"送入新纸 / 快速进纸 / 最终对位"方向（保持你当前的送纸方向）
-#define PANEL_DIR_EJECT         PANEL_DIR_FEED      // 出旧纸：同向
-#define PANEL_DIR_REVERSE       (!PANEL_DIR_FEED)   // 回找传感器：反向
+// 面板电机方向：三个独立宏，只改需要反的那一个即可
+// - PANEL_DIR_FEED:    第6步快速进纸、第8步最终对位（送新纸方向）
+// - PANEL_DIR_EJECT:   第1步弹出旧纸
+// - PANEL_DIR_REVERSE: 第7步回找传感器（与 FEED 同向）
+#define PANEL_DIR_FEED          false  // 送新纸 / 快速进纸 / 最终对位（你反馈进纸反了，只改此项）
+#define PANEL_DIR_EJECT         false  // 弹出旧纸（单独调，不动）
+#define PANEL_DIR_REVERSE       true   // 回找传感器（你反馈此方向反了，单独取反）
 #define FEEDER_DIR_FORWARD      false  // 进纸器“送纸进入机器”方向（反向）
 #define CLAMP_DIR_RELEASE       true   // 拾落电机“松开纸张”方向（再次反向）
 #define CLAMP_DIR_CLAMP         false  // 拾落电机“压紧纸张”方向

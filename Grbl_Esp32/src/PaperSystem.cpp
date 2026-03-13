@@ -9,6 +9,61 @@
 
 #define PAPER_DISABLED 255
 
+// 一键换纸流程是否正在执行（用于彩灯“快闪”与互斥）
+static volatile bool paper_auto_change_running = false;
+
+#ifdef PAPER_LED_PIN
+#ifdef USE_I2S_OUT
+// 前置声明：供 paper_led_set() 调用（定义在后文）
+static void paper_ensure_i2s_passthrough(void);
+#endif
+
+// 按键彩灯：Q0/QA，HIGH=灭，LOW=亮
+static void paper_led_set(bool on) {
+#ifdef USE_I2S_OUT
+    paper_ensure_i2s_passthrough();
+#endif
+    digitalWrite(PAPER_LED_PIN, on ? LOW : HIGH);
+}
+
+// 彩灯状态刷新（在主循环中周期调用，内部节流约 80ms）
+// 状态：换纸中→快闪；空闲有纸→常亮；空闲无纸→慢闪；运行中有纸→亮，无纸→灭
+void paper_led_update(void) {
+    static uint32_t last_ms   = 0;
+    static bool     led_on    = false;
+    uint32_t        now_ms    = millis();
+    if (now_ms - last_ms < 80u) {
+        return;
+    }
+    last_ms = now_ms;
+
+    bool paper_ok = (PAPER_SENSOR_PIN != PAPER_DISABLED) && (digitalRead(PAPER_SENSOR_PIN) == 0);
+    bool idle     = (sys.state == State::Idle);
+
+    if (paper_auto_change_running) {
+        led_on = !led_on;
+        paper_led_set(led_on);
+        return;
+    }
+    if (idle) {
+        if (paper_ok) {
+            paper_led_set(true);
+        } else {
+            static uint32_t slow_last;
+            if (now_ms - slow_last >= 500u) {
+                slow_last = now_ms;
+                led_on    = !led_on;
+            }
+            paper_led_set(led_on);
+        }
+        return;
+    }
+    paper_led_set(paper_ok);
+}
+#else
+void paper_led_update(void) {}
+#endif
+
 static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
 #ifdef USE_I2S_OUT
     // 面板/进纸器：前若干步用较慢脉宽起步，之后切换到高速 150us；拾落电机保持 2ms
@@ -83,6 +138,9 @@ void paper_system_init(void) {
     } else {
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning, "[Paper] PAPER_SENSOR_PIN disabled (255)");
     }
+#ifdef PAPER_LED_PIN
+    paper_led_update();
+#endif
     // 注意：I2S_OUT已在Grbl.cpp中全局初始化，这里只在需要时切到 passthrough
 }
 
@@ -237,6 +295,7 @@ Error paper_auto_change(void) {
         return Error::Ok;
     }
 
+    paper_auto_change_running = true;
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Starting auto paper change...");
 
     // 1. 面板电机先运动，弹出旧纸（A4 长度 + 余量）
@@ -268,6 +327,7 @@ Error paper_auto_change(void) {
             steps++;
         }
         if (!found) {
+            paper_auto_change_running = false;
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning, "[PaperAuto-2] ERROR: Feeder timeout - sensor not triggered after %u steps", (unsigned)steps);
             return Error::Ok;  // Do not raise hard error, just warn
         }
@@ -309,13 +369,12 @@ Error paper_auto_change(void) {
                        (unsigned)steps, paper_sensor_stable() ? "STILL_ACTIVE" : "lost");
     }
 
-    // 7. 面板电机反向，直到再次“感应到纸”或达到上限（回找定位点）
-    // 仅面板电机工作（组A）
+    // 7. 面板电机“回找传感器”，直到再次“感应到纸”或达到上限（回找定位点）
+    // 仅面板电机工作（组A），方向由 PANEL_DIR_REVERSE 单独控制（三宏之一）
     paper_enable_panel_only();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel reverse to find paper again (max %u steps)...", (unsigned)PANEL_BACK_STEPS_MAX);
     {
         uint32_t steps = 0;
-        // 第7步专用反向方向：PANEL_DIR_REVERSE，不再与 EJECT/FEED 共用，避免相互影响
         digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_REVERSE);
 #ifdef USE_I2S_OUT
         i2s_out_delay();
@@ -325,7 +384,7 @@ Error paper_auto_change(void) {
             paper_step_pulses(PANEL_MOTOR_STEP_PIN, 1);
             steps++;
         }
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel reverse completed (%u steps, sensor=%s)", 
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel re-search completed (%u steps, sensor=%s)", 
                        (unsigned)steps, paper_sensor_stable() ? "found" : "NOT_found");
         
         // 验证第7步是否成功找到纸（关键检查点）
@@ -343,6 +402,7 @@ Error paper_auto_change(void) {
     // 9. 换纸流程完成后，关闭换纸相关电机使能，防止长时间发热
     paper_disable_drivers();
 
+    paper_auto_change_running = false;
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] All steps completed successfully!");
     return Error::Ok;
 }
