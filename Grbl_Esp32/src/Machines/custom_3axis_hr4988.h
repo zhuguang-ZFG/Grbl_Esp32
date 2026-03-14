@@ -214,11 +214,15 @@
 
 // === Default Settings ===
 
-#define DEFAULT_STEP_PULSE_MICROSECONDS     5  // Increased for better driver reliability
+// 方向建立时间（µs）：DIR 变化后到第一个 STEP 前的延时，减轻 Z 轴卡顿感（仍卡顿可试 20µs 或串口 $ 调大）
+#ifndef STEP_PULSE_DELAY
+#define STEP_PULSE_DELAY                    15  // $Stepper/Direction/Delay 默认 15µs
+#endif
+#define DEFAULT_STEP_PULSE_MICROSECONDS     10  // Increased for better driver reliability and to prevent Z-axis stuttering
 #define DEFAULT_STEPPER_IDLE_LOCK_TIME      250
 
 #define DEFAULT_STEPPING_INVERT_MASK        0  // uint8_t
-#define DEFAULT_DIRECTION_INVERT_MASK        0  // uint8_t
+#define DEFAULT_DIRECTION_INVERT_MASK        0  // Z 不反相；若抬笔/落笔仍反，改为 bit(Z_AXIS) 并重新烧录或 $3=4 $S
 #define DEFAULT_INVERT_ST_ENABLE             0  // boolean (no invert - nENABLE active low)
 
 #define DEFAULT_STATUS_REPORT_MASK           1
@@ -245,11 +249,11 @@
 
 #define DEFAULT_X_MAX_RATE           5000.0  // mm/min
 #define DEFAULT_Y_MAX_RATE           5000.0  // mm/min
-#define DEFAULT_Z_MAX_RATE           1500.0  // Slower for pen up/down control
+#define DEFAULT_Z_MAX_RATE           1000.0  // Reduced speed to prevent Z-axis stuttering
 
 #define DEFAULT_X_ACCELERATION       500.0   // mm/sec^2
 #define DEFAULT_Y_ACCELERATION       500.0   // mm/sec^2
-#define DEFAULT_Z_ACCELERATION       800.0   // Faster acceleration for pen lift
+#define DEFAULT_Z_ACCELERATION       400.0   // Reduced acceleration to prevent Z-axis stuttering
 
 #define DEFAULT_X_MAX_TRAVEL         200.0   // mm - adjust to your machine
 #define DEFAULT_Y_MAX_TRAVEL         200.0   // mm - adjust to your machine

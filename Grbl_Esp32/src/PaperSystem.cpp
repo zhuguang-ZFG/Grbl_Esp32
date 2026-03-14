@@ -336,6 +336,7 @@ Error paper_auto_change(void) {
         }
         if (!found) {
             paper_auto_change_running = false;
+            paper_disable_drivers();  // 超时提前退出时也要关驱动，避免电机长时间使能
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning, "[PaperAuto-2] ERROR: Feeder timeout - sensor not triggered after %u steps", (unsigned)steps);
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_FEEDER_TIMEOUT);
             return Error::Ok;  // Do not raise hard error, just warn
@@ -358,10 +359,9 @@ Error paper_auto_change(void) {
     paper_dir_steps(CLAMP_MOTOR_DIR_PIN, CLAMP_DIR_CLAMP, CLAMP_MOTOR_STEP_PIN, CLAMP_TOGGLE_STEPS);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-5] Done");
 
-    // 6. 面板电机 + 送纸器快速送纸，直到传感器“看不到纸”为止或达到上限
-    // 仅面板电机工作（组A），拾落 + 进纸器失能（组B）以减小反拖阻力
+    // 6. 仅面板电机快速送纸，直到传感器“看不到纸”为止或达到上限（进纸器本阶段不动，减小反拖）
     paper_enable_panel_only();
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Fast feeding (panel+feeder 1:1) until sensor loses paper (max %u steps)...", (unsigned)PANEL_FAST_STEPS_MAX);
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Panel fast feed until sensor loses paper (max %u steps)...", (unsigned)PANEL_FAST_STEPS_MAX);
     {
         uint32_t steps = 0;
         digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_FEED);

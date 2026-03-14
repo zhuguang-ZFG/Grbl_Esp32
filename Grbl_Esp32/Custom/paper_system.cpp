@@ -42,13 +42,17 @@ void user_m30() {
     if (PAPER_SENSOR_PIN == 255) {
         grbl_msg_sendf(CLIENT_SERIAL,
                        MsgLevel::Info,
-                       "[PaperM30] Skipped auto-change: paper system not configured");
+                       "[PaperM30] Skipped: paper system not configured");
         return;
     }
 
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperM30] End of page (M30) detected, starting auto paper change...");
     Error e = paper_auto_change();
     if (e == Error::Ok) {
+        // 换纸完成后机械上 Z 已在抬笔极限（原点），将系统 Z 设为 0，避免下一页首条指令再让 Z 往“上”走
+        sys_position[Z_AXIS] = 0;
+        plan_sync_position();
+        gc_sync_position();
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperM30] Auto paper change completed.");
     } else {
         grbl_msg_sendf(CLIENT_SERIAL,

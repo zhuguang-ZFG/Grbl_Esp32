@@ -23,15 +23,7 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="Add machine initialization hook to print ESP32 chip ID and implement auto paper change on M30 command">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/Custom/paper_system.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/Custom/paper_system.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/GCode.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/GCode.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/Grbl.h" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/Grbl.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/Machines/custom_3axis_hr4988.h" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/Machines/custom_3axis_hr4988.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/PaperSystem.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/PaperSystem.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/配置.md" beforeDir="false" afterPath="$PROJECT_DIR$/配置.md" afterDir="false" />
-    </list>
+    <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="Enhance paper handling and auto-change logic, add Z-axis jog speed limit, and update documentation" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -137,7 +129,7 @@
       <workItem from="1773218072555" duration="7090000" />
       <workItem from="1773238892930" duration="6436000" />
       <workItem from="1773284347032" duration="25486000" />
-      <workItem from="1773422422316" duration="3438000" />
+      <workItem from="1773422422316" duration="4070000" />
     </task>
     <task id="LOCAL-00001" summary="删除MCP相关脚本和配置文件">
       <option name="closed" value="true" />
@@ -291,7 +283,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773424546375</updated>
     </task>
-    <option name="localTasksCounter" value="20" />
+    <task id="LOCAL-00020" summary="Enhance paper handling and auto-change logic, add Z-axis jog speed limit, and update documentation">
+      <option name="closed" value="true" />
+      <created>1773477212743</created>
+      <option name="number" value="00020" />
+      <option name="presentableId" value="LOCAL-00020" />
+      <option name="project" value="LOCAL" />
+      <updated>1773477212743</updated>
+    </task>
+    <option name="localTasksCounter" value="21" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -312,7 +312,8 @@
     <MESSAGE value="Add troubleshooting and repair records for GPIO34 paper sensor and auto bootloader issues" />
     <MESSAGE value="Refactor paper system M-code handling and improve motor step pulses" />
     <MESSAGE value="Add machine initialization hook to print ESP32 chip ID and implement auto paper change on M30 command" />
-    <option name="LAST_COMMIT_MESSAGE" value="Add machine initialization hook to print ESP32 chip ID and implement auto paper change on M30 command" />
+    <MESSAGE value="Enhance paper handling and auto-change logic, add Z-axis jog speed limit, and update documentation" />
+    <option name="LAST_COMMIT_MESSAGE" value="Enhance paper handling and auto-change logic, add Z-axis jog speed limit, and update documentation" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

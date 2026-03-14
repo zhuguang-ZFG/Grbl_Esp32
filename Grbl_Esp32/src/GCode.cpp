@@ -1606,13 +1606,16 @@ Error gc_execute_line(char* line, uint8_t client) {
             break;
     }
     // [20. Motion modes ]:
-    // 开始写字前自动换纸：上电后第一次“有轴字的 G0/G1”执行前先换纸一次，无需手动 [ESP910] 或 M721
+    // 开始写字前自动换纸：仅当 G0 X0 Y0 Z0（回原点）时触发第一页换纸
     if (!paper_change_done_before_first_page && axis_command == AxisCommand::MotionMode && axis_words &&
-        (gc_block.modal.motion == Motion::Seek || gc_block.modal.motion == Motion::Linear)) {
+        (axis_words & bit(X_AXIS)) && (axis_words & bit(Y_AXIS)) && (axis_words & bit(Z_AXIS)) &&
+        gc_block.modal.motion == Motion::Seek &&
+        fabsf(gc_block.values.xyz[X_AXIS]) < 0.01f && fabsf(gc_block.values.xyz[Y_AXIS]) < 0.01f && fabsf(gc_block.values.xyz[Z_AXIS]) < 0.01f) {
         paper_change_done_before_first_page = true;
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperOrigin] First page start: syncing then paper change before writing");
         protocol_buffer_synchronize();
         user_m30();
+        delay_ms(250);  // 换纸电机停后稍等再动，减轻卡顿感
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] 1st page");
     }
     // NOTE: Commands G10,G28,G30,G92 lock out and prevent axis words from use in motion modes.
     // Enter motion modes only if there are axis words or a motion mode command word in the block.
@@ -1727,9 +1730,9 @@ Error gc_execute_line(char* line, uint8_t client) {
                 do_paper_after_origin = true;
         }
         if (do_paper_after_origin) {
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperOrigin] Page end (G28/G30/G0 X0 Y0), syncing then paper change");
             protocol_buffer_synchronize();
             user_m30();
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] page end");  // 换纸后再发，避免串口与主机发送交错
         }
     }
 
