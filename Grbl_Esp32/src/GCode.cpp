@@ -44,6 +44,8 @@ parser_block_t gc_block;
 static uint16_t pending_m_code = 0;
 static uint16_t pending_m_steps = 0;
 static int8_t pending_m_clamp_dir = -1;
+// 开始写字前自动换纸：上电后第一次遇到“有轴字的 G0/G1”之前执行一次换纸，之后由每页末尾 G0 X0 Y0 触发
+static bool paper_change_done_before_first_page = false;
 
 #define FAIL(status) return (status);
 
@@ -53,6 +55,7 @@ void gc_init() {
     // Load default G54 coordinate system.
     gc_state.modal.coord_select = CoordIndex::G54;
     coords[gc_state.modal.coord_select]->get(gc_state.coord_system);
+    paper_change_done_before_first_page = false;  // 下次运行“开始写字”前会再自动换纸一次
 }
 
 // Sets g-code parser position in mm. Input in steps. Called by the system abort and hard
@@ -154,6 +157,7 @@ Error gc_execute_line(char* line, uint8_t client) {
     auto     n_axis          = number_axis->get();
     float    coord_data[MAX_N_AXIS];  // Used by WCO-related commands
     uint8_t  pValue;                  // Integer value of P word
+    bool     block_executed_seek = false;  // 本行是否实际执行了 G0 移动（用于回原点换纸，避免下一行误触发）
 
     // Determine if the line is a jogging motion or a normal g-code block.
     if (line[0] == '$') {  // NOTE: `$J=` already parsed when passed to this function.
@@ -556,24 +560,19 @@ Error gc_execute_line(char* line, uint8_t client) {
                         break;
                     default: {
                         uint16_t m_code = (uint16_t)(value + 0.5f);
-                        if (value >= 700.0f && value < 720.0f) {
+                        if (value >= 700.0f && value <= 721.0f) {
                             m_code = (uint16_t)value;
                         }
                         {
                             uint16_t steps     = 0;
                             int8_t   clamp_dir = -1;
                             
-                            // M700-720 范围的命令支持 P 和 Q 参数
-                            if (m_code >= 700 && m_code < 720) {
+                            // M700-721 纸张系统（720/721 无 P/Q，仅 711-716 用参数）
+                            if (m_code >= 700 && m_code <= 721) {
                                 // Store for later processing in STEP 3 when parameters are parsed
                                 pending_m_code = m_code;
                                 pending_m_steps = 0;  // Will be filled from gc_block.values.p in STEP 3
                                 pending_m_clamp_dir = -1;  // Will be filled from gc_block.values.q in STEP 3
-                                
-                                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "DEBUG: M700-720 command pending (M%u): awaiting parameter parsing", (unsigned)m_code);
-                                
-                                // Mark that we have a pending paper system command
-                                // Clear possible errors from paper_system_mcode call
                                 mg_word_bit = ModalGroup::MM10;
                                 break;
                             }
@@ -1310,7 +1309,7 @@ Error gc_execute_line(char* line, uint8_t client) {
     // [Paper System M716/M711/M712/M713 Deferred Execution]:
     // These M-commands are marked as pending in STEP 2 (before parameter parsing).
     // Now in STEP 3, with all parameters parsed, execute them with correct parameter values.
-    if (pending_m_code >= 700 && pending_m_code < 720) {
+    if (pending_m_code >= 700 && pending_m_code <= 721) {
         uint16_t steps = 0;
         int8_t clamp_dir = -1;
         
@@ -1318,19 +1317,11 @@ Error gc_execute_line(char* line, uint8_t client) {
         if ((pending_m_code == 711 || pending_m_code == 712 || pending_m_code == 713 || pending_m_code == 716) &&
             gc_block.values.p > 0 && gc_block.values.p <= 10000) {
             steps = (uint16_t)gc_block.values.p;
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "DEBUG: M%u using P parameter: steps=%u", (unsigned)pending_m_code, (unsigned)steps);
         }
-        
-        // Q parameter for M716
         if (pending_m_code == 716) {
             clamp_dir = (gc_block.values.q != 0.0f) ? 1 : 0;
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "DEBUG: M716 using Q parameter: clamp_dir=%d", (int)clamp_dir);
         }
-        
-        // Now execute the M command with proper parameters
         Error e = paper_system_mcode(pending_m_code, steps, clamp_dir);
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "DEBUG: paper_system_mcode(M%u) executed in STEP 3, result=%d", 
-                       (unsigned)pending_m_code, (int)e);
         
         if (e != Error::Ok && e != Error::GcodeUnsupportedCommand) {
             FAIL(e);
@@ -1381,6 +1372,16 @@ Error gc_execute_line(char* line, uint8_t client) {
         if (!(gc_block.non_modal_command == NonModal::AbsoluteOverride || gc_block.non_modal_command == NonModal::NoAction)) {
             FAIL(Error::InvalidJogCommand);
         }
+#ifdef JOG_Z_MAX_FEED_MM_PER_MIN
+        // Z 轴点动限速：点动包含 Z 向移动时（抬落笔）F 不超过 JOG_Z_MAX_FEED_MM_PER_MIN
+        if (axis_words & bit(Z_AXIS)) {
+            float z_delta = (gc_block.modal.distance == Distance::Incremental)
+                               ? fabsf(gc_block.values.xyz[Z_AXIS])
+                               : fabsf(gc_block.values.xyz[Z_AXIS] - gc_state.position[Z_AXIS]);
+            if (z_delta > 0.001f && gc_block.values.f > (float)JOG_Z_MAX_FEED_MM_PER_MIN)
+                gc_block.values.f = (float)JOG_Z_MAX_FEED_MM_PER_MIN;
+        }
+#endif
         // Initialize planner data to current spindle and coolant modal state.
         pl_data->spindle_speed  = gc_state.spindle_speed;
         pl_data->spindle        = gc_state.modal.spindle;
@@ -1605,6 +1606,14 @@ Error gc_execute_line(char* line, uint8_t client) {
             break;
     }
     // [20. Motion modes ]:
+    // 开始写字前自动换纸：上电后第一次“有轴字的 G0/G1”执行前先换纸一次，无需手动 [ESP910] 或 M721
+    if (!paper_change_done_before_first_page && axis_command == AxisCommand::MotionMode && axis_words &&
+        (gc_block.modal.motion == Motion::Seek || gc_block.modal.motion == Motion::Linear)) {
+        paper_change_done_before_first_page = true;
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperOrigin] First page start: syncing then paper change before writing");
+        protocol_buffer_synchronize();
+        user_m30();
+    }
     // NOTE: Commands G10,G28,G30,G92 lock out and prevent axis words from use in motion modes.
     // Enter motion modes only if there are axis words or a motion mode command word in the block.
     gc_state.modal.motion = gc_block.modal.motion;
@@ -1618,6 +1627,7 @@ Error gc_execute_line(char* line, uint8_t client) {
                 pl_data->motion.rapidMotion = 1;  // Set rapid motion flag.
                 limitsCheckSoft(gc_block.values.xyz);
                 cartesian_to_motors(gc_block.values.xyz, pl_data, gc_state.position);
+                block_executed_seek = true;  // 本行实际执行了 G0，用于回原点换纸仅在本行触发
             } else if ((gc_state.modal.motion == Motion::CwArc) || (gc_state.modal.motion == Motion::CcwArc)) {
                 mc_arc(gc_block.values.xyz,
                        pl_data,
@@ -1705,6 +1715,23 @@ Error gc_execute_line(char* line, uint8_t client) {
             break;
     }
     gc_state.modal.program_flow = ProgramFlow::Running;  // Reset program flow.
+
+    // 回原点后换纸：仅当本行实际执行了 G28/G30 或 G0 X0 Y0 时触发，避免下一行（如 G21）因 modal 仍为 Seek、position 仍为 (0,0) 而误触发
+    {
+        bool do_paper_after_origin = (gc_block.non_modal_command == NonModal::GoHome0 || gc_block.non_modal_command == NonModal::GoHome1);
+        if (!do_paper_after_origin && block_executed_seek) {
+            float wx = gc_state.position[X_AXIS] - gc_state.coord_system[X_AXIS] - gc_state.coord_offset[X_AXIS];
+            float wy = gc_state.position[Y_AXIS] - gc_state.coord_system[Y_AXIS] - gc_state.coord_offset[Y_AXIS];
+            // 容差 0.01mm，避免浮点误差导致漏判
+            if (fabsf(wx) < 0.01f && fabsf(wy) < 0.01f)
+                do_paper_after_origin = true;
+        }
+        if (do_paper_after_origin) {
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperOrigin] Page end (G28/G30/G0 X0 Y0), syncing then paper change");
+            protocol_buffer_synchronize();
+            user_m30();
+        }
+    }
 
     // TODO: % to denote start of program.
     return Error::Ok;

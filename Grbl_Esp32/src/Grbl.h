@@ -123,4 +123,5 @@ Error paper_run_motor(uint8_t motor_ix, uint16_t steps = 0);
 void  paper_enable_drivers_only(void);  // 仅使能驱动，不动作，便于 M64/M65 后点动调试
 Error paper_auto_change(void);  // 一键自动换纸流程
 void  paper_led_update(void);   // 按键彩灯 Q0 状态刷新（常亮/慢闪/快闪）
+bool  paper_auto_change_is_running(void);  // 换纸流程是否正在执行（按键/上位机可据此避免重复触发）
 #endif

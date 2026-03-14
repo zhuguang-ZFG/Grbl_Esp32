@@ -42,7 +42,12 @@
     Pen Control:
     - Z=0mm: Pen down (writing position)
     - Z=20mm: Pen up (travel position)
+
+    Jog: Z 轴点动（抬落笔）单独限速，避免 $J= 使用较大 F 时 Z 过快。
 */
+#ifndef JOG_Z_MAX_FEED_MM_PER_MIN
+#define JOG_Z_MAX_FEED_MM_PER_MIN  1000   // Z 轴点动最大进给 mm/min，含 Z 的点动会被限制到此值
+#endif
 
 #define MACHINE_NAME "Custom 3-Axis HR4988"
 #define GRBL_PAPER_SYSTEM 1  /* æ¢çº¸ç³»ç» M701/M711/M712/M713 å?GCode.cpp ä¸­ç´åå®ç?*/
@@ -112,7 +117,7 @@
 // 快进约 8.5k 步时脱离传感器，这里给到 9000 步保证能退回到感应点
 #define PANEL_BACK_STEPS_MAX    9000u
 // 面板电机：最终微调到位的步数
-#define PANEL_FINAL_STEPS       1140u
+#define PANEL_FINAL_STEPS       1110u
 
 // 进纸器电机：寻找新纸到感应器的最大步数（超时时间，可根据实际距离调大）
 #define FEEDER_FIND_STEPS_MAX   12000u
@@ -121,6 +126,16 @@
 
 // 拾落电机：压纸 / 抬纸的步数（一次完整动作），经实测约 220 步
 #define CLAMP_TOGGLE_STEPS      470u
+
+// 步进脉冲时序（μs）：在 PaperSystem.cpp 的 paper_step_pulses 中使用
+// 面板/进纸器：起步阶段用较慢脉宽减小冲击，之后切换为正常速度
+#define PAPER_RAMP_STEPS         40u    // 起步缓运行步数
+#define PAPER_RAMP_HI_US         400u   // 起步阶段高电平 μs
+#define PAPER_RAMP_LO_US         400u   // 起步阶段低电平 μs
+#define PAPER_NORMAL_HI_US       150u   // 面板/进纸器正常高速 μs
+#define PAPER_NORMAL_LO_US       150u
+#define PAPER_CLAMP_HI_US        2000u  // 拾落电机脉宽 μs
+#define PAPER_CLAMP_LO_US        2000u
 
 // 面板电机方向：三个独立宏，只改需要反的那一个即可
 // - PANEL_DIR_FEED:    第6步快速进纸、第8步最终对位（送新纸方向）

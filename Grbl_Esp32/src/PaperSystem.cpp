@@ -9,8 +9,31 @@
 
 #define PAPER_DISABLED 255
 
+// 换纸流程结束状态码（上位机可解析 [PaperStatus] N 做分支）
+#define PAPER_STATUS_OK                0
+#define PAPER_STATUS_PAPER_PRESENT     1  // 开始时传感器仍有纸，无法弹旧纸
+#define PAPER_STATUS_FEEDER_TIMEOUT   2  // 进纸阶段超时未触发传感器
+#define PAPER_STATUS_SENSOR_NOT_FOUND 3  // 第7步回找后传感器未稳定（纸可能未到位）
+
+// 步进脉宽常量：若机器头文件未定义，则使用下列默认值（见 custom_3axis_hr4988.h）
+#ifndef PAPER_RAMP_STEPS
+#define PAPER_RAMP_STEPS    40u
+#define PAPER_RAMP_HI_US    400u
+#define PAPER_RAMP_LO_US    400u
+#define PAPER_NORMAL_HI_US  150u
+#define PAPER_NORMAL_LO_US  150u
+#define PAPER_CLAMP_HI_US   2000u
+#define PAPER_CLAMP_LO_US   2000u
+#endif
+
 // 一键换纸流程是否正在执行（用于彩灯“快闪”与互斥）
 static volatile bool paper_auto_change_running = false;
+
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+bool paper_auto_change_is_running(void) {
+    return paper_auto_change_running;
+}
+#endif
 
 #ifdef PAPER_LED_PIN
 #ifdef USE_I2S_OUT
@@ -66,30 +89,19 @@ void paper_led_update(void) {}
 
 static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
 #ifdef USE_I2S_OUT
-    // 面板/进纸器：前若干步用较慢脉宽起步，之后切换到高速 150us；拾落电机保持 2ms
-    const uint16_t ramp_steps      = 40u;    // 起步缓慢的步数（可按需要调整）
-    const uint32_t ramp_hi_us      = 400u;   // 起步阶段脉宽（高电平时间）
-    const uint32_t ramp_lo_us      = 400u;   // 起步阶段低电平时间
-    const uint32_t normal_hi_us    = 150u;   // 面板/进纸器正常高速脉宽
-    const uint32_t normal_lo_us    = 150u;
-    const uint32_t clamp_hi_us     = 2000u;  // 拾落电机脉宽
-    const uint32_t clamp_lo_us     = 2000u;
-
     uint32_t hi_us, lo_us;
     for (uint16_t i = 0; i < steps; i++) {
         if (step_pin == PANEL_MOTOR_STEP_PIN || step_pin == FEEDER_MOTOR_STEP_PIN) {
-            // 起步阶段：用更大的脉宽，减小冲击
-            if (i < ramp_steps) {
-                hi_us = ramp_hi_us;
-                lo_us = ramp_lo_us;
+            if (i < PAPER_RAMP_STEPS) {
+                hi_us = PAPER_RAMP_HI_US;
+                lo_us = PAPER_RAMP_LO_US;
             } else {
-                hi_us = normal_hi_us;
-                lo_us = normal_lo_us;
+                hi_us = PAPER_NORMAL_HI_US;
+                lo_us = PAPER_NORMAL_LO_US;
             }
         } else {
-            // 拾落电机保持原来的 2ms 脉宽
-            hi_us = clamp_hi_us;
-            lo_us = clamp_lo_us;
+            hi_us = PAPER_CLAMP_HI_US;
+            lo_us = PAPER_CLAMP_LO_US;
         }
         digitalWrite(step_pin, HIGH);
         i2s_out_delay();
@@ -272,7 +284,7 @@ static inline bool paper_sensor_stable() {
     return count_low >= 2;  // 至少2次读到 LOW 才认为有纸
 }
 
-// 设定某个 DIR/STEP 电机以给定方向运动 N 步
+// 设定方向并发送 N 步脉冲（DIR 先稳定再 STEP，避免丢步）
 static void paper_dir_steps(uint8_t dir_pin, bool dir_level, uint8_t step_pin, uint32_t steps) {
     digitalWrite(dir_pin, dir_level);
 #ifdef USE_I2S_OUT
@@ -282,19 +294,15 @@ static void paper_dir_steps(uint8_t dir_pin, bool dir_level, uint8_t step_pin, u
     paper_step_pulses(step_pin, (uint16_t)steps);
 }
 
-// 一键自动换纸流程
+// 一键自动换纸流程（[ESP910] / M30 调用）
+// 步骤：1 弹旧纸 → 2 进纸器找纸 → 3 松夹 → 4 进纸器多送 → 5 夹紧 → 6 面板快送直到脱传感器 → 7 回找传感器 → 8 最终对位 → 9 失能
+// 结束时会发送 [PaperStatus] N（0=成功，2=进纸超时，3=第7步未找到传感器；1 保留）
 Error paper_auto_change(void) {
     if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
         return Error::GcodeUnsupportedCommand;
     }
 
-    // 初始状态检查：应该是"无纸"状态才能开始弹出旧纸
-    if (paper_sensor_stable()) {
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning, 
-                       "[PaperAuto-ERROR] Paper still present - cannot eject old paper! Aborting...");
-        return Error::Ok;
-    }
-
+    // 允许起始有纸：用于“开始队列前出旧纸”和“M30 后出本页再进下一页”。第 1 步会先弹旧纸，再进新纸。
     paper_auto_change_running = true;
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Starting auto paper change...");
 
@@ -329,6 +337,7 @@ Error paper_auto_change(void) {
         if (!found) {
             paper_auto_change_running = false;
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning, "[PaperAuto-2] ERROR: Feeder timeout - sensor not triggered after %u steps", (unsigned)steps);
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_FEEDER_TIMEOUT);
             return Error::Ok;  // Do not raise hard error, just warn
         }
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-2] Paper found at step %u", (unsigned)steps);
@@ -370,7 +379,7 @@ Error paper_auto_change(void) {
     }
 
     // 7. 面板电机“回找传感器”，直到再次“感应到纸”或达到上限（回找定位点）
-    // 仅面板电机工作（组A），方向由 PANEL_DIR_REVERSE 单独控制（三宏之一）
+    bool step7_sensor_ok = true;
     paper_enable_panel_only();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel reverse to find paper again (max %u steps)...", (unsigned)PANEL_BACK_STEPS_MAX);
     {
@@ -380,15 +389,14 @@ Error paper_auto_change(void) {
         i2s_out_delay();
         delay(2);
 #endif
-        while (!paper_sensor_stable() && steps < PANEL_BACK_STEPS_MAX) {  // 改用防抖读取
+        while (!paper_sensor_stable() && steps < PANEL_BACK_STEPS_MAX) {
             paper_step_pulses(PANEL_MOTOR_STEP_PIN, 1);
             steps++;
         }
+        step7_sensor_ok = paper_sensor_stable();
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel re-search completed (%u steps, sensor=%s)", 
-                       (unsigned)steps, paper_sensor_stable() ? "found" : "NOT_found");
-        
-        // 验证第7步是否成功找到纸（关键检查点）
-        if (!paper_sensor_stable()) {
+                       (unsigned)steps, step7_sensor_ok ? "found" : "NOT_found");
+        if (!step7_sensor_ok) {
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning, 
                            "[PaperAuto-7-WARNING] Sensor NOT stable after reverse search - paper may not be in correct position!");
         }
@@ -404,6 +412,7 @@ Error paper_auto_change(void) {
 
     paper_auto_change_running = false;
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] All steps completed successfully!");
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", step7_sensor_ok ? PAPER_STATUS_OK : PAPER_STATUS_SENSOR_NOT_FOUND);
     return Error::Ok;
 }
 
@@ -491,6 +500,16 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M716: done");
 
             return Error::Ok;
+        }
+        case 721: {  // 队列开始：自动执行一次换纸（出旧纸+进第一张），上位机在发第一页前发本行即可，无需人工干预
+            if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M721: paper system not configured");
+                return Error::Ok;
+            }
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[M721] Queue start: running one paper change...");
+            Error e = paper_auto_change();
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[M721] Done.");
+            return e;
         }
         default:
             if (PAPER_SENSOR_PIN == PAPER_DISABLED) {

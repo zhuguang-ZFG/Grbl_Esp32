@@ -81,6 +81,11 @@ void user_defined_macro(uint8_t index) {
                        (int)sys.state);
         return;
     }
+    // 换纸流程已在进行时不再排队，避免重复执行
+    if (paper_auto_change_is_running()) {
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Ignored: paper change already running");
+        return;
+    }
 
     // 简单的软件去抖：500ms 内只响应一次
     static uint32_t last_trigger_ms = 0;
