@@ -153,12 +153,16 @@ const int ESP_WIFI_STA  = 1;
 const int ESP_WIFI_AP   = 2;
 const int ESP_BT        = 3;
 
-//Default mode
+//Default mode（写字机默认蓝牙，用户可通过设置切到 WiFi AP/STA）
 #ifdef ENABLE_WIFI
 #    ifdef CONNECT_TO_SSID
 const int DEFAULT_RADIO_MODE = ESP_WIFI_STA;
 #    else
+#        ifdef ENABLE_BLUETOOTH
+const int DEFAULT_RADIO_MODE = ESP_BT;  // 默认蓝牙
+#        else
 const int DEFAULT_RADIO_MODE = ESP_WIFI_AP;
+#        endif
 #    endif  //CONNECT_TO_SSID
 #else
 #    undef ENABLE_NOTIFICATIONS
