@@ -87,6 +87,9 @@ void paper_led_update(void) {
 void paper_led_update(void) {}
 #endif
 
+// 每 YIELD_STEPS 步 yield 一次，避免长时间阻塞触发 ESP32 Interrupt Watchdog (Core 1 panic)
+#define PAPER_YIELD_STEPS 200u
+
 static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
 #ifdef USE_I2S_OUT
     uint32_t hi_us, lo_us;
@@ -109,6 +112,9 @@ static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
         digitalWrite(step_pin, LOW);
         i2s_out_delay();
         delayMicroseconds(lo_us);
+        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            delay(1);  // yield to RTOS, feed interrupt watchdog
+        }
     }
 #else
     for (uint16_t i = 0; i < steps; i++) {
@@ -116,6 +122,9 @@ static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
         delayMicroseconds(500);
         digitalWrite(step_pin, LOW);
         delayMicroseconds(500);
+        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            delay(1);  // yield to RTOS, feed interrupt watchdog
+        }
     }
 #endif
 }
@@ -333,6 +342,9 @@ Error paper_auto_change(void) {
             }
             paper_step_pulses(FEEDER_MOTOR_STEP_PIN, 1);
             steps++;
+            if (steps % PAPER_YIELD_STEPS == 0) {
+                delay(1);  // yield to RTOS, avoid Interrupt wdt timeout
+            }
         }
         if (!found) {
             paper_auto_change_running = false;
@@ -373,6 +385,9 @@ Error paper_auto_change(void) {
             // 仅由面板电机送料，进纸器在本阶段保持不动，避免拖拽影响和带入第二张纸
             paper_step_pulses(PANEL_MOTOR_STEP_PIN, 1);
             steps++;
+            if (steps % PAPER_YIELD_STEPS == 0) {
+                delay(1);  // yield to RTOS, avoid Interrupt wdt timeout
+            }
         }
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Fast feed completed (%u steps, sensor=%s)", 
                        (unsigned)steps, paper_sensor_stable() ? "STILL_ACTIVE" : "lost");
@@ -392,6 +407,9 @@ Error paper_auto_change(void) {
         while (!paper_sensor_stable() && steps < PANEL_BACK_STEPS_MAX) {
             paper_step_pulses(PANEL_MOTOR_STEP_PIN, 1);
             steps++;
+            if (steps % PAPER_YIELD_STEPS == 0) {
+                delay(1);  // yield to RTOS, avoid Interrupt wdt timeout
+            }
         }
         step7_sensor_ok = paper_sensor_stable();
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel re-search completed (%u steps, sensor=%s)", 

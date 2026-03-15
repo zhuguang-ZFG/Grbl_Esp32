@@ -39,6 +39,9 @@ Error jog_execute(plan_line_data_t* pl_data, parser_block_t* gc_block, bool* can
             return Error::TravelExceeded;
         }
     }
+    if (!check_license()) {
+        return Error::AuthenticationFailed;  // 未授权禁止点动
+    }
     // Valid jog command. Plan, set state, and execute.
     if (!cartesian_to_motors(gc_block->values.xyz, pl_data, gc_state.position)) {
         return Error::JogCancelled;

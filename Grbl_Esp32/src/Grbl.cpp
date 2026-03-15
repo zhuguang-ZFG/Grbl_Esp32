@@ -129,7 +129,18 @@ void __attribute__((weak)) display_init() {}
 
 void __attribute__((weak)) user_m30() {}
 
+// 许可检查（默认始终通过），可在 Custom 代码中覆盖，例如基于芯片 ID 做授权
+bool __attribute__((weak)) check_license() {
+    return true;
+}
+
 void __attribute__((weak)) user_tool_change(uint8_t new_tool) {}
+
+// M800 P<授权码>：Custom 覆盖后按芯片 ID 比较，未覆盖则始终通过
+bool __attribute__((weak)) license_set_from_p_param(uint32_t p_value) {
+    (void)p_value;
+    return true;
+}
 /*
   setup() and loop() in the Arduino .ino implements this control flow:
 

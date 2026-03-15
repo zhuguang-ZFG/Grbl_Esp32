@@ -567,8 +567,8 @@ Error gc_execute_line(char* line, uint8_t client) {
                             uint16_t steps     = 0;
                             int8_t   clamp_dir = -1;
                             
-                            // M700-721 纸张系统（720/721 无 P/Q，仅 711-716 用参数）
-                            if (m_code >= 700 && m_code <= 721) {
+                            // M700-721 纸张系统（720/721 无 P/Q，仅 711-716 用参数）；M800 授权（P=十进制授权码）
+                            if ((m_code >= 700 && m_code <= 721) || m_code == 800) {
                                 // Store for later processing in STEP 3 when parameters are parsed
                                 pending_m_code = m_code;
                                 pending_m_steps = 0;  // Will be filled from gc_block.values.p in STEP 3
@@ -860,19 +860,12 @@ Error gc_execute_line(char* line, uint8_t client) {
     }
     
     // [Paper System M716/M711/M712/M713]: Consume P and Q parameters if used by paper system commands
-    // These parameters are consumed in STEP 2, but parameters are parsed here in STEP 3.
-    // For now, unconditionally clear P and Q if they were in the command, as a workaround.
-    // TODO: Properly move M716 execution to post-parameter-parsing phase
-    if (bit_istrue(command_words, bit(ModalGroup::MM10))) {
-        // An M command was issued in this block
+    // M800 不在此清除 P/Q，以便 STEP 3 用 P（及可选 Q）计算授权码；授权码超过 float 精度时用 M800 P<高段> Q<低段>（码=P*1000+Q）
+    if (bit_istrue(command_words, bit(ModalGroup::MM10)) && pending_m_code != 800) {
         if (bit_istrue(value_words, bit(GCodeWord::P))) {
-            // P was provided; assume it's for the M command
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "DEBUG: Clearing P parameter (value=%.0f)", gc_block.values.p);
             bit_false(value_words, bit(GCodeWord::P));
         }
         if (bit_istrue(value_words, bit(GCodeWord::Q))) {
-            // Q was provided; assume it's for the M command
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "DEBUG: Clearing Q parameter (value=%.1f)", gc_block.values.q);
             bit_false(value_words, bit(GCodeWord::Q));
         }
     }
@@ -1102,6 +1095,7 @@ Error gc_execute_line(char* line, uint8_t client) {
             }
     }
     // [20. Motion modes ]:
+    // 未授权时运动在执行阶段被拦截（见下方 Motion modes 执行块中的 check_license()），M 指令（如 M800）照常执行。
     if (gc_block.modal.motion == Motion::None) {
         // [G80 Errors]: Axis word are programmed while G80 is active.
         // NOTE: Even non-modal commands or TLO that use axis words will throw this strict error.
@@ -1309,7 +1303,22 @@ Error gc_execute_line(char* line, uint8_t client) {
     // [Paper System M716/M711/M712/M713 Deferred Execution]:
     // These M-commands are marked as pending in STEP 2 (before parameter parsing).
     // Now in STEP 3, with all parameters parsed, execute them with correct parameter values.
-    if (pending_m_code >= 700 && pending_m_code <= 721) {
+    if (pending_m_code == 800) {
+        // M800 P<码> 或 M800 P<高段> Q<低段>（码=P*1000+Q，用于超过 float 精度的 9 位数，如 121261484 = P121261 Q484）
+        uint32_t p_val;
+        if (bit_istrue(value_words, bit(GCodeWord::Q))) {
+            p_val = (uint32_t)(gc_block.values.p + 0.5f) * 1000u + (uint32_t)(gc_block.values.q + 0.5f);
+        } else {
+            p_val = (uint32_t)(gc_block.values.p + 0.5f);
+        }
+        bool ok = license_set_from_p_param(p_val);
+        pending_m_code = 0;
+        bit_false(value_words, bit(GCodeWord::P));
+        bit_false(value_words, bit(GCodeWord::Q));
+        if (!ok) {
+            FAIL(Error::InvalidValue);
+        }
+    } else if (pending_m_code >= 700 && pending_m_code <= 721) {
         uint16_t steps = 0;
         int8_t clamp_dir = -1;
         
@@ -1579,14 +1588,18 @@ Error gc_execute_line(char* line, uint8_t client) {
         case NonModal::GoHome1:
             // Move to intermediate position before going home. Obeys current coordinate system and offsets
             // and absolute and incremental modes.
-            pl_data->motion.rapidMotion = 1;  // Set rapid motion flag.
-            if (axis_command != AxisCommand::None) {
-                limitsCheckSoft(gc_block.values.xyz);
-                cartesian_to_motors(gc_block.values.xyz, pl_data, gc_state.position);
+            if (!check_license()) {
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[License] Motion blocked");
+            } else {
+                pl_data->motion.rapidMotion = 1;  // Set rapid motion flag.
+                if (axis_command != AxisCommand::None) {
+                    limitsCheckSoft(gc_block.values.xyz);
+                    cartesian_to_motors(gc_block.values.xyz, pl_data, gc_state.position);
+                }
+                limitsCheckSoft(coord_data);
+                cartesian_to_motors(coord_data, pl_data, gc_state.position);
+                memcpy(gc_state.position, coord_data, sizeof(gc_state.position));
             }
-            limitsCheckSoft(coord_data);
-            cartesian_to_motors(coord_data, pl_data, gc_state.position);
-            memcpy(gc_state.position, coord_data, sizeof(gc_state.position));
             break;
         case NonModal::SetHome0:
             coords[CoordIndex::G28]->set(gc_state.position);
@@ -1622,41 +1635,45 @@ Error gc_execute_line(char* line, uint8_t client) {
     gc_state.modal.motion = gc_block.modal.motion;
     if (gc_state.modal.motion != Motion::None) {
         if (axis_command == AxisCommand::MotionMode) {
-            GCUpdatePos gc_update_pos = GCUpdatePos::Target;
-            if (gc_state.modal.motion == Motion::Linear) {
-                limitsCheckSoft(gc_block.values.xyz);
-                cartesian_to_motors(gc_block.values.xyz, pl_data, gc_state.position);
-            } else if (gc_state.modal.motion == Motion::Seek) {
-                pl_data->motion.rapidMotion = 1;  // Set rapid motion flag.
-                limitsCheckSoft(gc_block.values.xyz);
-                cartesian_to_motors(gc_block.values.xyz, pl_data, gc_state.position);
-                block_executed_seek = true;  // 本行实际执行了 G0，用于回原点换纸仅在本行触发
-            } else if ((gc_state.modal.motion == Motion::CwArc) || (gc_state.modal.motion == Motion::CcwArc)) {
-                mc_arc(gc_block.values.xyz,
-                       pl_data,
-                       gc_state.position,
-                       gc_block.values.ijk,
-                       gc_block.values.r,
-                       axis_0,
-                       axis_1,
-                       axis_linear,
-                       bit_istrue(gc_parser_flags, GCParserArcIsClockwise));
+            if (!check_license()) {
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[License] Motion blocked");
             } else {
-                // NOTE: gc_block.values.xyz is returned from mc_probe_cycle with the updated position value. So
-                // upon a successful probing cycle, the machine position and the returned value should be the same.
+                GCUpdatePos gc_update_pos = GCUpdatePos::Target;
+                if (gc_state.modal.motion == Motion::Linear) {
+                    limitsCheckSoft(gc_block.values.xyz);
+                    cartesian_to_motors(gc_block.values.xyz, pl_data, gc_state.position);
+                } else if (gc_state.modal.motion == Motion::Seek) {
+                    pl_data->motion.rapidMotion = 1;  // Set rapid motion flag.
+                    limitsCheckSoft(gc_block.values.xyz);
+                    cartesian_to_motors(gc_block.values.xyz, pl_data, gc_state.position);
+                    block_executed_seek = true;  // 本行实际执行了 G0，用于回原点换纸仅在本行触发
+                } else if ((gc_state.modal.motion == Motion::CwArc) || (gc_state.modal.motion == Motion::CcwArc)) {
+                    mc_arc(gc_block.values.xyz,
+                           pl_data,
+                           gc_state.position,
+                           gc_block.values.ijk,
+                           gc_block.values.r,
+                           axis_0,
+                           axis_1,
+                           axis_linear,
+                           bit_istrue(gc_parser_flags, GCParserArcIsClockwise));
+                } else {
+                    // NOTE: gc_block.values.xyz is returned from mc_probe_cycle with the updated position value. So
+                    // upon a successful probing cycle, the machine position and the returned value should be the same.
 #ifndef ALLOW_FEED_OVERRIDE_DURING_PROBE_CYCLES
-                pl_data->motion.noFeedOverride = 1;
+                    pl_data->motion.noFeedOverride = 1;
 #endif
-                gc_update_pos = mc_probe_cycle(gc_block.values.xyz, pl_data, gc_parser_flags);
+                    gc_update_pos = mc_probe_cycle(gc_block.values.xyz, pl_data, gc_parser_flags);
+                }
+                // As far as the parser is concerned, the position is now == target. In reality the
+                // motion control system might still be processing the action and the real tool position
+                // in any intermediate location.
+                if (gc_update_pos == GCUpdatePos::Target) {
+                    memcpy(gc_state.position, gc_block.values.xyz, sizeof(gc_block.values.xyz));  // gc_state.position[] = gc_block.values.xyz[]
+                } else if (gc_update_pos == GCUpdatePos::System) {
+                    gc_sync_position();  // gc_state.position[] = sys_position
+                }                        // == GCUpdatePos::None
             }
-            // As far as the parser is concerned, the position is now == target. In reality the
-            // motion control system might still be processing the action and the real tool position
-            // in any intermediate location.
-            if (gc_update_pos == GCUpdatePos::Target) {
-                memcpy(gc_state.position, gc_block.values.xyz, sizeof(gc_block.values.xyz));  // gc_state.position[] = gc_block.values.xyz[]
-            } else if (gc_update_pos == GCUpdatePos::System) {
-                gc_sync_position();  // gc_state.position[] = sys_position
-            }                        // == GCUpdatePos::None
         }
     }
     // [21. Program flow ]:
