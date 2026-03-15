@@ -1697,6 +1697,7 @@ Error gc_execute_line(char* line, uint8_t client) {
         case ProgramFlow::CompletedM2:
         case ProgramFlow::CompletedM30:
             protocol_buffer_synchronize();  // Sync and finish all remaining buffered motions before moving on.
+            motors_set_disable(true);       // 写完一页/程序结束立即失能 XYZ，避免依赖主循环 250ms 后才失能（换纸期间主循环被阻塞）
 
             // Upon program complete, only a subset of g-codes reset to certain defaults, according to
             // LinuxCNC's program end descriptions and testing. Only modal groups [G-code 1,2,3,5,7,12]
@@ -1748,6 +1749,7 @@ Error gc_execute_line(char* line, uint8_t client) {
         }
         if (do_paper_after_origin) {
             protocol_buffer_synchronize();
+            motors_set_disable(true);  // 回原点写完一页后立即失能 XYZ，换纸期间主循环被阻塞无法执行延时失能
             user_m30();
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] page end");  // 换纸后再发，避免串口与主机发送交错
         }

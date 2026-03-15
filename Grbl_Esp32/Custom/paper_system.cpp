@@ -177,20 +177,32 @@ void user_m30() {
 // - 硬件：PAPER_CHANGE_BTN_PIN = GPIO35，实测接法为 LOW=按下，HIGH=松开（外部下拉）。
 // - 上面在 custom_3axis_hr4988.h 中把 MACRO_BUTTON_0_PIN 映射为 PAPER_CHANGE_BTN_PIN，
 //   并通过 INVERT_CONTROL_PIN_MASK 让 Macro0 变为“低电平有效”，仅在按下时产生事件。
-// - 这里再做一次软件去抖：两次有效触发之间至少间隔 500ms，防止长时间抖动或误连按。
+// - 去抖 1：稳定低电平确认——连续多次采样均为 LOW 才视为真实按下，避免步进/EMI 毛刺误触发。
+// - 去抖 2：两次有效按下至少间隔 500ms。触发方式：连按两次才换纸（第一次提示“再按一次”，0.5～2s 内再按才注入 [ESP910]）。
 // - 为了复用现有 [ESP910] 逻辑，这里不直接调用 paper_auto_change()，
 //   而是向 WebUI::inputBuffer 注入一行 “[ESP910]”，由原有处理流程执行一键换纸。
+#define PAPER_BTN_STABLE_SAMPLES  5
+#define PAPER_BTN_STABLE_MS       8
+#define PAPER_BTN_DOUBLE_PRESS_MS_MIN  500u   // 两次按下最小间隔
+#define PAPER_BTN_DOUBLE_PRESS_MS_MAX  2000u  // 第二次有效窗：首次后 0.5～2s 内再按才触发
 void user_defined_macro(uint8_t index) {
     if (index != 0) {
         return;
     }
-
-    // 必须在 Idle 状态才能开始一键换纸
+    // 稳定低电平确认：LOW=按下，任一样本为 HIGH 则视为毛刺/误触发
+    {
+        const uint32_t step_ms = (PAPER_BTN_STABLE_MS / PAPER_BTN_STABLE_SAMPLES);
+        for (int i = 0; i < PAPER_BTN_STABLE_SAMPLES; i++) {
+            if (i > 0) {
+                delay(step_ms);
+            }
+            if (digitalRead(PAPER_CHANGE_BTN_PIN) != LOW) {
+                return;
+            }
+        }
+    }
+    // 必须在 Idle 状态才能开始一键换纸（运行中按下仅忽略，不发 Info 避免串口/蓝牙发送阻塞主循环导致 XY 卡顿）
     if (sys.state != State::Idle) {
-        grbl_msg_sendf(CLIENT_SERIAL,
-                       MsgLevel::Info,
-                       "[PaperBtn] Ignored: system not idle (state=%d)",
-                       (int)sys.state);
         return;
     }
     // 换纸流程已在进行时不再排队，避免重复执行
@@ -199,26 +211,29 @@ void user_defined_macro(uint8_t index) {
         return;
     }
 
-    // 简单的软件去抖：500ms 内只响应一次
-    static uint32_t last_trigger_ms = 0;
-    uint32_t        now_ms          = millis();
-    if (now_ms - last_trigger_ms < 500u) {
-        grbl_msg_sendf(CLIENT_SERIAL,
-                       MsgLevel::Info,
-                       "[PaperBtn] Ignored: debounce (%lu ms since last)",
-                       (unsigned long)(now_ms - last_trigger_ms));
+    // 连按两次才触发：第一次仅记录并提示，第二次在有效窗内按下才执行换纸
+    static bool     wait_second_press = false;
+    static uint32_t first_press_ms   = 0;
+    uint32_t        now_ms           = millis();
+
+    if (!wait_second_press) {
+        wait_second_press = true;
+        first_press_ms   = now_ms;
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Press again within %.1fs to change paper", PAPER_BTN_DOUBLE_PRESS_MS_MAX / 1000.0f);
         return;
     }
-    last_trigger_ms = now_ms;
+    uint32_t elapsed = now_ms - first_press_ms;
+    if (elapsed < PAPER_BTN_DOUBLE_PRESS_MS_MIN) {
+        return;
+    }
+    if (elapsed > PAPER_BTN_DOUBLE_PRESS_MS_MAX) {
+        first_press_ms = now_ms;
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Press again within %.1fs to change paper", PAPER_BTN_DOUBLE_PRESS_MS_MAX / 1000.0f);
+        return;
+    }
+    wait_second_press = false;
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Triggered (double press), queuing [ESP910]...");
 
-    // 记录当前按键电平，便于调试（LOW=按下，HIGH=松开）
-    int raw_level = digitalRead(PAPER_CHANGE_BTN_PIN);
-    grbl_msg_sendf(CLIENT_SERIAL,
-                   MsgLevel::Info,
-                   "[PaperBtn] Triggered (GPIO35=%d), queuing [ESP910] auto-change...",
-                   raw_level);
-
-    // 向 WebUI 输入缓冲区注入一条 [ESP910] 命令，由已有 paperAutoHandler -> paper_auto_change() 执行换纸流程
     char line[16];
     strcpy(line, "[ESP910]\r");
     WebUI::inputBuffer.push(line);

@@ -97,16 +97,16 @@
 #define PAPER_PANEL_ENABLE_PIN   I2SO(1)
 #define PAPER_DRIVER_ENABLE_PIN  GPIO_NUM_26
 #define PAPER_DRIVER_REF_PIN    GPIO_NUM_25   // DAC 直连 HR4988 REF，无分压；0–255 → 0–3.3V（三路纸路电机共用此脚，固件按当前运行的电机切换 DAC 值）
-#define PAPER_DRIVER_REF_DAC    50         // 未单独指定时使用的默认 REF（0–255）
+#define PAPER_DRIVER_REF_DAC    60         // 未单独指定时使用的默认 REF（0–255）
 // 每个电机独立 REF（可选）：不定义则三路均用 PAPER_DRIVER_REF_DAC
 #ifndef PAPER_REF_DAC_CLAMP
-#    define PAPER_REF_DAC_CLAMP   100  // 拾落电机
+#    define PAPER_REF_DAC_CLAMP   60  // 拾落电机
 #endif
 #ifndef PAPER_REF_DAC_PANEL
-#    define PAPER_REF_DAC_PANEL   PAPER_DRIVER_REF_DAC   // 面板电机
+#    define PAPER_REF_DAC_PANEL   60   // 面板电机
 #endif
 #ifndef PAPER_REF_DAC_FEEDER
-#    define PAPER_REF_DAC_FEEDER  PAPER_DRIVER_REF_DAC   // 进纸器电机
+#    define PAPER_REF_DAC_FEEDER  60   // 进纸器电机
 #endif
 // 使能时 REF 软启动（ms）：先 REF=0 再使能，延时后再升到目标，减轻上电冲击避免板子断电；0=关闭
 #ifndef PAPER_REF_SOFTSTART_MS
@@ -131,13 +131,13 @@
 // 快进约 8.5k 步时脱离传感器，这里给到 9000 步保证能退回到感应点
 #define PANEL_BACK_STEPS_MAX    9000u
 // 面板电机：最终微调到位的步数
-#define PANEL_FINAL_STEPS       1160u
+#define PANEL_FINAL_STEPS       1100u
 
 // 进纸器电机：寻找新纸到感应器的最大步数（超时时间，可根据实际距离调大）
 #define FEEDER_FIND_STEPS_MAX   12000u
 // 纸张进入传感器后：进纸达 PAPER_ADVANCE_CM_CLAMP_START(cm) 时开始拾落夹紧，送纸达 PAPER_ADVANCE_CM(cm) 后送纸器停止
 #ifndef PAPER_ADVANCE_CM_CLAMP_START
-#    define PAPER_ADVANCE_CM_CLAMP_START  6   // 进纸多少 cm 后开始夹紧
+#    define PAPER_ADVANCE_CM_CLAMP_START  4   // 进纸多少 cm 后开始夹紧
 #endif
 #ifndef PAPER_ADVANCE_CM
 #    define PAPER_ADVANCE_CM    8   // 送纸器停止时的总送纸距离(cm)
@@ -242,70 +242,34 @@
 // #define Y_LIMIT_PIN             GPIO_NUM_XX
 // #define Z_LIMIT_PIN             GPIO_NUM_XX
 
-// === $ 参数默认值（与串口 $ 显示一致，烧录后首次或恢复出厂即为此值）===
-// $0 步进脉冲长度 µs
-#define DEFAULT_STEP_PULSE_MICROSECONDS     3
-// $1 步进休闲锁闭时间 ms（255=禁用休闲关断）
-#define DEFAULT_STEPPER_IDLE_LOCK_TIME      25
-// $2 步进脉冲反转掩码
+// === Default Settings（仅覆盖与本机相关的项，其余用 Defaults.h）===
+#ifndef STEP_PULSE_DELAY
+#    define STEP_PULSE_DELAY                15  // 方向建立延时 µs（可串口 $ Stepper/Direction/Delay 调）
+#endif
+#define DEFAULT_STEP_PULSE_MICROSECONDS     10  // 驱动可靠性，减轻 Z 轴卡顿
+#define DEFAULT_STEPPER_IDLE_LOCK_TIME      250
 #define DEFAULT_STEPPING_INVERT_MASK        0
-// $3 步进方向反转掩码（5 = 反转 XZ，见配置说明）
-#define DEFAULT_DIRECTION_INVERT_MASK       5
-// $4 使能信号反转
+#define DEFAULT_DIRECTION_INVERT_MASK       bit(Z_AXIS)  // Z 轴方向反相（抬笔/落笔与 GCode 一致）
 #define DEFAULT_INVERT_ST_ENABLE            0
-// $5 限位信号反转
-#define DEFAULT_INVERT_LIMIT_PINS           1
-// $6 对刀信号反转
-#define DEFAULT_INVERT_PROBE_PIN            0
-// $10 状态回报掩码
-#define DEFAULT_STATUS_REPORT_MASK          3
-// $11/$12/$13
-#define DEFAULT_JUNCTION_DEVIATION          0.01
-#define DEFAULT_ARC_TOLERANCE               0.002
-#define DEFAULT_REPORT_INCHES               0
-// $20/$21/$22 软限位/硬限位/回零使能
+
 #define DEFAULT_SOFT_LIMIT_ENABLE           0
 #define DEFAULT_HARD_LIMIT_ENABLE           0
 #define DEFAULT_HOMING_ENABLE               0
-#define DEFAULT_HOMING_DIR_MASK              0
-// $24/$25/$26/$27 回零速度与去抖
-#define DEFAULT_HOMING_FEED_RATE            500.0
-#define DEFAULT_HOMING_SEEK_RATE            500.0
-#define DEFAULT_HOMING_DEBOUNCE_DELAY       25
-#define DEFAULT_HOMING_PULLOFF               1.0
-// $30/$31 主轴（或奎享舵机抬笔/落笔角度） $32 激光模式
+
 #define DEFAULT_SPINDLE_RPM_MAX             1000.0
 #define DEFAULT_SPINDLE_RPM_MIN             0.0
 #define DEFAULT_LASER_MODE                  0
-// $100-$102 步/毫米
-#define DEFAULT_X_STEPS_PER_MM              100.0
-#define DEFAULT_Y_STEPS_PER_MM              100.0
-#define DEFAULT_Z_STEPS_PER_MM              50.0
-#define DEFAULT_A_STEPS_PER_MM              100.0
-#define DEFAULT_B_STEPS_PER_MM              100.0
-#define DEFAULT_C_STEPS_PER_MM              100.0
-// $110-$112 最大速度 mm/min
-#define DEFAULT_X_MAX_RATE                  12000.0
-#define DEFAULT_Y_MAX_RATE                  12000.0
-#define DEFAULT_Z_MAX_RATE                  10000.0
-#define DEFAULT_A_MAX_RATE                  1000.0
-#define DEFAULT_B_MAX_RATE                  1000.0
-#define DEFAULT_C_MAX_RATE                  1000.0
-// $120-$122 加速度 mm/s²
-#define DEFAULT_X_ACCELERATION              3000.0
-#define DEFAULT_Y_ACCELERATION              3000.0
-#define DEFAULT_Z_ACCELERATION              8000.0
-#define DEFAULT_A_ACCELERATION              200.0
-#define DEFAULT_B_ACCELERATION              200.0
-#define DEFAULT_C_ACCELERATION              200.0
-// $130-$132 软限位行程 mm
+
+// 写字机/绘图机常用：步数、速度、加速度、行程
+#define DEFAULT_X_STEPS_PER_MM              200.0
+#define DEFAULT_Y_STEPS_PER_MM              200.0
+#define DEFAULT_Z_STEPS_PER_MM              400.0
+#define DEFAULT_X_MAX_RATE                  5000.0
+#define DEFAULT_Y_MAX_RATE                  5000.0
+#define DEFAULT_Z_MAX_RATE                  1000.0
+#define DEFAULT_X_ACCELERATION              500.0
+#define DEFAULT_Y_ACCELERATION              500.0
+#define DEFAULT_Z_ACCELERATION              400.0
 #define DEFAULT_X_MAX_TRAVEL                200.0
 #define DEFAULT_Y_MAX_TRAVEL                200.0
-#define DEFAULT_Z_MAX_TRAVEL                200.0
-#define DEFAULT_A_MAX_TRAVEL                300.0
-#define DEFAULT_B_MAX_TRAVEL                300.0
-#define DEFAULT_C_MAX_TRAVEL                300.0
-
-#ifndef STEP_PULSE_DELAY
-#    define STEP_PULSE_DELAY                15  // 方向建立延时 µs（可串口 $ 调）
-#endif
+#define DEFAULT_Z_MAX_TRAVEL                20.0

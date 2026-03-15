@@ -837,6 +837,7 @@ void st_prep_buffer() {
         float last_n_steps_remaining = ceil(prep.steps_remaining);                  // Round-up last steps remaining
         prep_segment->n_step         = last_n_steps_remaining - n_steps_remaining;  // Compute number of steps to execute.
 
+        bool forced_one_step = false;
         // Bail if we are at the end of a feed hold and don't have a step to execute.
         if (prep_segment->n_step == 0) {
             if (sys.step_control.executeHold) {
@@ -850,6 +851,9 @@ void st_prep_buffer() {
 #endif
                 return;  // Segment not generated, but current step data still retained.
             }
+            // 正常运动时因浮点舍入可能得到 0 步，入队会导致 ISR 中 step_count 下溢、步进异常；强制至少 1 步以减轻 XY 停止/减速段卡顿
+            prep_segment->n_step = 1;
+            forced_one_step     = true;
         }
 
         // Compute segment step rate. Since steps are integers and mm distances traveled are not,
@@ -863,7 +867,11 @@ void st_prep_buffer() {
 
         dt += prep.dt_remainder;  // Apply previous segment partial step execute time
         // dt is in minutes so inv_rate is in minutes
-        float inv_rate = dt / (last_n_steps_remaining - step_dist_remaining);  // Compute adjusted step rate inverse
+        float step_dist = last_n_steps_remaining - step_dist_remaining;
+        if (step_dist < 0.5f) {
+            step_dist = 0.5f;  // 避免分母过小导致 inv_rate 爆炸、单步周期过长（0xffff ticks），减轻停止/减速段卡顿
+        }
+        float inv_rate = dt / step_dist;  // Compute adjusted step rate inverse
 
         // Compute CPU cycles per step for the prepped segment.
         // fStepperTimer is in units of timerTicks/sec, so the dimensional analysis is
@@ -877,6 +885,9 @@ void st_prep_buffer() {
                 break;
             }
             timerTicks >>= 1;
+        }
+        if (forced_one_step) {
+            level = 0;  // 强制 1 步的段不参与 AMASS，避免 n_step 被左移为 4/8 而每轴步数右移为 0，产生多拍空步卡顿
         }
         prep_segment->amass_level = level;
         prep_segment->n_step <<= level;
