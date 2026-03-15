@@ -23,11 +23,7 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="Add license check and M800 authorization mechanism 交付加码版本">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/Config.h" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/Config.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/配置.md" beforeDir="false" afterPath="$PROJECT_DIR$/配置.md" afterDir="false" />
-    </list>
+    <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="Update default radio mode to Bluetooth and improve documentation" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -140,7 +136,7 @@
       <workItem from="1773238892930" duration="6436000" />
       <workItem from="1773284347032" duration="25486000" />
       <workItem from="1773422422316" duration="4070000" />
-      <workItem from="1773493331308" duration="4759000" />
+      <workItem from="1773493331308" duration="4981000" />
     </task>
     <task id="LOCAL-00001" summary="删除MCP相关脚本和配置文件">
       <option name="closed" value="true" />
@@ -318,7 +314,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773547959822</updated>
     </task>
-    <option name="localTasksCounter" value="23" />
+    <task id="LOCAL-00023" summary="Update default radio mode to Bluetooth and improve documentation">
+      <option name="closed" value="true" />
+      <created>1773551086027</created>
+      <option name="number" value="00023" />
+      <option name="presentableId" value="LOCAL-00023" />
+      <option name="project" value="LOCAL" />
+      <updated>1773551086027</updated>
+    </task>
+    <option name="localTasksCounter" value="24" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -356,7 +360,8 @@
     <MESSAGE value="未加密版" />
     <MESSAGE value="Add license check and M800 authorization mechanism" />
     <MESSAGE value="Add license check and M800 authorization mechanism 交付加码版本" />
-    <option name="LAST_COMMIT_MESSAGE" value="Add license check and M800 authorization mechanism 交付加码版本" />
+    <MESSAGE value="Update default radio mode to Bluetooth and improve documentation" />
+    <option name="LAST_COMMIT_MESSAGE" value="Update default radio mode to Bluetooth and improve documentation" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

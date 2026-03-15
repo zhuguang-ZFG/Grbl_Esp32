@@ -400,6 +400,8 @@ void           init_motors() {
 
     if (STEPPERS_DISABLE_PIN != UNDEFINED_PIN) {
         pinMode(STEPPERS_DISABLE_PIN, OUTPUT);  // global motor enable pin
+        // 开机即置为“禁用”，避免上电瞬间 XYZ 同时使能导致电流过大/断电（nENABLE 低有效：HIGH=禁用）
+        digitalWrite(STEPPERS_DISABLE_PIN, step_enable_invert->get() ? 0 : 1);
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "Global stepper disable pin:%s", pinName(STEPPERS_DISABLE_PIN));
     }
 
