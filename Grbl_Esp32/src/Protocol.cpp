@@ -168,6 +168,12 @@ void protocol_main_loop() {
                             return;  // Bail to calling function upon system abort
                         }
                         line = client_lines[client].buffer;
+#ifdef ENABLE_BLUETOOTH
+                        // 调试：把蓝牙收到的整行打印到串口，便于排查 Z 轴等指令是否经 BT 送达
+                        if (client == CLIENT_BT) {
+                            grbl_sendf(CLIENT_SERIAL, "[BT RX] %s\r\n", line);
+                        }
+#endif
 #ifdef REPORT_ECHO_RAW_LINE_RECEIVED
                         report_echo_line_received(line, client);
 #endif

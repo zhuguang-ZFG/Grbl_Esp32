@@ -49,6 +49,11 @@
 #define JOG_Z_MAX_FEED_MM_PER_MIN  1000   // Z 轴点动最大进给 mm/min，含 Z 的点动会被限制到此值
 #endif
 
+// M3/M5 作为抬笔/落笔（蓝牙/上位机常用）：M5=抬笔(Z_up)，M3 Sxxx=落笔(Z_down)
+#define USE_M3_M5_AS_PEN_UP_DOWN
+#define PEN_UP_Z_MM    0.0f   // 抬笔高度（对应 M5）
+#define PEN_DOWN_Z_MM  5.0f   // 落笔高度（对应 M3/M3 Sxxx）
+
 #define MACHINE_NAME "Custom 3-Axis HR4988"
 #define GRBL_PAPER_SYSTEM 1  /* æ¢çº¸ç³»ç» M701/M711/M712/M713 å?GCode.cpp ä¸­ç´åå®ç?*/
 
@@ -140,7 +145,7 @@
 #    define PAPER_ADVANCE_CM_CLAMP_START  4   // 进纸多少 cm 后开始夹紧
 #endif
 #ifndef PAPER_ADVANCE_CM
-#    define PAPER_ADVANCE_CM    8   // 送纸器停止时的总送纸距离(cm)
+#    define PAPER_ADVANCE_CM    9   // 送纸器停止时的总送纸距离(cm)
 #endif
 #ifndef PAPER_STEPS_PER_CM
 #    define PAPER_STEPS_PER_CM  1062u   // 面板/进纸器每厘米步数（按机构实测可调）
@@ -166,6 +171,20 @@
 #endif
 #define PAPER_CLAMP_HI_US        2000u  // 拾落电机脉宽 μs
 #define PAPER_CLAMP_LO_US        2000u
+
+// 出旧纸（Step1）专用：脉宽约为正常 1/5 → 约 5 倍速
+#ifndef PAPER_EJECT_RAMP_HI_US
+#    define PAPER_EJECT_RAMP_HI_US    80u
+#endif
+#ifndef PAPER_EJECT_RAMP_LO_US
+#    define PAPER_EJECT_RAMP_LO_US    80u
+#endif
+#ifndef PAPER_EJECT_NORMAL_HI_US
+#    define PAPER_EJECT_NORMAL_HI_US  30u
+#endif
+#ifndef PAPER_EJECT_NORMAL_LO_US
+#    define PAPER_EJECT_NORMAL_LO_US  30u
+#endif
 
 // 面板电机方向：三个独立宏，只改需要反的那一个即可
 // - PANEL_DIR_FEED:    第6步快速进纸、第8步最终对位（送新纸方向）

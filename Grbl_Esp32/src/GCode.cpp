@@ -1475,6 +1475,20 @@ Error gc_execute_line(char* line, uint8_t client) {
         // Update spindle control and apply spindle speed when enabling it in this block.
         // NOTE: All spindle state changes are synced, even in laser mode. Also, pl_data,
         // rather than gc_state, is used to manage laser state for non-laser motions.
+#ifdef USE_M3_M5_AS_PEN_UP_DOWN
+        // M5=抬笔(Z20)，M3 Sxxx=落笔(Z0)：先同步再执行 Z 移动，再更新模态
+        protocol_buffer_synchronize();
+        float pen_target[MAX_N_AXIS];
+        memcpy(pen_target, gc_state.position, sizeof(float) * MAX_N_AXIS);
+        pen_target[Z_AXIS] = (gc_block.modal.spindle == SpindleState::Disable) ? PEN_UP_Z_MM : PEN_DOWN_Z_MM;
+        plan_line_data_t pen_pl_data = {};
+        pen_pl_data.motion.rapidMotion = 1;
+        pen_pl_data.spindle           = SpindleState::Disable;
+        pen_pl_data.coolant           = gc_state.modal.coolant;
+        mc_line(pen_target, &pen_pl_data);
+        protocol_buffer_synchronize();
+        gc_state.position[Z_AXIS] = pen_target[Z_AXIS];
+#endif
         spindle->sync(gc_block.modal.spindle, (uint32_t)pl_data->spindle_speed);
         gc_state.modal.spindle = gc_block.modal.spindle;
     }

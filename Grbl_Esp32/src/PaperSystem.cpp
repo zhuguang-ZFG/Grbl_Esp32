@@ -444,6 +444,35 @@ static void paper_dir_steps(uint8_t dir_pin, bool dir_level, uint8_t step_pin, u
     paper_step_pulses(step_pin, (uint16_t)steps);
 }
 
+#ifdef PAPER_EJECT_NORMAL_HI_US
+// 出旧纸专用：使用更短脉宽（约 2 倍速），仅用于 Step1 面板弹出旧纸
+static void paper_step_pulses_panel_eject(uint32_t steps) {
+#ifdef USE_I2S_OUT
+    for (uint32_t i = 0; i < steps; i++) {
+        uint32_t hi_us = (i < PAPER_RAMP_STEPS) ? PAPER_EJECT_RAMP_HI_US : PAPER_EJECT_NORMAL_HI_US;
+        uint32_t lo_us = (i < PAPER_RAMP_STEPS) ? PAPER_EJECT_RAMP_LO_US : PAPER_EJECT_NORMAL_LO_US;
+        digitalWrite(PANEL_MOTOR_STEP_PIN, HIGH);
+        i2s_out_delay();
+        delayMicroseconds(hi_us);
+        digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
+        i2s_out_delay();
+        delayMicroseconds(lo_us);
+        if ((i + 1) % PAPER_YIELD_STEPS == 0) delay(1);
+    }
+#else
+    for (uint32_t i = 0; i < steps; i++) {
+        uint32_t hi_us = (i < PAPER_RAMP_STEPS) ? PAPER_EJECT_RAMP_HI_US : PAPER_EJECT_NORMAL_HI_US;
+        uint32_t lo_us = (i < PAPER_RAMP_STEPS) ? PAPER_EJECT_RAMP_LO_US : PAPER_EJECT_NORMAL_LO_US;
+        digitalWrite(PANEL_MOTOR_STEP_PIN, HIGH);
+        delayMicroseconds(hi_us);
+        digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
+        delayMicroseconds(lo_us);
+        if ((i + 1) % PAPER_YIELD_STEPS == 0) delay(1);
+    }
+#endif
+}
+#endif
+
 // 一键自动换纸流程（[ESP910] / M30 调用）
 // 步骤：1 弹旧纸 → 2 进纸器找纸 → 3 松夹 → 4 面板+进纸器同速送纸 → 5 夹紧 → 6 面板快送直到脱传感器 → 7 回找传感器 → 8 最终对位 → 9 失能
 // 结束时会发送 [PaperStatus] N（0=成功，2=进纸超时，3=第7步未找到传感器；1 保留）
@@ -464,7 +493,16 @@ Error paper_auto_change(void) {
     paper_enable_panel_only();
     // 方向：按你的机械，出旧纸与进新纸同向运动 → 使用 PANEL_DIR_EJECT（等于 PANEL_DIR_FEED）
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-1] Ejecting old paper (%u steps)...", (unsigned)PANEL_EJECT_STEPS);
+#ifdef PAPER_EJECT_NORMAL_HI_US
+    digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_EJECT);
+#ifdef USE_I2S_OUT
+    i2s_out_delay();
+    delay(2);
+#endif
+    paper_step_pulses_panel_eject(PANEL_EJECT_STEPS);
+#else
     paper_dir_steps(PANEL_MOTOR_DIR_PIN, PANEL_DIR_EJECT, PANEL_MOTOR_STEP_PIN, PANEL_EJECT_STEPS);
+#endif
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-1] Done");
 
     // 2. 进纸器开始运动，直到纸张传感器检测到纸或达到上限
