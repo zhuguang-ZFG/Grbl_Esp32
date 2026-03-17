@@ -164,6 +164,7 @@
 #define PAPER_NORMAL_HI_US       150u   // Panel: 正常高速 μs
 #define PAPER_NORMAL_LO_US       150u
 
+
 // 进纸器单独送纸（M712 点动等）速度降低一半：在原 150/150 基础上减半 → 300/300
 #define FEEDER_FEED_RAMP_HI_US   800u   // 起步：400 → 800（再减半）
 #define FEEDER_FEED_RAMP_LO_US   800u
