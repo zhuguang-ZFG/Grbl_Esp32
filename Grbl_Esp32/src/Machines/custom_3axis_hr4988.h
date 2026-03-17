@@ -105,7 +105,7 @@
 #define PAPER_DRIVER_REF_DAC    60         // 未单独指定时使用的默认 REF（0–255）
 // 每个电机独立 REF（可选）：不定义则三路均用 PAPER_DRIVER_REF_DAC
 #ifndef PAPER_REF_DAC_CLAMP
-#    define PAPER_REF_DAC_CLAMP   60  // 拾落电机
+#    define PAPER_REF_DAC_CLAMP   70  // 拾落电机
 #endif
 #ifndef PAPER_REF_DAC_PANEL
 #    define PAPER_REF_DAC_PANEL   60   // 面板电机
@@ -142,7 +142,7 @@
 #define FEEDER_FIND_STEPS_MAX   12000u
 // 纸张进入传感器后：进纸达 PAPER_ADVANCE_CM_CLAMP_START(cm) 时开始拾落夹紧，送纸达 PAPER_ADVANCE_CM(cm) 后送纸器停止
 #ifndef PAPER_ADVANCE_CM_CLAMP_START
-#    define PAPER_ADVANCE_CM_CLAMP_START  4   // 进纸多少 cm 后开始夹紧
+#    define PAPER_ADVANCE_CM_CLAMP_START  7   // 进纸多少 cm 后开始夹紧
 #endif
 #ifndef PAPER_ADVANCE_CM
 #    define PAPER_ADVANCE_CM    9   // 送纸器停止时的总送纸距离(cm)
@@ -153,15 +153,16 @@
 #define FEEDER_EXTRA_STEPS      ((uint32_t)(PAPER_ADVANCE_CM) * (uint32_t)(PAPER_STEPS_PER_CM))
 
 // 拾落电机：压纸 / 抬纸的步数（一次完整动作），经实测约 220 步
-#define CLAMP_TOGGLE_STEPS      340u
+#define CLAMP_TOGGLE_STEPS      350u
 
 // 步进脉冲时序（μs）：在 PaperSystem.cpp 的 paper_step_pulses 中使用
 // 面板/进纸器：起步阶段用较慢脉宽减小冲击，之后切换为正常速度
 #define PAPER_RAMP_STEPS         40u    // 起步缓运行步数
-#define PAPER_RAMP_HI_US         400u   // 起步阶段高电平 μs
-#define PAPER_RAMP_LO_US         400u   // 起步阶段低电平 μs
-#define PAPER_NORMAL_HI_US       150u   // 面板/进纸器正常高速 μs
-#define PAPER_NORMAL_LO_US       150u
+// 为了让进纸/面板送纸约 3 倍速：将 400μs→约130μs，150μs→约50μs
+#define PAPER_RAMP_HI_US         130u   // 起步阶段高电平 μs（约原来的 1/3）
+#define PAPER_RAMP_LO_US         130u   // 起步阶段低电平 μs
+#define PAPER_NORMAL_HI_US        50u   // 面板/进纸器正常高速 μs（约原来的 1/3）
+#define PAPER_NORMAL_LO_US        50u
 // 拾落夹紧后面板进纸速度加倍（脉宽减半；仅用于步骤6、8）
 #ifndef PAPER_PANEL_FAST_HI_US
 #    define PAPER_PANEL_FAST_HI_US  75u
@@ -172,18 +173,18 @@
 #define PAPER_CLAMP_HI_US        2000u  // 拾落电机脉宽 μs
 #define PAPER_CLAMP_LO_US        2000u
 
-// 出旧纸（Step1）专用：脉宽约为正常 1/5 → 约 5 倍速
+// 出旧纸（Step1）专用：脉宽约为正常 1/9 → 约 9 倍速
 #ifndef PAPER_EJECT_RAMP_HI_US
-#    define PAPER_EJECT_RAMP_HI_US    80u
+#    define PAPER_EJECT_RAMP_HI_US    45u
 #endif
 #ifndef PAPER_EJECT_RAMP_LO_US
-#    define PAPER_EJECT_RAMP_LO_US    80u
+#    define PAPER_EJECT_RAMP_LO_US    45u
 #endif
 #ifndef PAPER_EJECT_NORMAL_HI_US
-#    define PAPER_EJECT_NORMAL_HI_US  30u
+#    define PAPER_EJECT_NORMAL_HI_US  17u
 #endif
 #ifndef PAPER_EJECT_NORMAL_LO_US
-#    define PAPER_EJECT_NORMAL_LO_US  30u
+#    define PAPER_EJECT_NORMAL_LO_US  17u
 #endif
 
 // 面板电机方向：三个独立宏，只改需要反的那一个即可
