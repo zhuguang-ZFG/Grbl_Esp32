@@ -145,7 +145,7 @@
 #    define PAPER_ADVANCE_CM_CLAMP_START  7   // 进纸多少 cm 后开始夹紧
 #endif
 #ifndef PAPER_ADVANCE_CM
-#    define PAPER_ADVANCE_CM    9   // 送纸器停止时的总送纸距离(cm)
+#    define PAPER_ADVANCE_CM    8   // 送纸器停止时的总送纸距离(cm)
 #endif
 #ifndef PAPER_STEPS_PER_CM
 #    define PAPER_STEPS_PER_CM  1062u   // 面板/进纸器每厘米步数（按机构实测可调）
@@ -158,11 +158,11 @@
 // 步进脉冲时序（μs）：在 PaperSystem.cpp 的 paper_step_pulses 中使用
 // 面板/进纸器：起步阶段用较慢脉宽减小冲击，之后切换为正常速度
 #define PAPER_RAMP_STEPS         40u    // 起步缓运行步数
-// 为了让进纸/面板送纸约 3 倍速：将 400μs→约130μs，150μs→约50μs
-#define PAPER_RAMP_HI_US         130u   // 起步阶段高电平 μs（约原来的 1/3）
-#define PAPER_RAMP_LO_US         130u   // 起步阶段低电平 μs
-#define PAPER_NORMAL_HI_US        50u   // 面板/进纸器正常高速 μs（约原来的 1/3）
-#define PAPER_NORMAL_LO_US        50u
+// 为了让进纸/面板送纸约 6 倍速：将 400μs→约65μs，150μs→约25μs
+#define PAPER_RAMP_HI_US          65u   // 起步阶段高电平 μs（约原来的 1/6）
+#define PAPER_RAMP_LO_US          65u   // 起步阶段低电平 μs
+#define PAPER_NORMAL_HI_US        25u   // 面板/进纸器正常高速 μs（约原来的 1/6）
+#define PAPER_NORMAL_LO_US        25u
 // 拾落夹紧后面板进纸速度加倍（脉宽减半；仅用于步骤6、8）
 #ifndef PAPER_PANEL_FAST_HI_US
 #    define PAPER_PANEL_FAST_HI_US  75u
@@ -173,18 +173,18 @@
 #define PAPER_CLAMP_HI_US        2000u  // 拾落电机脉宽 μs
 #define PAPER_CLAMP_LO_US        2000u
 
-// 出旧纸（Step1）专用：脉宽约为正常 1/9 → 约 9 倍速
+// 出旧纸（Step1）专用：脉宽约为正常 1/12 → 约 12 倍速
 #ifndef PAPER_EJECT_RAMP_HI_US
-#    define PAPER_EJECT_RAMP_HI_US    45u
+#    define PAPER_EJECT_RAMP_HI_US    35u
 #endif
 #ifndef PAPER_EJECT_RAMP_LO_US
-#    define PAPER_EJECT_RAMP_LO_US    45u
+#    define PAPER_EJECT_RAMP_LO_US    35u
 #endif
 #ifndef PAPER_EJECT_NORMAL_HI_US
-#    define PAPER_EJECT_NORMAL_HI_US  17u
+#    define PAPER_EJECT_NORMAL_HI_US  13u
 #endif
 #ifndef PAPER_EJECT_NORMAL_LO_US
-#    define PAPER_EJECT_NORMAL_LO_US  17u
+#    define PAPER_EJECT_NORMAL_LO_US  13u
 #endif
 
 // 面板电机方向：三个独立宏，只改需要反的那一个即可
