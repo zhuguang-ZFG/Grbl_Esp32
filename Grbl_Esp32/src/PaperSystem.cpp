@@ -140,13 +140,21 @@ static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
 #ifdef USE_I2S_OUT
     uint32_t hi_us, lo_us;
     for (uint16_t i = 0; i < steps; i++) {
-        if (step_pin == PANEL_MOTOR_STEP_PIN || step_pin == FEEDER_MOTOR_STEP_PIN) {
+        if (step_pin == PANEL_MOTOR_STEP_PIN) {
             if (i < PAPER_RAMP_STEPS) {
                 hi_us = PAPER_RAMP_HI_US;
                 lo_us = PAPER_RAMP_LO_US;
             } else {
                 hi_us = PAPER_NORMAL_HI_US;
                 lo_us = PAPER_NORMAL_LO_US;
+            }
+        } else if (step_pin == FEEDER_MOTOR_STEP_PIN) {
+            if (i < PAPER_RAMP_STEPS) {
+                hi_us = FEEDER_FEED_RAMP_HI_US;
+                lo_us = FEEDER_FEED_RAMP_LO_US;
+            } else {
+                hi_us = FEEDER_FEED_NORMAL_HI_US;
+                lo_us = FEEDER_FEED_NORMAL_LO_US;
             }
         } else {
             hi_us = PAPER_CLAMP_HI_US;
@@ -170,6 +178,43 @@ static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
         delayMicroseconds(500);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
             delay(1);  // yield to RTOS, feed interrupt watchdog
+        }
+    }
+#endif
+}
+
+// 进纸器“找传感器”阶段专用步进：比默认快一倍（FEEDER_FIND_*）
+static void paper_step_pulses_feeder_find(uint16_t steps) {
+#ifdef USE_I2S_OUT
+    uint32_t hi_us, lo_us;
+    for (uint16_t i = 0; i < steps; i++) {
+        if (i < PAPER_RAMP_STEPS) {
+            hi_us = FEEDER_FIND_RAMP_HI_US;
+            lo_us = FEEDER_FIND_RAMP_LO_US;
+        } else {
+            hi_us = FEEDER_FIND_NORMAL_HI_US;
+            lo_us = FEEDER_FIND_NORMAL_LO_US;
+        }
+        digitalWrite(FEEDER_MOTOR_STEP_PIN, HIGH);
+        i2s_out_delay();
+        delayMicroseconds(hi_us);
+        digitalWrite(FEEDER_MOTOR_STEP_PIN, LOW);
+        i2s_out_delay();
+        delayMicroseconds(lo_us);
+        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            delay(1);
+        }
+    }
+#else
+    for (uint16_t i = 0; i < steps; i++) {
+        uint32_t hi_us = (i < PAPER_RAMP_STEPS) ? FEEDER_FIND_RAMP_HI_US : FEEDER_FIND_NORMAL_HI_US;
+        uint32_t lo_us = (i < PAPER_RAMP_STEPS) ? FEEDER_FIND_RAMP_LO_US : FEEDER_FIND_NORMAL_LO_US;
+        digitalWrite(FEEDER_MOTOR_STEP_PIN, HIGH);
+        delayMicroseconds(hi_us);
+        digitalWrite(FEEDER_MOTOR_STEP_PIN, LOW);
+        delayMicroseconds(lo_us);
+        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            delay(1);
         }
     }
 #endif
@@ -253,7 +298,7 @@ static void paper_enable_drivers(void) {
 }
 
 // 内部辅助函数：禁用驱动
-static void paper_disable_drivers(void) {
+void paper_disable_drivers(void) {
     digitalWrite(PAPER_ENABLE_PIN, HIGH);
 #ifdef PAPER_DRIVER_ENABLE_PIN
     digitalWrite(PAPER_DRIVER_ENABLE_PIN, HIGH);
@@ -522,7 +567,7 @@ Error paper_auto_change(void) {
                 found = true;
                 break;
             }
-            paper_step_pulses(FEEDER_MOTOR_STEP_PIN, 1);
+            paper_step_pulses_feeder_find(1);  // 找传感器阶段：加速一倍
             steps++;
             if (steps % PAPER_YIELD_STEPS == 0) {
                 delay(1);  // yield to RTOS, avoid Interrupt wdt timeout

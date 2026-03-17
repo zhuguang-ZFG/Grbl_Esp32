@@ -102,16 +102,16 @@
 #define PAPER_PANEL_ENABLE_PIN   I2SO(1)
 #define PAPER_DRIVER_ENABLE_PIN  GPIO_NUM_26
 #define PAPER_DRIVER_REF_PIN    GPIO_NUM_25   // DAC 直连 HR4988 REF，无分压；0–255 → 0–3.3V（三路纸路电机共用此脚，固件按当前运行的电机切换 DAC 值）
-#define PAPER_DRIVER_REF_DAC    60         // 未单独指定时使用的默认 REF（0–255）
+#define PAPER_DRIVER_REF_DAC    50         // 未单独指定时使用的默认 REF（0–255）
 // 每个电机独立 REF（可选）：不定义则三路均用 PAPER_DRIVER_REF_DAC
 #ifndef PAPER_REF_DAC_CLAMP
-#    define PAPER_REF_DAC_CLAMP   70  // 拾落电机
+#    define PAPER_REF_DAC_CLAMP   150  // 拾落电机
 #endif
 #ifndef PAPER_REF_DAC_PANEL
-#    define PAPER_REF_DAC_PANEL   60   // 面板电机
+#    define PAPER_REF_DAC_PANEL   80   // 面板电机
 #endif
 #ifndef PAPER_REF_DAC_FEEDER
-#    define PAPER_REF_DAC_FEEDER  60   // 进纸器电机
+#    define PAPER_REF_DAC_FEEDER  80   // 进纸器电机
 #endif
 // 使能时 REF 软启动（ms）：先 REF=0 再使能，延时后再升到目标，减轻上电冲击避免板子断电；0=关闭
 #ifndef PAPER_REF_SOFTSTART_MS
@@ -158,11 +158,24 @@
 // 步进脉冲时序（μs）：在 PaperSystem.cpp 的 paper_step_pulses 中使用
 // 面板/进纸器：起步阶段用较慢脉宽减小冲击，之后切换为正常速度
 #define PAPER_RAMP_STEPS         40u    // 起步缓运行步数
-// 为了让进纸/面板送纸约 6 倍速：将 400μs→约65μs，150μs→约25μs
-#define PAPER_RAMP_HI_US          65u   // 起步阶段高电平 μs（约原来的 1/6）
-#define PAPER_RAMP_LO_US          65u   // 起步阶段低电平 μs
-#define PAPER_NORMAL_HI_US        25u   // 面板/进纸器正常高速 μs（约原来的 1/6）
-#define PAPER_NORMAL_LO_US        25u
+// 面板同步送纸速度再降低一半：约 1 倍速（400/150）
+#define PAPER_RAMP_HI_US         400u   // Panel: 起步阶段高电平 μs
+#define PAPER_RAMP_LO_US         400u   // Panel: 起步阶段低电平 μs
+#define PAPER_NORMAL_HI_US       150u   // Panel: 正常高速 μs
+#define PAPER_NORMAL_LO_US       150u
+
+// 进纸器单独送纸（M712 点动等）速度降低一半：在原 150/150 基础上减半 → 300/300
+#define FEEDER_FEED_RAMP_HI_US   800u   // 起步：400 → 800（再减半）
+#define FEEDER_FEED_RAMP_LO_US   800u
+#define FEEDER_FEED_NORMAL_HI_US 300u   // 正常：150 → 300
+#define FEEDER_FEED_NORMAL_LO_US 300u
+
+// 进纸器“找传感器”阶段（Step2）速度再提升一倍：在 200/75 基础上改为 100/38（约 4 倍速）
+#define FEEDER_FIND_RAMP_HI_US   100u
+#define FEEDER_FIND_RAMP_LO_US   100u
+#define FEEDER_FIND_NORMAL_HI_US  38u
+#define FEEDER_FIND_NORMAL_LO_US  38u
+
 // 拾落夹紧后面板进纸速度加倍（脉宽减半；仅用于步骤6、8）
 #ifndef PAPER_PANEL_FAST_HI_US
 #    define PAPER_PANEL_FAST_HI_US  75u
@@ -170,8 +183,8 @@
 #ifndef PAPER_PANEL_FAST_LO_US
 #    define PAPER_PANEL_FAST_LO_US  150u
 #endif
-#define PAPER_CLAMP_HI_US        2000u  // 拾落电机脉宽 μs
-#define PAPER_CLAMP_LO_US        2000u
+#define PAPER_CLAMP_HI_US        2800u  // 拾落电机脉宽 μs（约原来 2000 的 0.7 倍速）
+#define PAPER_CLAMP_LO_US        2800u
 
 // 出旧纸（Step1）专用：脉宽约为正常 1/12 → 约 12 倍速
 #ifndef PAPER_EJECT_RAMP_HI_US
