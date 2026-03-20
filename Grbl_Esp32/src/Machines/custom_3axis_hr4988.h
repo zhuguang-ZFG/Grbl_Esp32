@@ -76,6 +76,11 @@
 // Enable software debounce since no hardware R/C filters
 #define ENABLE_SOFTWARE_DEBOUNCE
 
+// 同时启用 Grbl 的控制按键去抖任务，让宏按键（Paper 按钮）在任务中处理，避免在中断里长时间执行导致 WDT
+#ifndef ENABLE_CONTROL_SW_DEBOUNCE
+#define ENABLE_CONTROL_SW_DEBOUNCE
+#endif
+
 // === I2S-based GPIO expander (74HC595D) for paper-handling system ===
 // Use ESP32 I2S peripheral to drive 74HC595D, expanding 8 output-only pins (Q0..Q7).
 // These pins are only used for the paper change / feed system, not for main XYZ steppers.
@@ -145,7 +150,7 @@
 #    define PAPER_ADVANCE_CM_CLAMP_START  7   // 进纸多少 cm 后开始夹紧
 #endif
 #ifndef PAPER_ADVANCE_CM
-#    define PAPER_ADVANCE_CM    8   // 送纸器停止时的总送纸距离(cm)
+#    define PAPER_ADVANCE_CM    9   // 送纸器停止时的总送纸距离(cm)
 #endif
 #ifndef PAPER_STEPS_PER_CM
 #    define PAPER_STEPS_PER_CM  1062u   // 面板/进纸器每厘米步数（按机构实测可调）

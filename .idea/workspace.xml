@@ -23,9 +23,8 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="Adjust paper motor REF DAC values and step pulse timings for improved performance">
+    <list default="true" id="d7309c13-9384-4390-bfb7-08ef25a03827" name="更改" comment="Adjust paper motor REF DAC values and step pulse timings">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Grbl_Esp32/src/Machines/custom_3axis_hr4988.h" beforeDir="false" afterPath="$PROJECT_DIR$/Grbl_Esp32/src/Machines/custom_3axis_hr4988.h" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -140,7 +139,7 @@
       <workItem from="1773284347032" duration="25486000" />
       <workItem from="1773422422316" duration="4070000" />
       <workItem from="1773493331308" duration="4981000" />
-      <workItem from="1773733715715" duration="1145000" />
+      <workItem from="1773733715715" duration="4315000" />
     </task>
     <task id="LOCAL-00001" summary="删除MCP相关脚本和配置文件">
       <option name="closed" value="true" />
@@ -334,7 +333,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773733818645</updated>
     </task>
-    <option name="localTasksCounter" value="25" />
+    <task id="LOCAL-00025" summary="Adjust paper motor REF DAC values and step pulse timings">
+      <option name="closed" value="true" />
+      <created>1773735935374</created>
+      <option name="number" value="00025" />
+      <option name="presentableId" value="LOCAL-00025" />
+      <option name="project" value="LOCAL" />
+      <updated>1773735935374</updated>
+    </task>
+    <option name="localTasksCounter" value="26" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -374,7 +381,8 @@
     <MESSAGE value="Add license check and M800 authorization mechanism 交付加码版本" />
     <MESSAGE value="Update default radio mode to Bluetooth and improve documentation" />
     <MESSAGE value="Adjust paper motor REF DAC values and step pulse timings for improved performance" />
-    <option name="LAST_COMMIT_MESSAGE" value="Adjust paper motor REF DAC values and step pulse timings for improved performance" />
+    <MESSAGE value="Adjust paper motor REF DAC values and step pulse timings" />
+    <option name="LAST_COMMIT_MESSAGE" value="Adjust paper motor REF DAC values and step pulse timings" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
