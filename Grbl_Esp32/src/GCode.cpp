@@ -1476,7 +1476,7 @@ Error gc_execute_line(char* line, uint8_t client) {
         // NOTE: All spindle state changes are synced, even in laser mode. Also, pl_data,
         // rather than gc_state, is used to manage laser state for non-laser motions.
 #ifdef USE_M3_M5_AS_PEN_UP_DOWN
-        // M5=抬笔(Z20)，M3 Sxxx=落笔(Z0)：先同步再执行 Z 移动，再更新模态
+        // M5→PEN_UP_Z_MM，M3 S…→PEN_DOWN_Z_MM（具体 mm 见 Machines/*.h）：先同步再执行 Z 移动，再更新模态
         protocol_buffer_synchronize();
         float pen_target[MAX_N_AXIS];
         memcpy(pen_target, gc_state.position, sizeof(float) * MAX_N_AXIS);

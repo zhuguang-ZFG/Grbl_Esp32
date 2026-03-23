@@ -39,9 +39,8 @@
     Note: No limit switches or position sensors are used.
     Enable pin: Output LOW to enable steppers, HIGH to disable
 
-    Pen Control:
-    - Z=0mm: Pen down (writing position)
-    - Z=20mm: Pen up (travel position)
+    Pen Control (USE_M3_M5_AS_PEN_UP_DOWN，实际 Z 由下方 PEN_*_Z_MM 决定，勿与旧草稿混淆):
+    - M5 → 移到 PEN_UP_Z_MM；M3 S… → 移到 PEN_DOWN_Z_MM（本机当前为 0 / 5 mm）
 
     Jog: Z 轴点动（抬落笔）单独限速，避免 $J= 使用较大 F 时 Z 过快。
 */
@@ -158,7 +157,7 @@
 #define FEEDER_EXTRA_STEPS      ((uint32_t)(PAPER_ADVANCE_CM) * (uint32_t)(PAPER_STEPS_PER_CM))
 
 // 拾落电机：压纸 / 抬纸的步数（一次完整动作），经实测约 220 步
-#define CLAMP_TOGGLE_STEPS      350u
+#define CLAMP_TOGGLE_STEPS      160u
 
 // 步进脉冲时序（μs）：在 PaperSystem.cpp 的 paper_step_pulses 中使用
 // 面板/进纸器：起步阶段用较慢脉宽减小冲击，之后切换为正常速度
