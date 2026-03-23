@@ -79,6 +79,10 @@ static volatile uint8_t segment_buffer_tail;
 static uint8_t          segment_buffer_head;
 static uint8_t          segment_next_head;
 
+// 用于判断卡顿是否来自步进 ISR 段缓冲欠载（segment buffer empty -> st_go_idle）
+// 该标志只在 ISR 里置位，在主循环里打印一次以避免 ISR 内输出导致 WDT。
+volatile bool segment_buffer_underflow = false;
+
 // Used to avoid ISR nesting of the "Stepper Driver Interrupt". Should never occur though.
 static std::atomic<bool> busy;
 
@@ -287,6 +291,7 @@ static void stepper_pulse_func() {
             spindle->set_rpm(st.exec_segment->spindle_rpm);
         } else {
             // Segment buffer empty. Shutdown.
+            segment_buffer_underflow = true;
             st_go_idle();
             if (sys.state != State::Jog) {  // added to prevent ... jog after probing crash
                 // Ensure pwm is set properly upon completion of rate-controlled motion.

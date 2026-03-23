@@ -93,6 +93,18 @@ void paper_led_update(void) {}
 // 每 YIELD_STEPS 步 yield 一次，避免长时间阻塞触发 ESP32 Interrupt Watchdog (Core 1 panic)
 #define PAPER_YIELD_STEPS 50u
 
+// 换纸流程里会长时间用 delay/延时打步进脉冲；
+// 此期间主协议线程不会持续执行 st_prep_buffer()，导致 segment buffer 被 ISR 耗空而 st_go_idle。
+// 在每个“yield 点”额外续料一次 segment buffer，尽量避免运动卡顿。
+static inline void paper_refill_segment_buffer_during_blocking() {
+    // 只在运动相关状态下续料，避免无意义计算
+    if (sys.state == State::Cycle || sys.state == State::Hold || sys.state == State::SafetyDoor || sys.state == State::Homing ||
+        sys.state == State::Sleep || sys.state == State::Jog) {
+        st_prep_buffer();
+    }
+    yield();
+}
+
 // 拾落夹紧后面板进纸：单步，前 PAPER_PANEL_FAST_RAMP_STEPS 缓起步，之后用 PAPER_PANEL_FAST_*（加速更早）
 static void paper_one_step_panel_after_clamp(uint32_t step_index) {
     uint32_t hi_us = (step_index < PAPER_PANEL_FAST_RAMP_STEPS) ? PAPER_RAMP_HI_US : PAPER_PANEL_FAST_HI_US;
@@ -121,7 +133,10 @@ static void paper_step_pulses_panel_after_clamp(uint32_t steps) {
         digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
         i2s_out_delay();
         delayMicroseconds(lo_us);
-        if ((i + 1) % PAPER_YIELD_STEPS == 0) delay(1);
+        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            paper_refill_segment_buffer_during_blocking();
+            delay(1);
+        }
     }
 #else
     for (uint32_t i = 0; i < steps; i++) {
@@ -131,7 +146,10 @@ static void paper_step_pulses_panel_after_clamp(uint32_t steps) {
         delayMicroseconds(hi_us);
         digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
         delayMicroseconds(lo_us);
-        if ((i + 1) % PAPER_YIELD_STEPS == 0) delay(1);
+        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            paper_refill_segment_buffer_during_blocking();
+            delay(1);
+        }
     }
 #endif
 }
@@ -167,6 +185,7 @@ static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
         i2s_out_delay();
         delayMicroseconds(lo_us);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            paper_refill_segment_buffer_during_blocking();
             delay(1);  // yield to RTOS, feed interrupt watchdog
         }
     }
@@ -177,6 +196,7 @@ static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
         digitalWrite(step_pin, LOW);
         delayMicroseconds(500);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            paper_refill_segment_buffer_during_blocking();
             delay(1);  // yield to RTOS, feed interrupt watchdog
         }
     }
@@ -202,6 +222,7 @@ static void paper_step_pulses_feeder_find(uint16_t steps) {
         i2s_out_delay();
         delayMicroseconds(lo_us);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            paper_refill_segment_buffer_during_blocking();
             delay(1);
         }
     }
@@ -214,6 +235,7 @@ static void paper_step_pulses_feeder_find(uint16_t steps) {
         digitalWrite(FEEDER_MOTOR_STEP_PIN, LOW);
         delayMicroseconds(lo_us);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            paper_refill_segment_buffer_during_blocking();
             delay(1);
         }
     }
@@ -403,6 +425,7 @@ static void paper_step_pulses_panel_feeder_sync(uint32_t steps) {
         i2s_out_delay();
         delayMicroseconds(lo_us);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            paper_refill_segment_buffer_during_blocking();
             delay(1);
         }
     }
@@ -415,6 +438,7 @@ static void paper_step_pulses_panel_feeder_sync(uint32_t steps) {
         digitalWrite(FEEDER_MOTOR_STEP_PIN, LOW);
         delayMicroseconds(500);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            paper_refill_segment_buffer_during_blocking();
             delay(1);
         }
     }
@@ -502,7 +526,10 @@ static void paper_step_pulses_panel_eject(uint32_t steps) {
         digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
         i2s_out_delay();
         delayMicroseconds(lo_us);
-        if ((i + 1) % PAPER_YIELD_STEPS == 0) delay(1);
+        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            paper_refill_segment_buffer_during_blocking();
+            delay(1);
+        }
     }
 #else
     for (uint32_t i = 0; i < steps; i++) {
@@ -512,7 +539,10 @@ static void paper_step_pulses_panel_eject(uint32_t steps) {
         delayMicroseconds(hi_us);
         digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
         delayMicroseconds(lo_us);
-        if ((i + 1) % PAPER_YIELD_STEPS == 0) delay(1);
+        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+            paper_refill_segment_buffer_during_blocking();
+            delay(1);
+        }
     }
 #endif
 }
@@ -570,6 +600,7 @@ Error paper_auto_change(void) {
             paper_step_pulses_feeder_find(1);  // 找传感器阶段：加速一倍
             steps++;
             if (steps % PAPER_YIELD_STEPS == 0) {
+                paper_refill_segment_buffer_during_blocking();
                 delay(1);  // yield to RTOS, avoid Interrupt wdt timeout
             }
         }
@@ -636,7 +667,10 @@ Error paper_auto_change(void) {
         while (paper_sensor_stable() && steps < PANEL_FAST_STEPS_MAX) {
             paper_one_step_panel_after_clamp(steps);  // 夹紧后面板进纸速度加倍
             steps++;
-            if (steps % PAPER_YIELD_STEPS == 0) delay(1);
+            if (steps % PAPER_YIELD_STEPS == 0) {
+                paper_refill_segment_buffer_during_blocking();
+                delay(1);
+            }
         }
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Fast feed completed (%u steps, sensor=%s)", 
                        (unsigned)steps, paper_sensor_stable() ? "STILL_ACTIVE" : "lost");
@@ -657,6 +691,7 @@ Error paper_auto_change(void) {
             paper_step_pulses(PANEL_MOTOR_STEP_PIN, 1);
             steps++;
             if (steps % PAPER_YIELD_STEPS == 0) {
+                paper_refill_segment_buffer_during_blocking();
                 delay(1);  // yield to RTOS, avoid Interrupt wdt timeout
             }
         }

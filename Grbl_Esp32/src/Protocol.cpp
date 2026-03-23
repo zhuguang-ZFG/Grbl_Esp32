@@ -32,6 +32,9 @@ static uint8_t line_flags           = 0;
 static uint8_t char_counter         = 0;
 static uint8_t comment_char_counter = 0;
 
+// BT 发送节奏排查：记录上一次 BT 到达一整行（EOL）的时间
+static uint32_t last_bt_eol_ms = 0;
+
 typedef struct {
     char buffer[LINE_BUFFER_SIZE];
     int  len;
@@ -168,6 +171,24 @@ void protocol_main_loop() {
                             return;  // Bail to calling function upon system abort
                         }
                         line = client_lines[client].buffer;
+                        // BT 节奏排查：只在“BT 接收间隔异常变大”时打印，避免刷屏导致进一步卡顿
+                        if (client == CLIENT_BT) {
+                            uint32_t now_ms = millis();
+                            if (last_bt_eol_ms != 0) {
+                                uint32_t gap_ms = now_ms - last_bt_eol_ms;
+                                // 阈值可按现象调整：越小打印越多，越大越不容易干扰
+                                // 阈值提高，减少打印干扰：只看明显“断流/等待”的间隔
+                                if (gap_ms > 200u) {
+                                    grbl_sendf(CLIENT_SERIAL,
+                                               "[BT-EOL gap=%u ms B=%u st=%u] %s\r\n",
+                                               (unsigned)gap_ms,
+                                               (unsigned)plan_get_block_buffer_available(),
+                                               (unsigned)sys.state,
+                                               line);
+                                }
+                            }
+                            last_bt_eol_ms = now_ms;
+                        }
 #ifdef REPORT_ECHO_RAW_LINE_RECEIVED
                         report_echo_line_received(line, client);
 #endif
@@ -192,6 +213,7 @@ void protocol_main_loop() {
         if (sys.abort) {
             return;  // Bail to main() program loop to reset system.
         }
+
         // check to see if we should disable the stepper drivers ... esp32 work around for disable in main loop.
         if (stepper_idle && stepper_idle_lock_time->get() != 0xff) {
             if (esp_timer_get_time() > stepper_idle_counter) {
@@ -511,6 +533,30 @@ void protocol_exec_rt_system() {
         sys_rt_exec_debug = false;
     }
 #endif
+
+    // 如果 segment buffer 被步进 ISR 耗尽并触发 st_go_idle，这里在任意 protocol_execute_realtime
+    // 调用点打印一次（包含 mc_line 等待循环中的调用），用于定位卡顿来源。
+    if (segment_buffer_underflow) {
+        segment_buffer_underflow = false;
+        // 附带 program_flow，便于判断是否是 M30/程序流切换导致的段缓冲耗尽。
+        grbl_sendf(CLIENT_SERIAL,
+                   "[SEG underflow] B=%u st=%u progflow=%u execSys=%u\r\n",
+                   (unsigned)plan_get_block_buffer_available(),
+                   (unsigned)sys.state,
+                   (unsigned)gc_state.modal.program_flow,
+                   (unsigned)sys.step_control.executeSysMotion);
+
+        // 若 planner 仍有可执行块，但 stepper 因 segment buffer 空而停下，
+        // 立刻重装载 segment buffer 并启动 cycle，避免蓝牙流式发送时出现停顿卡顿。
+        if (sys.state == State::Idle && plan_get_current_block() != NULL) {
+            sys.step_control = {};
+            sys.suspend.value = 0;
+            sys.state         = State::Cycle;
+            st_prep_buffer();
+            st_wake_up();
+        }
+    }
+
     // Reload step segment buffer
     switch (sys.state) {
         case State::Cycle:

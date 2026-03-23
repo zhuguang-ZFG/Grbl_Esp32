@@ -49,7 +49,10 @@ namespace WebUI {
         ~InputBuffer();
 
     private:
-        static const int RXBUFFERSIZE = 256;
+        // 蓝牙/网络类客户端更容易出现突发小包，原 256B 缓冲不足会导致解析节奏抖动（表现为运动卡顿）
+        // 将其增大可降低溢出/等待概率，同时对内存开销可控。
+        // 提高客户端输入缓冲，降低 BT 突发小包导致的缓冲跟不上/解析节奏抖动
+        static const int RXBUFFERSIZE = 2048;
 
         uint8_t  _RXbuffer[RXBUFFERSIZE];
         uint16_t _RXbufferSize;

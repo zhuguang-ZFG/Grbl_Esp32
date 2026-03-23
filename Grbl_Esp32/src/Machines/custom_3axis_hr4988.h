@@ -140,7 +140,7 @@
 // 快进约 8.5k 步时脱离传感器，这里给到 9000 步保证能退回到感应点
 #define PANEL_BACK_STEPS_MAX    9000u
 // 面板电机：最终微调到位的步数
-#define PANEL_FINAL_STEPS       1100u
+#define PANEL_FINAL_STEPS       920u
 
 // 进纸器电机：寻找新纸到感应器的最大步数（超时时间，可根据实际距离调大）
 #define FEEDER_FIND_STEPS_MAX   12000u
@@ -149,7 +149,7 @@
 #    define PAPER_ADVANCE_CM_CLAMP_START  7   // 进纸多少 cm 后开始夹紧
 #endif
 #ifndef PAPER_ADVANCE_CM
-#    define PAPER_ADVANCE_CM    9   // 送纸器停止时的总送纸距离(cm)
+#    define PAPER_ADVANCE_CM    8.1  // 送纸器停止时的总送纸距离(cm)
 #endif
 #ifndef PAPER_STEPS_PER_CM
 #    define PAPER_STEPS_PER_CM  1062u   // 面板/进纸器每厘米步数（按机构实测可调）
@@ -193,16 +193,16 @@
 
 // 出旧纸（Step1）专用：脉宽约为正常 1/12 → 约 12 倍速
 #ifndef PAPER_EJECT_RAMP_HI_US
-#    define PAPER_EJECT_RAMP_HI_US    35u
+#    define PAPER_EJECT_RAMP_HI_US    30u
 #endif
 #ifndef PAPER_EJECT_RAMP_LO_US
-#    define PAPER_EJECT_RAMP_LO_US    35u
+#    define PAPER_EJECT_RAMP_LO_US    30u
 #endif
 #ifndef PAPER_EJECT_NORMAL_HI_US
-#    define PAPER_EJECT_NORMAL_HI_US  13u
+#    define PAPER_EJECT_NORMAL_HI_US  10u
 #endif
 #ifndef PAPER_EJECT_NORMAL_LO_US
-#    define PAPER_EJECT_NORMAL_LO_US  13u
+#    define PAPER_EJECT_NORMAL_LO_US  10u
 #endif
 
 // 面板电机方向：三个独立宏，只改需要反的那一个即可
@@ -285,7 +285,9 @@
 #    define STEP_PULSE_DELAY                15  // 方向建立延时 µs（可串口 $ Stepper/Direction/Delay 调）
 #endif
 #define DEFAULT_STEP_PULSE_MICROSECONDS     10  // 驱动可靠性，减轻 Z 轴卡顿
-#define DEFAULT_STEPPER_IDLE_LOCK_TIME      250
+// 避免 BT 断流导致空闲超过 $1=250ms 时电机失能又恢复，引发画圆“卡顿”
+// 先设为 255（保持使能），用于平滑验证；确认顺畅后再按需改回 200~255
+#define DEFAULT_STEPPER_IDLE_LOCK_TIME      255
 #define DEFAULT_STEPPING_INVERT_MASK        0
 #define DEFAULT_DIRECTION_INVERT_MASK       bit(Z_AXIS)  // Z 轴方向反相（抬笔/落笔与 GCode 一致）
 #define DEFAULT_INVERT_ST_ENABLE            0

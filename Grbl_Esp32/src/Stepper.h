@@ -70,6 +70,8 @@ const timer_idx_t   STEP_TIMER_INDEX = TIMER_0;
 // esp32 work around for diable in main loop
 extern uint64_t stepper_idle_counter;
 extern bool     stepper_idle;
+// segment buffer underflow detection flag (set in stepper ISR, consumed in protocol main loop)
+extern volatile bool segment_buffer_underflow;
 
 //extern uint8_t ganged_mode;
 

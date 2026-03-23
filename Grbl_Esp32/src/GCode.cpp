@@ -1477,7 +1477,6 @@ Error gc_execute_line(char* line, uint8_t client) {
         // rather than gc_state, is used to manage laser state for non-laser motions.
 #ifdef USE_M3_M5_AS_PEN_UP_DOWN
         // M5→PEN_UP_Z_MM，M3 S…→PEN_DOWN_Z_MM（具体 mm 见 Machines/*.h）：先同步再执行 Z 移动，再更新模态
-        protocol_buffer_synchronize();
         float pen_target[MAX_N_AXIS];
         memcpy(pen_target, gc_state.position, sizeof(float) * MAX_N_AXIS);
         pen_target[Z_AXIS] = (gc_block.modal.spindle == SpindleState::Disable) ? PEN_UP_Z_MM : PEN_DOWN_Z_MM;
@@ -1486,10 +1485,15 @@ Error gc_execute_line(char* line, uint8_t client) {
         pen_pl_data.spindle           = SpindleState::Disable;
         pen_pl_data.coolant           = gc_state.modal.coolant;
         mc_line(pen_target, &pen_pl_data);
-        protocol_buffer_synchronize();
         gc_state.position[Z_AXIS] = pen_target[Z_AXIS];
 #endif
+        // 在“抬笔/落笔= M3/M5”模式下，避免 spindle->sync 内部的 protocol_buffer_synchronize() 阻塞 planner，
+        // 否则在蓝牙流式发送时容易触发 segment buffer underflow 与绘制卡顿。
+#ifdef USE_M3_M5_AS_PEN_UP_DOWN
+        spindle->set_state(gc_block.modal.spindle, (uint32_t)pl_data->spindle_speed);
+#else
         spindle->sync(gc_block.modal.spindle, (uint32_t)pl_data->spindle_speed);
+#endif
         gc_state.modal.spindle = gc_block.modal.spindle;
     }
     pl_data->spindle = gc_state.modal.spindle;

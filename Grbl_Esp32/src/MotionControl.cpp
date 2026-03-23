@@ -77,6 +77,9 @@ bool mc_line(float* target, plan_line_data_t* pl_data) {
         } else {
             break;
         }
+        // 忙等等待 planner 释放空间时，给 RTOS/蓝牙栈等让出执行机会
+        //，避免 ok/接收节奏被当前任务阻塞而导致运动卡顿。
+        yield();
     } while (1);
     // Plan and queue motion into planner buffer
     // uint8_t plan_status; // Not used in normal operation.

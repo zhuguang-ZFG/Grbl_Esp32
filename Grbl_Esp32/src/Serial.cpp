@@ -353,7 +353,8 @@ void client_write(uint8_t client, const char* text) {
 #ifdef ENABLE_BLUETOOTH
     if (WebUI::SerialBT.hasClient() && (client == CLIENT_BT || client == CLIENT_ALL)) {
         WebUI::SerialBT.print(text);
-        //delay(10); // possible fix for dropped characters
+        // 让出 CPU 给蓝牙栈/RTOS，避免蓝牙回包阻塞导致上位机等待（进而造成 BT 画圆卡顿）
+        yield();
     }
 #endif
 #if defined(ENABLE_WIFI) && defined(ENABLE_HTTP) && defined(ENABLE_SERIAL2SOCKET_OUT)
