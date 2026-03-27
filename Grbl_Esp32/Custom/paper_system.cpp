@@ -6,6 +6,7 @@
 // 这里不需要再次 include。
 
 static void license_load_from_nvs(void);  // 前向声明，供 machine_init 使用
+static bool paper_change_last_ok = true;  // 最近一次 user_m30 触发的换纸结果（true=成功）
 
 // 机器初始化钩子：在 Grbl 启动时调用（弱符号在 Grbl.cpp 中，这里覆盖）
 // 打印芯片 ID（用于向厂商申请授权码），并从 NVS 恢复授权状态。
@@ -109,6 +110,10 @@ bool check_license()
     return license_ok;
 }
 
+bool paper_last_change_ok() {
+    return paper_change_last_ok;
+}
+
 // M800 P<十进制授权码>：GCode 解析层在 STEP 3 取 P 后调用，比较通过则授权并写入 NVS
 bool license_set_from_p_param(uint32_t p_value)
 {
@@ -138,6 +143,7 @@ Error user_m_code(uint16_t code) {
 // program_flow 处理完毕、缓冲区同步后调用 user_m30()。
 // 这里把“换纸 = 换页”接进来：每次 M30 结束自动执行一套换纸流程。
 void user_m30() {
+    paper_change_last_ok = false;  // 默认失败，只有完整成功后置 true
     // 必须在 Idle 状态、且纸张系统已配置时才自动换纸，避免在报警/检查模式下误动作。
     if (sys.state != State::Idle) {
         grbl_msg_sendf(CLIENT_SERIAL,
@@ -162,6 +168,7 @@ void user_m30() {
         plan_sync_position();
         gc_sync_position();
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperM30] Auto paper change completed.");
+        paper_change_last_ok = true;
     } else {
         grbl_msg_sendf(CLIENT_SERIAL,
                        MsgLevel::Warning,

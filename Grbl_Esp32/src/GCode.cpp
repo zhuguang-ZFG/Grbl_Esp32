@@ -1645,6 +1645,9 @@ Error gc_execute_line(char* line, uint8_t client) {
         paper_change_done_before_first_page = true;
         protocol_buffer_synchronize();
         user_m30();
+        if (!paper_last_change_ok()) {
+            return Error::MessageFailed;  // 缺纸/卡纸时阻断后续写字，避免“看起来未停止”
+        }
         delay_ms(250);  // 换纸电机停后稍等再动，减轻卡顿感
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] 1st page");
     }
@@ -1751,6 +1754,9 @@ Error gc_execute_line(char* line, uint8_t client) {
             }
             report_feedback_message(Message::ProgramEnd);
             user_m30();
+            if (!paper_last_change_ok()) {
+                return Error::MessageFailed;  // M30 自动换纸失败时向上位机返回失败，停止后续流程
+            }
             break;
     }
     gc_state.modal.program_flow = ProgramFlow::Running;  // Reset program flow.
@@ -1769,6 +1775,9 @@ Error gc_execute_line(char* line, uint8_t client) {
             protocol_buffer_synchronize();
             motors_set_disable(true);  // 回原点写完一页后立即失能 XYZ，换纸期间主循环被阻塞无法执行延时失能
             user_m30();
+            if (!paper_last_change_ok()) {
+                return Error::MessageFailed;  // 换纸失败时不再上报 page end，避免上位机误继续
+            }
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] page end");  // 换纸后再发，避免串口与主机发送交错
         }
     }

@@ -549,9 +549,9 @@ void protocol_exec_rt_system() {
         // 若 planner 仍有可执行块，但 stepper 因 segment buffer 空而停下，
         // 立刻重装载 segment buffer 并启动 cycle，避免蓝牙流式发送时出现停顿卡顿。
         if (sys.state == State::Idle && plan_get_current_block() != NULL) {
-            sys.step_control = {};
-            sys.suspend.value = 0;
-            sys.state         = State::Cycle;
+            // 注意：避免强行篡改 sys.state / sys.suspend 以免造成状态机不一致。
+            // 只清除可能阻止续料的 endMotion 标志，然后让 stepper 重新开始工作。
+            sys.step_control.endMotion = false;
             st_prep_buffer();
             st_wake_up();
         }
