@@ -129,6 +129,10 @@ void __attribute__((weak)) display_init() {}
 
 void __attribute__((weak)) user_m30() {}
 
+bool __attribute__((weak)) paper_last_change_ok() {
+    return true;
+}
+
 // 许可检查（默认始终通过），可在 Custom 代码中覆盖，例如基于芯片 ID 做授权
 bool __attribute__((weak)) check_license() {
     return true;

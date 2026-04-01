@@ -14,6 +14,11 @@
 #define PAPER_STATUS_PAPER_PRESENT     1  // 开始时传感器仍有纸，无法弹旧纸
 #define PAPER_STATUS_FEEDER_TIMEOUT   2  // 进纸阶段超时未触发传感器
 #define PAPER_STATUS_SENSOR_NOT_FOUND 3  // 第7步回找后传感器未稳定（纸可能未到位）
+#define PAPER_STATUS_JAM_TIMEOUT      4  // 传感器持续有纸超时（卡纸）
+#define PAPER_STATUS_OUT_OF_PAPER     5  // 进纸超时无纸（缺纸）
+
+// 传感器关键阶段超时时间：10s
+#define PAPER_SENSOR_TIMEOUT_MS 10000u
 
 // 步进脉宽常量：若机器头文件未定义，则使用下列默认值（见 custom_3axis_hr4988.h）
 #ifndef PAPER_RAMP_STEPS
@@ -586,6 +591,8 @@ Error paper_auto_change(void) {
     {
         uint32_t steps = 0;
         bool     found = false;
+        bool     timeout_10s = false;
+        uint32_t t0_ms = millis();
         paper_enable_clamp_feeder_only();
         digitalWrite(FEEDER_MOTOR_DIR_PIN, FEEDER_DIR_FORWARD);
 #ifdef USE_I2S_OUT
@@ -597,6 +604,10 @@ Error paper_auto_change(void) {
                 found = true;
                 break;
             }
+            if ((millis() - t0_ms) >= PAPER_SENSOR_TIMEOUT_MS) {
+                timeout_10s = true;
+                break;
+            }
             paper_step_pulses_feeder_find(1);  // 找传感器阶段：加速一倍
             steps++;
             if (steps % PAPER_YIELD_STEPS == 0) {
@@ -606,10 +617,22 @@ Error paper_auto_change(void) {
         }
         if (!found) {
             paper_auto_change_running = false;
-            paper_disable_drivers();  // 超时提前退出时也要关驱动，避免电机长时间使能
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning, "[PaperAuto-2] ERROR: Feeder timeout - sensor not triggered after %u steps", (unsigned)steps);
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_FEEDER_TIMEOUT);
-            return Error::Ok;  // Do not raise hard error, just warn
+            // 缺纸/进纸异常：立即停机并关闭驱动，等待下次从 Step1 重新开始
+            st_go_idle();
+            motors_set_disable(true);
+            paper_disable_drivers();
+            if (timeout_10s) {
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
+                               "[PaperAuto-2] OUT_OF_PAPER: no paper detected within %u ms (steps=%u), stop and reset to Step1",
+                               (unsigned)PAPER_SENSOR_TIMEOUT_MS, (unsigned)steps);
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_OUT_OF_PAPER);
+            } else {
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
+                               "[PaperAuto-2] ERROR: Feeder timeout - sensor not triggered after %u steps",
+                               (unsigned)steps);
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_FEEDER_TIMEOUT);
+            }
+            return Error::MessageFailed;  // 返回非OK，避免上层误判“Auto paper change completed”
         }
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-2] Paper found at step %u", (unsigned)steps);
     }
@@ -659,12 +682,18 @@ Error paper_auto_change(void) {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Panel fast feed until sensor loses paper (max %u steps)...", (unsigned)PANEL_FAST_STEPS_MAX);
     {
         uint32_t steps = 0;
+        bool     jam_timeout = false;
+        uint32_t t0_ms = millis();
         digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_FEED);
 #ifdef USE_I2S_OUT
         i2s_out_delay();
         delay(2);
 #endif
         while (paper_sensor_stable() && steps < PANEL_FAST_STEPS_MAX) {
+            if ((millis() - t0_ms) >= PAPER_SENSOR_TIMEOUT_MS) {
+                jam_timeout = true;
+                break;
+            }
             paper_one_step_panel_after_clamp(steps);  // 夹紧后面板进纸速度加倍
             steps++;
             if (steps % PAPER_YIELD_STEPS == 0) {
@@ -672,8 +701,27 @@ Error paper_auto_change(void) {
                 delay(1);
             }
         }
+        bool sensor_still_active = paper_sensor_stable();
+        if (jam_timeout || sensor_still_active) {
+            paper_auto_change_running = false;
+            // 卡纸：立即停机并关闭驱动，等待下次从 Step1 重新开始
+            st_go_idle();
+            motors_set_disable(true);
+            paper_disable_drivers();
+            if (jam_timeout) {
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
+                               "[PaperAuto-6] JAM: sensor stayed active for %u ms (steps=%u), stop and reset to Step1",
+                               (unsigned)PAPER_SENSOR_TIMEOUT_MS, (unsigned)steps);
+            } else {
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
+                               "[PaperAuto-6] JAM: sensor still active after max steps=%u (actual=%u), stop and reset to Step1",
+                               (unsigned)PANEL_FAST_STEPS_MAX, (unsigned)steps);
+            }
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_JAM_TIMEOUT);
+            return Error::MessageFailed;
+        }
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Fast feed completed (%u steps, sensor=%s)", 
-                       (unsigned)steps, paper_sensor_stable() ? "STILL_ACTIVE" : "lost");
+                       (unsigned)steps, sensor_still_active ? "STILL_ACTIVE" : "lost");
     }
 
     // 7. 面板电机“回找传感器”，直到再次“感应到纸”或达到上限（回找定位点）

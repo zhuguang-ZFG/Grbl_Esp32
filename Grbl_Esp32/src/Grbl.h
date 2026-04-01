@@ -96,6 +96,7 @@ void run_once();
 void machine_init();                      // weak definition in Grbl.cpp
 void display_init();                      // weak definition in Grbl.cpp
 void user_m30();                          // weak definition in Grbl.cpp/
+bool paper_last_change_ok();              // weak definition in Grbl.cpp/
 void user_tool_change(uint8_t new_tool);  // weak definition in Grbl.cpp
 
 // 授权：运动前检查，Custom 可覆盖；M800 写入授权码用 license_set_from_p_param。
