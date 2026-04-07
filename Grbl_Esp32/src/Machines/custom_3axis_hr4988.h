@@ -133,14 +133,14 @@
 // 步数需根据实际机构行程微调
 
 // 面板电机：弹出旧纸（A4 长度 + 余量）
-#define PANEL_EJECT_STEPS       6000u
+#define PANEL_EJECT_STEPS       8000u
 // 面板电机：快速送纸阶段的最大步数上限（防止传感器异常时跑飞）
 #define PANEL_FAST_STEPS_MAX    16000u
 // 面板电机：反向找感应点的最大步数（需覆盖第6步快进的最远位置）
 // 快进约 8.5k 步时脱离传感器，这里给到 9000 步保证能退回到感应点
 #define PANEL_BACK_STEPS_MAX    9000u
 // 面板电机：最终微调到位的步数
-#define PANEL_FINAL_STEPS      1000u
+#define PANEL_FINAL_STEPS     600u
 
 // 进纸器电机：寻找新纸到感应器的最大步数（超时时间，可根据实际距离调大）
 #define FEEDER_FIND_STEPS_MAX   12000u
@@ -191,18 +191,18 @@
 #define PAPER_CLAMP_HI_US        2800u  // 拾落电机脉宽 μs（约原来 2000 的 0.7 倍速）
 #define PAPER_CLAMP_LO_US        2800u
 
-// 出旧纸（Step1）专用：脉宽约为正常 1/12 → 约 12 倍速
+// 出旧纸（Step1）专用：约 4 倍速（相对“正常 150/150”）
 #ifndef PAPER_EJECT_RAMP_HI_US
-#    define PAPER_EJECT_RAMP_HI_US    30u
+#    define PAPER_EJECT_RAMP_HI_US    136u
 #endif
 #ifndef PAPER_EJECT_RAMP_LO_US
-#    define PAPER_EJECT_RAMP_LO_US    30u
+#    define PAPER_EJECT_RAMP_LO_US    136u
 #endif
 #ifndef PAPER_EJECT_NORMAL_HI_US
-#    define PAPER_EJECT_NORMAL_HI_US  10u
+#    define PAPER_EJECT_NORMAL_HI_US  43u
 #endif
 #ifndef PAPER_EJECT_NORMAL_LO_US
-#    define PAPER_EJECT_NORMAL_LO_US  10u
+#    define PAPER_EJECT_NORMAL_LO_US  43u
 #endif
 
 // 面板电机方向：三个独立宏，只改需要反的那一个即可
