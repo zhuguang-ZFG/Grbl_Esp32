@@ -413,6 +413,12 @@ static void paper_enable_panel_and_feeder(void) {
 static void paper_step_pulses_panel_feeder_sync(uint32_t steps) {
 #ifdef USE_I2S_OUT
     uint32_t hi_us, lo_us;
+    // 进纸器补偿：每 DEN 个“同步脉冲”，额外补 (NUM-DEN) 个进纸器步进，使送纸速度与面板齿轮变化后保持同速。
+    // 典型：NUM=36, DEN=20 -> 每 20 个同步脉冲补 16 个进纸器额外步进（总计 36 步）。
+    const uint32_t ratio_num = (uint32_t)PAPER_SYNC_FEEDER_RATIO_NUM;
+    const uint32_t ratio_den = (uint32_t)PAPER_SYNC_FEEDER_RATIO_DEN;
+    uint32_t       extra_num = (ratio_num > ratio_den) ? (ratio_num - ratio_den) : 0u;
+    uint32_t       extra_acc = 0u;
     for (uint32_t i = 0; i < steps; i++) {
         if (i < PAPER_RAMP_STEPS) {
             hi_us = PAPER_RAMP_HI_US;
@@ -429,6 +435,21 @@ static void paper_step_pulses_panel_feeder_sync(uint32_t steps) {
         digitalWrite(FEEDER_MOTOR_STEP_PIN, LOW);
         i2s_out_delay();
         delayMicroseconds(lo_us);
+
+        // 额外补步（进纸器更快）：用更短的脉宽单独再打一拍 FEEDER STEP。
+        if (extra_num > 0u && ratio_den > 0u) {
+            extra_acc += extra_num;
+            if (extra_acc >= ratio_den) {
+                extra_acc -= ratio_den;
+                digitalWrite(FEEDER_MOTOR_STEP_PIN, HIGH);
+                i2s_out_delay();
+                delayMicroseconds(FEEDER_SYNC_EXTRA_HI_US);
+                digitalWrite(FEEDER_MOTOR_STEP_PIN, LOW);
+                i2s_out_delay();
+                delayMicroseconds(FEEDER_SYNC_EXTRA_LO_US);
+            }
+        }
+
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
             paper_refill_segment_buffer_during_blocking();
             delay(1);

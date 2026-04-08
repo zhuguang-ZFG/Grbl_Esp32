@@ -168,6 +168,23 @@
 #define PAPER_NORMAL_HI_US       150u   // Panel: 正常高速 μs
 #define PAPER_NORMAL_LO_US       150u
 
+// 同速送纸阶段（Step4/4b）面板与进纸器“同步”补偿：
+// 面板电机齿轮从 20 齿改为 36 齿后，面板单位时间走纸更快；为保持“同速”，需要让进纸器在同步阶段额外补步。
+// 进纸器目标步数比 = NUM / DEN（例如 36/20=1.8，即每 20 次同步脉冲里，进纸器需要额外多走 16 步）。
+#ifndef PAPER_SYNC_FEEDER_RATIO_NUM
+#    define PAPER_SYNC_FEEDER_RATIO_NUM  36u
+#endif
+#ifndef PAPER_SYNC_FEEDER_RATIO_DEN
+#    define PAPER_SYNC_FEEDER_RATIO_DEN  35u
+#endif
+// 额外补步使用的脉宽（μs）：越小越“快”，但太小可能丢步；默认沿用 FEEDER_FIND_NORMAL_* 的量级。
+#ifndef FEEDER_SYNC_EXTRA_HI_US
+#    define FEEDER_SYNC_EXTRA_HI_US  38u
+#endif
+#ifndef FEEDER_SYNC_EXTRA_LO_US
+#    define FEEDER_SYNC_EXTRA_LO_US  38u
+#endif
+
 
 // 进纸器单独送纸（M712 点动等）速度降低一半：在原 150/150 基础上减半 → 300/300
 #define FEEDER_FEED_RAMP_HI_US   800u   // 起步：400 → 800（再减半）
