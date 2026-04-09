@@ -2,6 +2,56 @@
 #include <map>
 #include "Regex.h"
 
+static String get_secure_device_id() {
+    uint64_t chip_id = ESP.getEfuseMac();
+    char device_id[17];
+    snprintf(device_id, sizeof(device_id), "%08X%08X", (uint32_t)(chip_id >> 32), (uint32_t)(chip_id & 0xFFFFFFFFULL));
+    return String(device_id);
+}
+
+static bool is_valid_nonce_char(char c) {
+    return (c >= '0' && c <= '9') ||
+           (c >= 'A' && c <= 'Z') ||
+           (c >= 'a' && c <= 'z') ||
+           c == '_' ||
+           c == '-';
+}
+
+Error secure_hello(const char* value, WebUI::AuthenticationLevel auth_level, WebUI::ESPResponseStream* out) {
+    if (!value || !*value) {
+        return Error::InvalidStatement;
+    }
+
+    // Keep transcript nonce simple and bounded for robust parsing on host side.
+    const size_t max_nonce_len = 64;
+    size_t nonce_len = strlen(value);
+    if (nonce_len > max_nonce_len) {
+        nonce_len = max_nonce_len;
+    }
+    for (size_t i = 0; i < nonce_len; ++i) {
+        if (!is_valid_nonce_char(value[i])) {
+            return Error::InvalidStatement;
+        }
+    }
+
+    String nonce(value);
+    if (nonce.length() > max_nonce_len) {
+        nonce = nonce.substring(0, max_nonce_len);
+    }
+    String secid = get_secure_device_id();
+    uint32_t ts = (uint32_t)(millis() / 1000UL);
+
+    // Fixed v1 plaintext transcript frame.
+    grbl_sendf(
+        out->client(),
+        "[SECHELLO:V1;SECPROTO=1;SECID=%s;NONCE=%s;TS=%lu]\r\n",
+        secid.c_str(),
+        nonce.c_str(),
+        (unsigned long)ts
+    );
+    return Error::Ok;
+}
+
 // WG Readable and writable as guest
 // WU Readable and writable as user and admin
 // WA Readable as user and admin, writable as admin
@@ -459,6 +509,7 @@ void make_grbl_commands() {
 #endif
     new GrblCommand("SLP", "System/Sleep", sleep_grbl, idleOrAlarm);
     new GrblCommand("I", "Build/Info", get_report_build_info, idleOrAlarm);
+    new GrblCommand("SECHELLO", "Security/Hello", secure_hello, idleOrAlarm);
     new GrblCommand("N", "GCode/StartupLines", report_startup_lines, idleOrAlarm);
     new GrblCommand("RST", "Settings/Restore", restore_settings, idleOrAlarm, WA);
 };

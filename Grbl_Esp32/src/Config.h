@@ -100,28 +100,30 @@ const int MAX_N_AXIS = 6;
 
 #define ENABLE_SD_CARD  // enable use of SD Card to run jobs
 
-#define ENABLE_WIFI  //enable wifi
+// WiFi 已禁用 - 优先使用蓝牙串口
+// #define ENABLE_WIFI  //enable wifi (已注释，关闭WiFi)
 
 #if defined(ENABLE_WIFI) || defined(ENABLE_BLUETOOTH)
 #    define WIFI_OR_BLUETOOTH
 #endif
 
-#define ENABLE_HTTP                //enable HTTP and all related services
-#define ENABLE_OTA                 //enable OTA
-#define ENABLE_TELNET              //enable telnet
-#define ENABLE_TELNET_WELCOME_MSG  //display welcome string when connect to telnet
-#define ENABLE_MDNS                //enable mDNS discovery
-#define ENABLE_SSDP                //enable UPNP discovery
-#define ENABLE_NOTIFICATIONS       //enable notifications
+// 以下 WiFi 相关功能已禁用
+// #define ENABLE_HTTP                //enable HTTP and all related services
+// #define ENABLE_OTA                 //enable OTA
+// #define ENABLE_TELNET              //enable telnet
+// #define ENABLE_TELNET_WELCOME_MSG  //display welcome string when connect to telnet
+// #define ENABLE_MDNS                //enable mDNS discovery
+// #define ENABLE_SSDP                //enable UPNP discovery
+// #define ENABLE_NOTIFICATIONS       //enable notifications
 
-#define ENABLE_SERIAL2SOCKET_IN
-#define ENABLE_SERIAL2SOCKET_OUT
+// #define ENABLE_SERIAL2SOCKET_IN
+// #define ENABLE_SERIAL2SOCKET_OUT
 
 // Captive portal is used when WiFi is in access point mode.  It lets the
 // WebUI come up automatically in the browser, instead of requiring the user
 // to browse manually to a default URL.  It works like airport and hotel
 // WiFi that takes you a special page as soon as you connect to that AP.
-#define ENABLE_CAPTIVE_PORTAL
+// #define ENABLE_CAPTIVE_PORTAL
 
 // Warning! The current authentication implementation is too weak to provide
 // security against an attacker, since passwords are stored and transmitted

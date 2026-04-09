@@ -47,6 +47,13 @@
 */
 
 #include "Grbl.h"
+
+static String get_secure_device_id_for_report() {
+    uint64_t chip_id = ESP.getEfuseMac();
+    char device_id[17];
+    snprintf(device_id, sizeof(device_id), "%08X%08X", (uint32_t)(chip_id >> 32), (uint32_t)(chip_id & 0xFFFFFFFFULL));
+    return String(device_id);
+}
 #include <map>
 
 #ifdef REPORT_HEAP
@@ -555,6 +562,9 @@ void report_build_info(const char* line, uint8_t client) {
     // NOTE: Compiled values, like override increments/max/min values, may be added at some point later.
     // These will likely have a comma delimiter to separate them.
     grbl_send(client, "]\r\n");
+    String secid = get_secure_device_id_for_report();
+    grbl_sendf(client, "[SECPROTO:1]\r\n");
+    grbl_sendf(client, "[SECID:%s]\r\n", secid.c_str());
     report_machine_type(client);
 #if defined(ENABLE_WIFI)
     grbl_send(client, (char*)WebUI::wifi_config.info());
