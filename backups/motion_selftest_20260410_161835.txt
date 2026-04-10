@@ -1,0 +1,25 @@
+﻿# time=2026-04-10T16:18:36
+# port=COM3 baud=115200
+[$I]
+[HLP:$$ $+ $# $S $L $G $I $N $x=val $Nx=line $J=line $SLP $C $X $H $F $E=err ~ ! ? ctrl-x]
+ok
+[? before]
+<Idle|MPos:0.000,0.000,0.000|FS:0,0|WCO:0.000,0.000,0.000>
+ok
+[$X unlock]
+ok
+[$$ subset]
+$20=0
+$21=0
+$22=0
+$23=3
+[$J +X1]
+ok
+[? after +X]
+<Idle|MPos:1.000,0.000,0.000|FS:0,0|Ov:100,100,100>
+ok
+[$J -X1]
+ok
+[? after -X]
+<Idle|MPos:0.000,0.000,0.000|FS:0,0>
+ok

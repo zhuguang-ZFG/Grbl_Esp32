@@ -1,0 +1,58 @@
+﻿# time=2026-04-10T16:43:16
+# port=COM3 baud=115200
+# gcode_file=c:\Users\zhugu\Documents\GitHub\inkscape_px\Grbl_Esp32\backups\dryrun_penup_20260410_164316.gcode
+[identify]
+[VER:1.3a.20211103:]
+[OPT:PHS]
+[SECPROTO:1]
+[SECID:0000DC746F6CDDA0]
+[MSG:Using machine:Custom 3-Axis HR4988]
+ok
+[unlock]
+ok
+[limits]
+$130=200.000
+ok
+$131=200.000
+ok
+$132=20.000
+ok
+[safety_flags]
+$20=0
+ok
+$21=0
+ok
+$22=0
+ok
+[status_before]
+<Idle|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100>
+ok
+[L1] G21
+  -> ok
+[L2] G90
+  -> ok
+[L3] M5
+  -> ok
+[L4] G0 Z0
+  -> ok
+[L5] G0 X20 Y20
+  -> ok
+[L6] G1 X180 Y20 F1500
+  -> ok
+[L7] G1 X180 Y180 F1500
+  -> ok
+[L8] G1 X20 Y180 F1500
+  -> ok
+[L9] G1 X20 Y20 F1500
+  -> ok
+[L10] G0 X0 Y0
+  -> ok
+[L11] M5
+  -> ok
+[status_after]
+<Run|MPos:180.000,34.550,0.000|FS:1500,0>
+ok
+[summary] errors=0
+[post_check]
+<Idle|MPos:0.000,0.000,0.000|FS:0,0>
+[result] dry-run complete and returned home

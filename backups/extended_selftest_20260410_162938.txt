@@ -1,0 +1,24 @@
+﻿# time=2026-04-10T16:29:38
+# port=COM3 baud=115200
+[id]
+[VER:1.3a.20211103:]
+[OPT:PHS]
+[SECPROTO:1]
+[SECID:0000DC746F6CDDA0]
+[MSG:Using machine:Custom 3-Axis HR4988]
+ok
+[unlock]
+ok
+[jog_stress] cycles=30 ok_cycles=30 fail_cycles=0
+[status_after_jog]
+<Idle|MPos:0.000,0.000,0.000|FS:0,0>
+ok
+[poll_stability] samples=80 ok=80 bad=0
+[status_after_poll]
+<Idle|MPos:0.000,0.000,0.000|FS:0,0>
+ok
+[ctrl-x]
+Grbl 1.3a ['$' for help]
+[status_after_reset]
+<Idle|MPos:0.000,0.000,0.000|FS:0,0|WCO:0.000,0.000,0.000>
+ok
