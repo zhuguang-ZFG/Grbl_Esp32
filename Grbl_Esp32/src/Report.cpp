@@ -555,6 +555,15 @@ void report_build_info(const char* line, uint8_t client) {
     // NOTE: Compiled values, like override increments/max/min values, may be added at some point later.
     // These will likely have a comma delimiter to separate them.
     grbl_send(client, "]\r\n");
+#ifdef PAIXI_DEVICE_ID
+    grbl_sendf(client, "[SECID:%s]\r\n", PAIXI_DEVICE_ID);
+#endif
+#ifdef PAIXI_SECURITY_PROTOCOL
+    grbl_sendf(client, "[SECPROTO:%s]\r\n", PAIXI_SECURITY_PROTOCOL);
+#endif
+#ifdef PAIXI_BUILD_TAG
+    grbl_sendf(client, "[TAG:%s]\r\n", PAIXI_BUILD_TAG);
+#endif
     report_machine_type(client);
 #if defined(ENABLE_WIFI)
     grbl_send(client, (char*)WebUI::wifi_config.info());

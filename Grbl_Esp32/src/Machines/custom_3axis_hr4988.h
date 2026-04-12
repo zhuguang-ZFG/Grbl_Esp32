@@ -18,7 +18,10 @@
     Enable pin: Output LOW to enable steppers, HIGH to disable
 */
 
-#define MACHINE_NAME "Custom 3-Axis HR4988"
+#define MACHINE_NAME "Paixi Writer 3-Axis"
+#define PAIXI_DEVICE_ID "PAIXI_WRITER_3AXIS"
+#define PAIXI_SECURITY_PROTOCOL "paixi_serial_v1"
+#define PAIXI_BUILD_TAG "SECURE_V1 PAIXI_WRITER"
 
 // Enable software debounce since no hardware R/C filters
 #define ENABLE_SOFTWARE_DEBOUNCE

@@ -61,11 +61,15 @@ namespace WebUI {
 
     const char* BTConfig::info() {
         static String result;
-        String        tmp;
+        String        configured_name;
         result = "[MSG:";
         if (Is_BT_on()) {
+            configured_name = bt_name ? bt_name->get() : _btname;
+            if (configured_name.length() == 0) {
+                configured_name = _btname;
+            }
             result += "Mode=BT:Name=";
-            result += _btname;
+            result += configured_name;
             result += "(";
             result += device_address();
             result += "):Status=";
