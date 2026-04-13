@@ -18,8 +18,8 @@
     Enable pin: Output LOW to enable steppers, HIGH to disable
 
     Pen Control:
-    - Z=0mm: Pen up (travel position)
-    - Z=5mm: Pen down (writing position)
+    - Z=0mm: Pen down (writing position)
+    - Z=5mm: Pen up (travel position)
 */
 
 #define MACHINE_NAME "Custom 3-Axis HR4988"
@@ -29,8 +29,8 @@
 #define PAIXI_BUILD_TAG "SECURE_V1 PAIXI_WRITER"
 #define PAIXI_FIRMWARE_NAME "Paixi Writer Firmware"
 #define PAIXI_PEN_M3_M5_CONTROL
-#define PAIXI_PEN_UP_Z 0.0f
-#define PAIXI_PEN_DOWN_Z 5.0f
+#define PAIXI_PEN_UP_Z 5.0f
+#define PAIXI_PEN_DOWN_Z 0.0f
 #define PAIXI_PEN_MOTION_FEED 600.0f
 
 // Enable software debounce since no hardware R/C filters
