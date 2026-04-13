@@ -399,8 +399,18 @@ void           init_motors() {
 #endif
 
     if (STEPPERS_DISABLE_PIN != UNDEFINED_PIN) {
-        pinMode(STEPPERS_DISABLE_PIN, OUTPUT);  // global motor enable pin
+        // Avoid a low-level glitch when switching the pin to OUTPUT.
+        // On some MCUs the output register defaults low, so calling pinMode(OUTPUT) first can
+        // briefly drive nEN low (enabling the driver) until the next digitalWrite().
+        bool disable_level = true;  // "disabled" is written as a logic level to the global pin
+        if (step_enable_invert->get()) {
+            disable_level = !disable_level;
+        }
+        digitalWrite(STEPPERS_DISABLE_PIN, disable_level);  // preload level before OUTPUT
+        pinMode(STEPPERS_DISABLE_PIN, OUTPUT);              // global motor enable pin
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "Global stepper disable pin:%s", pinName(STEPPERS_DISABLE_PIN));
+        // Ensure a deterministic startup state.
+        motors_set_disable(true);
     }
 
     // certain motors need features to be turned on. Check them here
