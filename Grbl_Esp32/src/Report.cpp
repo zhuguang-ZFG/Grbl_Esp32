@@ -557,12 +557,25 @@ void report_build_info(const char* line, uint8_t client) {
     grbl_send(client, "]\r\n");
 #ifdef PAIXI_DEVICE_ID
     grbl_sendf(client, "[SECID:%s]\r\n", PAIXI_DEVICE_ID);
+    grbl_sendf(client, "[ID:%s]\r\n", PAIXI_DEVICE_ID);
 #endif
 #ifdef PAIXI_SECURITY_PROTOCOL
     grbl_sendf(client, "[SECPROTO:%s]\r\n", PAIXI_SECURITY_PROTOCOL);
+    grbl_sendf(client, "[PROTO:%s]\r\n", PAIXI_SECURITY_PROTOCOL);
 #endif
 #ifdef PAIXI_BUILD_TAG
     grbl_sendf(client, "[TAG:%s]\r\n", PAIXI_BUILD_TAG);
+    grbl_sendf(client, "[BUILD_TAG:%s]\r\n", PAIXI_BUILD_TAG);
+#endif
+#ifdef PAIXI_MODEL_NAME
+    grbl_sendf(client, "[MODEL:%s]\r\n", PAIXI_MODEL_NAME);
+#elif defined(MACHINE_NAME)
+    grbl_sendf(client, "[MODEL:%s]\r\n", MACHINE_NAME);
+#endif
+#ifdef PAIXI_FIRMWARE_NAME
+    grbl_sendf(client, "[FIRMWARE:%s]\r\n", PAIXI_FIRMWARE_NAME);
+#else
+    grbl_sendf(client, "[FIRMWARE:Grbl_Esp32 %s.%s]\r\n", GRBL_VERSION, GRBL_VERSION_BUILD);
 #endif
     report_machine_type(client);
 #if defined(ENABLE_WIFI)

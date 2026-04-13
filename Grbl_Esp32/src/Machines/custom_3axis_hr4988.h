@@ -19,9 +19,11 @@
 */
 
 #define MACHINE_NAME "Paixi Writer 3-Axis"
+#define PAIXI_MODEL_NAME "PX-WRITER-3A"
 #define PAIXI_DEVICE_ID "PAIXI_WRITER_3AXIS"
 #define PAIXI_SECURITY_PROTOCOL "paixi_serial_v1"
 #define PAIXI_BUILD_TAG "SECURE_V1 PAIXI_WRITER"
+#define PAIXI_FIRMWARE_NAME "Paixi Writer Firmware"
 
 // Enable software debounce since no hardware R/C filters
 #define ENABLE_SOFTWARE_DEBOUNCE
