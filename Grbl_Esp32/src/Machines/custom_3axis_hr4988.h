@@ -10,15 +10,19 @@
 
     Hardware Configuration:
     - X Axis:  GPIO27 (STEP), GPIO26 (DIR)
-    - Y Axis:  GPIO13 (STEP), GPIO12 (DIR) - dual motor ganged (Y1Y2)
-    - Z Axis:  GPIO17 (STEP), GPIO18 (DIR)
-    - Enable:   GPIO25 (shared for all 4 HR4988 drivers, active LOW)
+    - Y1Y2 Axis: 32K_XN (GPIO33/STEP), 32K_XP (GPIO32/DIR) - dual motor ganged
+    - Z Axis:  MTMS (GPIO14/STEP), MTDI (GPIO12/DIR) - Pen up/down control
+    - Enable:   GPIO25 (shared for all 4 HR4988 drivers, nENABLE active low)
 
     Note: No limit switches or position sensors are used.
     Enable pin: Output LOW to enable steppers, HIGH to disable
+
+    Pen Control:
+    - Z=0mm: Pen down (writing position)
+    - Z=20mm: Pen up (travel position)
 */
 
-#define MACHINE_NAME "Paixi Writer 3-Axis"
+#define MACHINE_NAME "Custom 3-Axis HR4988"
 #define PAIXI_MODEL_NAME "PX-WRITER-3A"
 #define PAIXI_DEVICE_ID "PAIXI_WRITER_3AXIS"
 #define PAIXI_SECURITY_PROTOCOL "paixi_serial_v1"
@@ -40,16 +44,19 @@
 #define X_DIRECTION_PIN         GPIO_NUM_26
 
 // Y Axis (Hardware ganged - both motors share STEP/DIR signals)
-// Y1 and Y2 motors are connected in parallel to the same signals
-#define Y_STEP_PIN              GPIO_NUM_13
-#define Y_DIRECTION_PIN         GPIO_NUM_12
+// Connected to 32K_XN (GPIO33) and 32K_XP (GPIO32) crystal pins
+// NOTE: These are 32.768kHz crystal pins, may interfere with RTC functionality
+#define Y_STEP_PIN              GPIO_NUM_33
+#define Y_DIRECTION_PIN         GPIO_NUM_32
 
 // Z Axis
-#define Z_STEP_PIN              GPIO_NUM_17
-#define Z_DIRECTION_PIN         GPIO_NUM_18
+// Connected to MTMS (GPIO14) and MTDI (GPIO12) JTAG pins
+// NOTE: May interfere with debugging functionality
+#define Z_STEP_PIN              GPIO_NUM_14
+#define Z_DIRECTION_PIN         GPIO_NUM_12
 
 // Shared stepper enable pin for all HR4988 drivers
-// Active LOW: Output LOW to enable, HIGH to disable
+// Active LOW (nENABLE): Output LOW to enable, HIGH to disable (HR4988 standard)
 #define STEPPERS_DISABLE_PIN    GPIO_NUM_25
 
 // Note: No limit switches are used in this configuration
@@ -60,12 +67,12 @@
 
 // === Default Settings ===
 
-#define DEFAULT_STEP_PULSE_MICROSECONDS     3
-#define DEFAULT_STEPPER_IDLE_LOCK_TIME      255  // Keep steppers enabled
+#define DEFAULT_STEP_PULSE_MICROSECONDS     5  // Increased for better driver reliability
+#define DEFAULT_STEPPER_IDLE_LOCK_TIME      250
 
 #define DEFAULT_STEPPING_INVERT_MASK        0  // uint8_t
 #define DEFAULT_DIRECTION_INVERT_MASK        0  // uint8_t
-#define DEFAULT_INVERT_ST_ENABLE             1  // boolean (1 = active low enable)
+#define DEFAULT_INVERT_ST_ENABLE             0  // boolean (no invert - nENABLE active low)
 
 #define DEFAULT_STATUS_REPORT_MASK           1
 
@@ -84,19 +91,19 @@
 
 #define DEFAULT_LASER_MODE           0       // false
 
-// Motor parameters (adjust based on your motors)
+// Motor parameters (adjusted for plotter/pen writing machine)
 #define DEFAULT_X_STEPS_PER_MM       200.0
 #define DEFAULT_Y_STEPS_PER_MM       200.0
-#define DEFAULT_Z_STEPS_PER_MM       200.0
+#define DEFAULT_Z_STEPS_PER_MM       400.0   // Higher resolution for pen control
 
 #define DEFAULT_X_MAX_RATE           5000.0  // mm/min
 #define DEFAULT_Y_MAX_RATE           5000.0  // mm/min
-#define DEFAULT_Z_MAX_RATE           3000.0  // mm/min
+#define DEFAULT_Z_MAX_RATE           1500.0  // Slower for pen up/down control
 
 #define DEFAULT_X_ACCELERATION       500.0   // mm/sec^2
 #define DEFAULT_Y_ACCELERATION       500.0   // mm/sec^2
-#define DEFAULT_Z_ACCELERATION       300.0   // mm/sec^2
+#define DEFAULT_Z_ACCELERATION       800.0   // Faster acceleration for pen lift
 
 #define DEFAULT_X_MAX_TRAVEL         200.0   // mm - adjust to your machine
 #define DEFAULT_Y_MAX_TRAVEL         200.0   // mm - adjust to your machine
-#define DEFAULT_Z_MAX_TRAVEL         50.0    // mm - adjust to your machine
+#define DEFAULT_Z_MAX_TRAVEL         20.0    // mm - pen lift height (0-20mm)
