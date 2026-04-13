@@ -44,6 +44,8 @@ namespace {
 
         mc_line(target, &pl_data);
         protocol_buffer_synchronize();
+        plan_sync_position();
+        gc_sync_position();
     }
 }
 #endif
