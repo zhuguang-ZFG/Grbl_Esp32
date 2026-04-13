@@ -411,6 +411,14 @@ void           init_motors() {
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "Global stepper disable pin:%s", pinName(STEPPERS_DISABLE_PIN));
         // Ensure a deterministic startup state.
         motors_set_disable(true);
+        grbl_msg_sendf(
+            CLIENT_SERIAL,
+            MsgLevel::Info,
+            "Stepper disable: setting=$4(inv)=%d rawGPIO=%d effectiveDisabled=%d",
+            (int)step_enable_invert->get(),
+            (int)digitalRead(STEPPERS_DISABLE_PIN),
+            (int)get_stepper_disable()
+        );
     }
 
     // certain motors need features to be turned on. Check them here

@@ -105,6 +105,20 @@ bool can_park() {
 void protocol_main_loop() {
     client_reset_read_buffer(CLIENT_ALL);
     empty_lines();
+    // Ensure steppers start in a known disabled state when entering the protocol loop.
+    // Some boards/drivers can appear enabled due to earlier initialization side effects;
+    // motion will re-enable via st_wake_up() when needed.
+    motors_set_disable(true);
+    if (STEPPERS_DISABLE_PIN != UNDEFINED_PIN) {
+        grbl_msg_sendf(
+            CLIENT_SERIAL,
+            MsgLevel::Info,
+            "Stepper disable (protocol): $4(inv)=%d rawGPIO=%d effectiveDisabled=%d",
+            (int)step_enable_invert->get(),
+            (int)digitalRead(STEPPERS_DISABLE_PIN),
+            (int)get_stepper_disable()
+        );
+    }
     //uint8_t client = CLIENT_SERIAL; // default client
     // Perform some machine checks to make sure everything is good to go.
 #ifdef CHECK_LIMITS_AT_INIT
