@@ -140,7 +140,7 @@
 // 快进约 8.5k 步时脱离传感器，这里给到 9000 步保证能退回到感应点
 #define PANEL_BACK_STEPS_MAX    9000u
 // 面板电机：最终微调到位的步数
-#define PANEL_FINAL_STEPS     440u
+#define PANEL_FINAL_STEPS     510u
 
 // 进纸器电机：寻找新纸到感应器的最大步数（超时时间，可根据实际距离调大）
 #define FEEDER_FIND_STEPS_MAX   12000u
@@ -149,7 +149,7 @@
 #    define PAPER_ADVANCE_CM_CLAMP_START  7   // 进纸多少 cm 后开始夹紧
 #endif
 #ifndef PAPER_ADVANCE_CM
-#    define PAPER_ADVANCE_CM    9  // 送纸器停止时的总送纸距离(cm)
+#    define PAPER_ADVANCE_CM    8  // 送纸器停止时的总送纸距离(cm)
 #endif
 #ifndef PAPER_STEPS_PER_CM
 #    define PAPER_STEPS_PER_CM  1062u   // 面板/进纸器每厘米步数（按机构实测可调）
