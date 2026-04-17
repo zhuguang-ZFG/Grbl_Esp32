@@ -107,8 +107,8 @@
 #define DEFAULT_LASER_MODE           0       // false
 
 // Motor parameters (adjusted for plotter/pen writing machine)
-#define DEFAULT_X_STEPS_PER_MM       200.0
-#define DEFAULT_Y_STEPS_PER_MM       200.0
+#define DEFAULT_X_STEPS_PER_MM       100.0
+#define DEFAULT_Y_STEPS_PER_MM       100.0
 #define DEFAULT_Z_STEPS_PER_MM       100.0   // 1 step = 0.01 mm
 
 #define DEFAULT_X_MAX_RATE           5000.0  // mm/min
