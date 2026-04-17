@@ -86,7 +86,7 @@
 #define DEFAULT_STEPPER_IDLE_LOCK_TIME      250
 
 #define DEFAULT_STEPPING_INVERT_MASK        0  // uint8_t
-#define DEFAULT_DIRECTION_INVERT_MASK        0  // uint8_t
+#define DEFAULT_DIRECTION_INVERT_MASK        bit(Z_AXIS)  // uint8_t (invert Z only)
 #define DEFAULT_INVERT_ST_ENABLE             0  // boolean (no invert - nENABLE active low)
 
 #define DEFAULT_STATUS_REPORT_MASK           1
@@ -109,7 +109,7 @@
 // Motor parameters (adjusted for plotter/pen writing machine)
 #define DEFAULT_X_STEPS_PER_MM       200.0
 #define DEFAULT_Y_STEPS_PER_MM       200.0
-#define DEFAULT_Z_STEPS_PER_MM       400.0   // Higher resolution for pen control
+#define DEFAULT_Z_STEPS_PER_MM       100.0   // 1 step = 0.01 mm
 
 #define DEFAULT_X_MAX_RATE           5000.0  // mm/min
 #define DEFAULT_Y_MAX_RATE           5000.0  // mm/min
