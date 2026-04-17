@@ -32,6 +32,17 @@
 #define PAIXI_PEN_UP_Z 5.0f
 #define PAIXI_PEN_DOWN_Z 0.0f
 #define PAIXI_PEN_MOTION_FEED 600.0f
+#define CUSTOM_CODE_FILENAME "Custom/paixi_writer_tool_change.cpp"
+
+// Conservative manual tool-change flow for Tn M6:
+// 1. Lift pen via M5
+// 2. Move to the same fixed pen-change point used by the sender workflow
+// 3. Pause with M0 and wait for operator confirmation
+//
+// Keep these values aligned with the writing workflow's jobPenChangeX/jobPenChangeY.
+#define PAIXI_M6_USE_TOOL_CHANGE_POINT 1
+#define PAIXI_M6_TOOL_CHANGE_X 120.5f
+#define PAIXI_M6_TOOL_CHANGE_Y 35.0f
 
 // Enable software debounce since no hardware R/C filters
 #define ENABLE_SOFTWARE_DEBOUNCE
