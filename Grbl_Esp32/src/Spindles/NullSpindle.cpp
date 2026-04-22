@@ -24,6 +24,12 @@
 
 #ifdef PAIXI_PEN_M3_M5_CONTROL
 namespace {
+    float get_pen_up_z() {
+        return paixi_pen_up_z ? paixi_pen_up_z->get() : PAIXI_PEN_UP_Z;
+    }
+    float get_pen_down_z() {
+        return paixi_pen_down_z ? paixi_pen_down_z->get() : PAIXI_PEN_DOWN_Z;
+    }
     void move_pen_to_z(float target_z) {
         float* current = system_get_mpos();
         float  target[MAX_N_AXIS] = { 0 };
@@ -66,9 +72,9 @@ namespace Spindles {
     void Null::set_state(SpindleState state, uint32_t rpm) {
 #ifdef PAIXI_PEN_M3_M5_CONTROL
         if (state == SpindleState::Disable) {
-            move_pen_to_z(PAIXI_PEN_UP_Z);
+            move_pen_to_z(get_pen_up_z());
         } else {
-            move_pen_to_z(PAIXI_PEN_DOWN_Z);
+            move_pen_to_z(get_pen_down_z());
         }
 #endif
         _current_state    = state;
@@ -82,8 +88,8 @@ namespace Spindles {
             CLIENT_ALL,
             MsgLevel::Info,
             "Pen control via M3/M5 enabled (M3->Z%.3f, M5->Z%.3f)",
-            (double)PAIXI_PEN_DOWN_Z,
-            (double)PAIXI_PEN_UP_Z
+            (double)get_pen_down_z(),
+            (double)get_pen_up_z()
         );
 #else
         grbl_msg_sendf(CLIENT_ALL, MsgLevel::Info, "No spindle");

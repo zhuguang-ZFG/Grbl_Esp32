@@ -52,6 +52,10 @@ FloatSetting*    coolant_start_delay;
 FlagSetting*     spindle_enbl_off_with_zero_speed;
 FlagSetting*     spindle_enable_invert;
 FlagSetting*     spindle_output_invert;
+#ifdef PAIXI_PEN_M3_M5_CONTROL
+FloatSetting* paixi_pen_up_z;
+FloatSetting* paixi_pen_down_z;
+#endif
 
 FloatSetting* spindle_pwm_off_value;
 FloatSetting* spindle_pwm_min_value;
@@ -359,6 +363,10 @@ void make_settings() {
         new FlagSetting(GRBL, WG, NULL, "Spindle/Enable/OffWithSpeed", DEFAULT_SPINDLE_ENABLE_OFF_WITH_ZERO_SPEED, checkSpindleChange);
 
     spindle_enable_invert = new FlagSetting(GRBL, WG, NULL, "Spindle/Enable/Invert", DEFAULT_INVERT_SPINDLE_ENABLE_PIN, checkSpindleChange);
+#ifdef PAIXI_PEN_M3_M5_CONTROL
+    paixi_pen_up_z   = new FloatSetting(GRBL, WG, "80", "Paixi/PenUpZ", PAIXI_PEN_UP_Z, -1000.0, 1000.0);
+    paixi_pen_down_z = new FloatSetting(GRBL, WG, "81", "Paixi/PenDownZ", PAIXI_PEN_DOWN_Z, -1000.0, 1000.0);
+#endif
 
     // GRBL Non-numbered settings
     startup_line_0 = new StringSetting(EXTENDED, WG, "N0", "GCode/Line0", "", checkStartupLine);

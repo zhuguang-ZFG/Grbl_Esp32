@@ -54,6 +54,10 @@ extern FloatSetting* coolant_start_delay;
 extern FlagSetting*  spindle_enbl_off_with_zero_speed;
 extern FlagSetting*  spindle_enable_invert;
 extern FlagSetting*  spindle_output_invert;
+#ifdef PAIXI_PEN_M3_M5_CONTROL
+extern FloatSetting* paixi_pen_up_z;
+extern FloatSetting* paixi_pen_down_z;
+#endif
 
 extern FloatSetting* spindle_pwm_off_value;
 extern FloatSetting* spindle_pwm_min_value;

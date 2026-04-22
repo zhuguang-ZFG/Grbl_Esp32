@@ -29,8 +29,8 @@
 #define PAIXI_BUILD_TAG "SECURE_V1 PAIXI_WRITER"
 #define PAIXI_FIRMWARE_NAME "Paixi Writer Firmware"
 #define PAIXI_PEN_M3_M5_CONTROL
-#define PAIXI_PEN_UP_Z 5.0f
-#define PAIXI_PEN_DOWN_Z 0.0f
+#define PAIXI_PEN_UP_Z 0.0f
+#define PAIXI_PEN_DOWN_Z 5.0f
 #define PAIXI_PEN_MOTION_FEED 600.0f
 #define CUSTOM_CODE_FILENAME "Custom/paixi_writer_tool_change.cpp"
 
