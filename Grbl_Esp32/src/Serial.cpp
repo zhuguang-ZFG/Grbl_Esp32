@@ -151,6 +151,14 @@ static uint8_t getClientChar(uint8_t* data) {
         }
     }
 #endif
+#ifdef ENABLE_BLE
+    if (WebUI::ble_uart_config.hasClient()) {
+        if ((res = WebUI::ble_uart_config.read()) != -1) {
+            *data = res;
+            return CLIENT_BLE;
+        }
+    }
+#endif
 #if defined(ENABLE_WIFI) && defined(ENABLE_HTTP) && defined(ENABLE_SERIAL2SOCKET_IN)
     if (WebUI::Serial2Socket.available()) {
         *data = WebUI::Serial2Socket.read();
@@ -201,6 +209,9 @@ void clientCheckTask(void* pvParameters) {
 #endif
 #ifdef ENABLE_BLUETOOTH
         WebUI::bt_config.handle();
+#endif
+#ifdef ENABLE_BLE
+        WebUI::ble_uart_config.handle();
 #endif
 #if defined(ENABLE_WIFI) && defined(ENABLE_HTTP) && defined(ENABLE_SERIAL2SOCKET_IN)
         WebUI::Serial2Socket.handle_flush();
@@ -354,6 +365,11 @@ void client_write(uint8_t client, const char* text) {
     if (WebUI::SerialBT.hasClient() && (client == CLIENT_BT || client == CLIENT_ALL)) {
         WebUI::SerialBT.print(text);
         //delay(10); // possible fix for dropped characters
+    }
+#endif
+#ifdef ENABLE_BLE
+    if (WebUI::ble_uart_config.hasClient() && (client == CLIENT_BLE || client == CLIENT_ALL)) {
+        WebUI::ble_uart_config.print(text);
     }
 #endif
 #if defined(ENABLE_WIFI) && defined(ENABLE_HTTP) && defined(ENABLE_SERIAL2SOCKET_OUT)

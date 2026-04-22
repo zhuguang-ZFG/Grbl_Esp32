@@ -634,6 +634,11 @@ void report_realtime_status(uint8_t client) {
             bufsize = 512 - WebUI::SerialBT.available();
         }
 #    endif  //ENABLE_BLUETOOTH
+#    ifdef ENABLE_BLE
+        if (client == CLIENT_BLE) {
+            bufsize = WebUI::ble_uart_config.rx_ring_bytes_free();
+        }
+#    endif
         if (client == CLIENT_SERIAL) {
             bufsize = client_get_rx_buffer_available(CLIENT_SERIAL);
         }

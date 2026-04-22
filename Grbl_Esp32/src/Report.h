@@ -49,8 +49,13 @@ enum class Message : uint8_t {
 #define CLIENT_WEBUI 2
 #define CLIENT_TELNET 3
 #define CLIENT_INPUT 4
+#ifdef ENABLE_BLE
+#    define CLIENT_BLE 5
+#    define CLIENT_COUNT 6  // SERIAL, BT, WEBUI, TELNET, INPUT, BLE
+#else
+#    define CLIENT_COUNT 5
+#endif
 #define CLIENT_ALL 0xFF
-#define CLIENT_COUNT 5  // total number of client types regardless if they are used
 
 enum class MsgLevel : int8_t {  // Use $Message/Level
     None    = 0,

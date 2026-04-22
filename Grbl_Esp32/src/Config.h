@@ -97,10 +97,16 @@ const int MAX_N_AXIS = 6;
 //#define SSID_PASSWORD  "your SSID password"
 //CONFIGURE_EYECATCH_BEGIN (DO NOT MODIFY THIS LINE)
 #define ENABLE_BLUETOOTH  // enable bluetooth
+// BLE GATT (Nordic UART UUIDs) alongside classic BluetoothSerial SPP; requires Bluedroid.
+#define ENABLE_BLE
+#if defined(ENABLE_BLE) && !defined(ENABLE_BLUETOOTH)
+#    error ENABLE_BLE requires ENABLE_BLUETOOTH (same controller / settings).
+#endif
 
 #define ENABLE_SD_CARD  // enable use of SD Card to run jobs
 
-#define ENABLE_WIFI  //enable wifi
+// WiFi off: saves RAM and radio; use USB + classic BT + BLE for control.
+// #define ENABLE_WIFI  //enable wifi
 
 #if defined(ENABLE_WIFI) || defined(ENABLE_BLUETOOTH)
 #    define WIFI_OR_BLUETOOTH

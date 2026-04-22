@@ -75,6 +75,10 @@ const char* const GRBL_VERSION_BUILD = "20211103";
 #    include "WebUI/BTConfig.h"
 #endif
 
+#ifdef ENABLE_BLE
+#    include "WebUI/BLEConfig.h"
+#endif
+
 #ifdef ENABLE_WIFI
 #    include "WebUI/WifiConfig.h"
 #    ifdef ENABLE_HTTP

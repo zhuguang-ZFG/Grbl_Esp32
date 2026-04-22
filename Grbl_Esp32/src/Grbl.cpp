@@ -70,6 +70,10 @@ void grbl_init() {
 #ifdef ENABLE_BLUETOOTH
     WebUI::bt_config.begin();
 #endif
+#ifdef ENABLE_BLE
+    // After classic SPP: BTConfig::begin() ends with SerialBT.begin() which enables the controller.
+    WebUI::ble_uart_config.begin();
+#endif
     WebUI::inputBuffer.begin();
 }
 
