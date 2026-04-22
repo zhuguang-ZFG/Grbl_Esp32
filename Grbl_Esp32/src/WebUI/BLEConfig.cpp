@@ -26,11 +26,14 @@ static const char* kNusRxUuid      = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";
 static const char* kNusTxUuid      = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
 
 static constexpr size_t kRxRingCap = 512;
+static constexpr size_t kDefaultTxChunk = 20;
+static constexpr size_t kMaxTxChunk     = 244;  // 247 (common max MTU) - 3 ATT header
 
 static uint8_t     s_rx_ring[kRxRingCap];
 static volatile size_t s_rx_head = 0;
 static volatile size_t s_rx_tail = 0;
 static portMUX_TYPE    s_rx_mux  = portMUX_INITIALIZER_UNLOCKED;
+static volatile size_t s_tx_chunk = kDefaultTxChunk;
 
 static bool                 s_connected = false;
 static BLEServer*           s_server    = nullptr;
@@ -51,6 +54,15 @@ class GrblBLERxCallbacks : public BLECharacteristicCallbacks {
         std::string v = pCharacteristic->getValue();
         if (v.length() == 0) {
             return;
+        }
+        // Adaptive TX chunk: if client starts writing packets larger than 20 bytes,
+        // it likely completed MTU negotiation; mirror that payload size for notify.
+        if (v.length() > kDefaultTxChunk) {
+            size_t hinted = v.length();
+            if (hinted > kMaxTxChunk) {
+                hinted = kMaxTxChunk;
+            }
+            s_tx_chunk = hinted;
         }
         taskENTER_CRITICAL(&s_rx_mux);
         for (size_t i = 0; i < v.length(); ++i) {
@@ -75,6 +87,7 @@ void BLEUartConfig::begin() {
         return;
     }
     s_rx_head = s_rx_tail = 0;
+    s_tx_chunk            = kDefaultTxChunk;
 
     String name = (bt_name != nullptr) ? bt_name->get() : String("Grbl");
     if (name.length() == 0) {
@@ -137,8 +150,10 @@ void BLEUartConfig::print(const char* text) {
     }
     const size_t len = strlen(text);
     size_t       off = 0;
-    // Default ATT MTU payload; safe for mini programs before MTU exchange.
-    const size_t chunk = 20;
+    size_t chunk = s_tx_chunk;
+    if (chunk < kDefaultTxChunk || chunk > kMaxTxChunk) {
+        chunk = kDefaultTxChunk;
+    }
     while (off < len) {
         size_t n = len - off;
         if (n > chunk) {
