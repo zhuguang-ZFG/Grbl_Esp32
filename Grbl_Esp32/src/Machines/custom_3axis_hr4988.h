@@ -83,7 +83,7 @@
 // === Default Settings ===
 
 #define DEFAULT_STEP_PULSE_MICROSECONDS     5  // Increased for better driver reliability
-#define DEFAULT_STEPPER_IDLE_LOCK_TIME      250
+#define DEFAULT_STEPPER_IDLE_LOCK_TIME      255  // Keep steppers energized to resist pen spring rebound
 
 #define DEFAULT_STEPPING_INVERT_MASK        0  // uint8_t
 #define DEFAULT_DIRECTION_INVERT_MASK        bit(Z_AXIS)  // uint8_t (invert Z only)
@@ -113,11 +113,11 @@
 
 #define DEFAULT_X_MAX_RATE           5000.0  // mm/min
 #define DEFAULT_Y_MAX_RATE           5000.0  // mm/min
-#define DEFAULT_Z_MAX_RATE           1500.0  // Slower for pen up/down control
+#define DEFAULT_Z_MAX_RATE           600.0   // Conservative Z speed for pen up/down with spring load
 
 #define DEFAULT_X_ACCELERATION       500.0   // mm/sec^2
 #define DEFAULT_Y_ACCELERATION       500.0   // mm/sec^2
-#define DEFAULT_Z_ACCELERATION       800.0   // Faster acceleration for pen lift
+#define DEFAULT_Z_ACCELERATION       60.0    // Gentle Z acceleration to avoid missed steps on pen contact
 
 #define DEFAULT_X_MAX_TRAVEL         200.0   // mm - adjust to your machine
 #define DEFAULT_Y_MAX_TRAVEL         200.0   // mm - adjust to your machine
