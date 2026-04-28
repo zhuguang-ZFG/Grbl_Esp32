@@ -837,8 +837,8 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
                 grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M716: paper system not configured");
                 return Error::Ok;
             }
-            // 步数：0 表示使用 CLAMP_TOGGLE_STEPS
-            uint16_t nsteps = (steps > 0 && steps <= 10000) ? steps : 220;  // 默认 220 步（夹紧和松开都一样）
+            // 步数：0 表示使用 CLAMP_TOGGLE_STEPS（与自动换纸流程保持一致）
+            uint16_t nsteps = (steps > 0 && steps <= 10000) ? steps : (uint16_t)CLAMP_TOGGLE_STEPS;
             // 方向逻辑：Q=0 为夹紧(clamp)，Q=1 为松开(release)；默认为 0(夹紧)
             bool do_clamp = (clamp_dir != 1);  // Q=0 或未提供 → 夹紧; Q=1 → 松开
             
