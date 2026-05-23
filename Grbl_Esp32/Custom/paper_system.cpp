@@ -74,21 +74,23 @@ static bool     license_ok = false;
 static uint32_t license_expected_code();  // 前向声明
 
 #define LICENSE_NVS_NAMESPACE "license"
-#define LICENSE_NVS_KEY_OK    "ok"
+#define LICENSE_NVS_KEY_CODE  "code"
 
 static void license_load_from_nvs() {
     Preferences prefs;
-    if (!prefs.begin(LICENSE_NVS_NAMESPACE, true))  // true = 只读
+    if (!prefs.begin(LICENSE_NVS_NAMESPACE, true))
         return;
-    license_ok = (prefs.getUChar(LICENSE_NVS_KEY_OK, 0) != 0);
+    uint32_t stored = prefs.getULong(LICENSE_NVS_KEY_CODE, 0);
     prefs.end();
+    // 每次启动都用当前芯片 MAC 重算期望码比对，克隆芯片无法通过
+    license_ok = (stored != 0 && stored == license_expected_code());
 }
 
 static void license_save_to_nvs() {
     Preferences prefs;
-    if (!prefs.begin(LICENSE_NVS_NAMESPACE, false))  // false = 读写
+    if (!prefs.begin(LICENSE_NVS_NAMESPACE, false))
         return;
-    prefs.putUChar(LICENSE_NVS_KEY_OK, license_ok ? 1 : 0);
+    prefs.putULong(LICENSE_NVS_KEY_CODE, license_ok ? license_expected_code() : 0);
     prefs.end();
 }
 
