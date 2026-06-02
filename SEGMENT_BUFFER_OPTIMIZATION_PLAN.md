@@ -73,7 +73,8 @@
 | 7 | 代码审查 | 发现 Config.h 已定义 BLOCK_BUFFER_SIZE=80 | - | ✅ |
 | 8 | 逻辑修复 | BUFFER_LOW_THRESHOLD 4→20（匹配 Config.h） | Protocol.cpp | ✅ |
 | 9 | 注释修复 | Planner.h 恢复原值并添加说明 | Planner.h | ✅ |
-| 10 | 文档 | 更新文档 | - | ✅ |
+| 10 | 主动控制 | BLOCK_BUFFER_SIZE 80→120 | Config.h | ✅ |
+| 11 | 文档 | 更新文档 | - | ✅ |
 
 ---
 
