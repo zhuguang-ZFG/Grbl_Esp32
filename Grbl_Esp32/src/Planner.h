@@ -27,9 +27,9 @@
 // The number of linear motions that can be in the plan at any give time
 #ifndef BLOCK_BUFFER_SIZE
 #    ifdef USE_LINE_NUMBERS
-#        define BLOCK_BUFFER_SIZE 15
+#        define BLOCK_BUFFER_SIZE 32  // 从15增大到32，增加planner缓冲区深度
 #    else
-#        define BLOCK_BUFFER_SIZE 16
+#        define BLOCK_BUFFER_SIZE 32  // 从16增大到32，增加planner缓冲区深度
 #    endif
 #endif
 
