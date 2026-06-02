@@ -25,7 +25,7 @@
 */
 
 #ifndef SEGMENT_BUFFER_SIZE
-#    define SEGMENT_BUFFER_SIZE 24  // Superpowers-主动控制：从12增大到24，容忍蓝牙延迟40ms，减少画圆卡顿
+#    define SEGMENT_BUFFER_SIZE 32  // 从24增大到32，进一步增加步进段缓冲区，减少步进饥饿
 #endif
 
 #include "Grbl.h"

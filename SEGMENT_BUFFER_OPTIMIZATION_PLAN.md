@@ -75,7 +75,10 @@
 | 9 | 注释修复 | Planner.h 恢复原值并添加说明 | Planner.h | ✅ |
 | 10 | 主动控制 | BLOCK_BUFFER_SIZE 80→120 | Config.h | ✅ |
 | 11 | 逻辑修复 | BUFFER_LOW_THRESHOLD 20→10 | Protocol.cpp | ✅ |
-| 12 | 文档 | 更新文档 | - | ✅ |
+| 12 | 主动控制 | BLOCK_BUFFER_SIZE 120→160 | Config.h | ✅ |
+| 13 | 主动控制 | SEGMENT_BUFFER_SIZE 24→32 | Stepper.h | ✅ |
+| 14 | 逻辑修复 | BUFFER_LOW_THRESHOLD 10→8 | Protocol.cpp | ✅ |
+| 15 | 文档 | 更新文档 | - | ✅ |
 
 ---
 
