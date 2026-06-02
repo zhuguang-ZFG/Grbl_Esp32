@@ -191,18 +191,18 @@
 #define PAPER_CLAMP_HI_US        1200u  // 拾落电机脉宽 μs（提高到416Hz，减少人耳敏感频率噪音）
 #define PAPER_CLAMP_LO_US        1200u
 
-// 出旧纸（Step1）专用：约 4 倍速（相对“正常 150/150”）
+// 出旧纸（Step1）专用：约 4.5 倍速（相对“正常 150/150”）
 #ifndef PAPER_EJECT_RAMP_HI_US
-#    define PAPER_EJECT_RAMP_HI_US    136u
+#    define PAPER_EJECT_RAMP_HI_US    120u   // 起步脉宽（静音优化：提高13%）
 #endif
 #ifndef PAPER_EJECT_RAMP_LO_US
-#    define PAPER_EJECT_RAMP_LO_US    136u
+#    define PAPER_EJECT_RAMP_LO_US    120u
 #endif
 #ifndef PAPER_EJECT_NORMAL_HI_US
-#    define PAPER_EJECT_NORMAL_HI_US  43u
+#    define PAPER_EJECT_NORMAL_HI_US  38u    // 正常脉宽（静音优化：提高13%）
 #endif
 #ifndef PAPER_EJECT_NORMAL_LO_US
-#    define PAPER_EJECT_NORMAL_LO_US  43u
+#    define PAPER_EJECT_NORMAL_LO_US  38u
 #endif
 
 // 面板电机方向：三个独立宏，只改需要反的那一个即可
