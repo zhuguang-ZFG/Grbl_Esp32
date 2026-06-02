@@ -109,7 +109,7 @@
 #define PAPER_DRIVER_REF_DAC    50         // 未单独指定时使用的默认 REF（0–255）
 // 每个电机独立 REF（可选）：不定义则三路均用 PAPER_DRIVER_REF_DAC
 #ifndef PAPER_REF_DAC_CLAMP
-#    define PAPER_REF_DAC_CLAMP   100  // 拾落电机（静音优化：降低电流33%）
+#    define PAPER_REF_DAC_CLAMP   130  // 拾落电机（静音优化：降电流13%，保留足够扭矩）
 #endif
 #ifndef PAPER_REF_DAC_PANEL
 #    define PAPER_REF_DAC_PANEL   80   // 面板电机
