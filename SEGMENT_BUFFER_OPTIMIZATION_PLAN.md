@@ -78,7 +78,10 @@
 | 12 | 主动控制 | BLOCK_BUFFER_SIZE 120→160 | Config.h | ✅ |
 | 13 | 主动控制 | SEGMENT_BUFFER_SIZE 24→32 | Stepper.h | ✅ |
 | 14 | 逻辑修复 | BUFFER_LOW_THRESHOLD 10→8 | Protocol.cpp | ✅ |
-| 15 | 文档 | 更新文档 | - | ✅ |
+| 15 | 主动控制 | BLOCK_BUFFER_SIZE 160→200 | Config.h | ✅ |
+| 16 | 主动控制 | SEGMENT_BUFFER_SIZE 32→48 | Stepper.h | ✅ |
+| 17 | 逻辑修复 | BUFFER_LOW_THRESHOLD 8→5 | Protocol.cpp | ✅ |
+| 18 | 文档 | 更新文档 | - | ✅ |
 
 ---
 
