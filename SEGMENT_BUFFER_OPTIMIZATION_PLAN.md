@@ -68,9 +68,12 @@
 | 2 | 验证 | 编译烧录测试 | - | ✅ |
 | 3 | 状态可见 | 监控日志验证 | - | ✅ |
 | 4 | 逻辑修复 | BUFFER_LOW_THRESHOLD 20→4 | Protocol.cpp | ✅ |
-| 5 | 主动控制 | BLOCK_BUFFER_SIZE 16→32 | Planner.h | ✅ |
-| 6 | 主动控制 | BLOCK_BUFFER_SIZE 32→64 | Planner.h | ✅ |
-| 7 | 文档 | 更新文档 | - | ✅ |
+| 5 | 主动控制 | BLOCK_BUFFER_SIZE 16→32 | Planner.h | ⚠️ 无效 |
+| 6 | 主动控制 | BLOCK_BUFFER_SIZE 32→64 | Planner.h | ⚠️ 无效 |
+| 7 | 代码审查 | 发现 Config.h 已定义 BLOCK_BUFFER_SIZE=80 | - | ✅ |
+| 8 | 逻辑修复 | BUFFER_LOW_THRESHOLD 4→20（匹配 Config.h） | Protocol.cpp | ✅ |
+| 9 | 注释修复 | Planner.h 恢复原值并添加说明 | Planner.h | ✅ |
+| 10 | 文档 | 更新文档 | - | ✅ |
 
 ---
 

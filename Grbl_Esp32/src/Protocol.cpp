@@ -257,7 +257,7 @@ void protocol_auto_cycle_start() {
 // 当水位低于阈值时，通知上位机降低发送速度
 static uint32_t last_buffer_check_ms = 0;
 const uint32_t BUFFER_CHECK_INTERVAL_MS = 500;  // 检查间隔 500ms
-const uint8_t BUFFER_LOW_THRESHOLD = 4;  // 低水位阈值（从20改为4，匹配BLOCK_BUFFER_SIZE=16）
+const uint8_t BUFFER_LOW_THRESHOLD = 20;  // 低水位阈值（~25% of BLOCK_BUFFER_SIZE=80）
 
 void check_buffer_watermark() {
     uint32_t now = millis();
@@ -268,7 +268,7 @@ void check_buffer_watermark() {
     
     uint8_t planner_free = plan_get_block_buffer_available();
     
-    // 低水位警告：当 planner buffer 可用块数 < 20 时
+    // 低水位警告：当 planner buffer 可用块数 < BUFFER_LOW_THRESHOLD 时
     if (planner_free < BUFFER_LOW_THRESHOLD && sys.state == State::Cycle) {
         grbl_sendf(CLIENT_SERIAL, "[MSG:LOW_BUFFER B=%u]\r\n", planner_free);
     }
