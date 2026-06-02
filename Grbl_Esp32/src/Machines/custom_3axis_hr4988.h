@@ -109,7 +109,7 @@
 #define PAPER_DRIVER_REF_DAC    50         // 未单独指定时使用的默认 REF（0–255）
 // 每个电机独立 REF（可选）：不定义则三路均用 PAPER_DRIVER_REF_DAC
 #ifndef PAPER_REF_DAC_CLAMP
-#    define PAPER_REF_DAC_CLAMP   150  // 拾落电机
+#    define PAPER_REF_DAC_CLAMP   100  // 拾落电机（静音优化：降低电流33%）
 #endif
 #ifndef PAPER_REF_DAC_PANEL
 #    define PAPER_REF_DAC_PANEL   80   // 面板电机
@@ -188,8 +188,8 @@
 #ifndef PAPER_PANEL_FAST_LO_US
 #    define PAPER_PANEL_FAST_LO_US  150u
 #endif
-#define PAPER_CLAMP_HI_US        2800u  // 拾落电机脉宽 μs（约原来 2000 的 0.7 倍速）
-#define PAPER_CLAMP_LO_US        2800u
+#define PAPER_CLAMP_HI_US        1200u  // 拾落电机脉宽 μs（提高到416Hz，减少人耳敏感频率噪音）
+#define PAPER_CLAMP_LO_US        1200u
 
 // 出旧纸（Step1）专用：约 4 倍速（相对“正常 150/150”）
 #ifndef PAPER_EJECT_RAMP_HI_US

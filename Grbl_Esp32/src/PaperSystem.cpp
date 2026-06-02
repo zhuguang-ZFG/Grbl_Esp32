@@ -643,11 +643,17 @@ Error paper_auto_change(void) {
     }
 
     // 3. 传感器感应到纸后，松开拾落电机（面板+进纸器提前使能，拾落松开后面板不中断直接进入步骤4）
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-3] Releasing clamp (%u steps)...", (unsigned)CLAMP_TOGGLE_STEPS);
-    paper_enable_panel_and_feeder();  // 面板与进纸器先使能，步骤3只步进拾落，步骤4 不再切换使能
 #ifdef PAPER_DRIVER_REF_PIN
     paper_set_ref_dac(PAPER_REF_DAC_CLAMP);
+    // 【Superpowers-预通知】上报拾落电机参数
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info,
+                   "[PaperMotor] Clamp: freq=%uHz, current=%u (DAC=%u)",
+                   (unsigned)(1000000 / (PAPER_CLAMP_HI_US + PAPER_CLAMP_LO_US)),
+                   (unsigned)(PAPER_REF_DAC_CLAMP * 3300 / 255),
+                   (unsigned)PAPER_REF_DAC_CLAMP);
 #endif
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-3] Releasing clamp (%u steps)...", (unsigned)CLAMP_TOGGLE_STEPS);
+    paper_enable_panel_and_feeder();  // 面板与进纸器先使能，步骤3只步进拾落，步骤4 不再切换使能
     paper_dir_steps(CLAMP_MOTOR_DIR_PIN, CLAMP_DIR_RELEASE, CLAMP_MOTOR_STEP_PIN, CLAMP_TOGGLE_STEPS);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-3] Done");
 
@@ -671,6 +677,12 @@ Error paper_auto_change(void) {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-5] Clamping (%u steps, panel+feeder stopped)...", (unsigned)CLAMP_TOGGLE_STEPS);
 #ifdef PAPER_DRIVER_REF_PIN
     paper_set_ref_dac(PAPER_REF_DAC_CLAMP);
+    // 【Superpowers-预通知】夹紧操作前上报
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info,
+                   "[PaperMotor] Clamp: freq=%uHz, current=%u (DAC=%u)",
+                   (unsigned)(1000000 / (PAPER_CLAMP_HI_US + PAPER_CLAMP_LO_US)),
+                   (unsigned)(PAPER_REF_DAC_CLAMP * 3300 / 255),
+                   (unsigned)PAPER_REF_DAC_CLAMP);
 #endif
     paper_dir_steps(CLAMP_MOTOR_DIR_PIN, CLAMP_DIR_CLAMP, CLAMP_MOTOR_STEP_PIN, CLAMP_TOGGLE_STEPS);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-5] Done");
