@@ -257,7 +257,7 @@ void protocol_auto_cycle_start() {
 // 当水位低于阈值时，通知上位机降低发送速度
 static uint32_t last_buffer_check_ms = 0;
 const uint32_t BUFFER_CHECK_INTERVAL_MS = 500;  // 检查间隔 500ms
-const uint8_t BUFFER_LOW_THRESHOLD = 20;        // 低水位阈值
+const uint8_t BUFFER_LOW_THRESHOLD = 4;  // 低水位阈值（从20改为4，匹配BLOCK_BUFFER_SIZE=16）
 
 void check_buffer_watermark() {
     uint32_t now = millis();
