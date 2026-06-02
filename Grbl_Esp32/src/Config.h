@@ -475,7 +475,7 @@ const int DWELL_TIME_STEP = 50;  // Integer (1-255) (milliseconds)
 // execution lead time there is for other Grbl processes have to compute and do their thing
 // before having to come back and refill this buffer, currently at ~50msec of step moves.
 // #define SEGMENT_BUFFER_SIZE 6 // Uncomment to override default in stepper.h.
-#define SEGMENT_BUFFER_SIZE 16 // 再增大步段缓冲：降低 BT 断流导致的段间空档/等待
+#define SEGMENT_BUFFER_SIZE 24 // 进一步增大步段缓冲：降低 BT 断流导致的段间空档/等待
 
 // Line buffer size from the serial input stream to be executed. Also, governs the size of
 // each of the startup blocks, as they are each stored as a string of this size.

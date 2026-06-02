@@ -252,6 +252,28 @@ void protocol_auto_cycle_start() {
     }
 }
 
+// 【新增】Buffer 水位监控
+// 每 500ms 检查一次 planner buffer 水位
+// 当水位低于阈值时，通知上位机降低发送速度
+static uint32_t last_buffer_check_ms = 0;
+const uint32_t BUFFER_CHECK_INTERVAL_MS = 500;  // 检查间隔 500ms
+const uint8_t BUFFER_LOW_THRESHOLD = 20;        // 低水位阈值
+
+void check_buffer_watermark() {
+    uint32_t now = millis();
+    if (now - last_buffer_check_ms < BUFFER_CHECK_INTERVAL_MS) {
+        return;
+    }
+    last_buffer_check_ms = now;
+    
+    uint8_t planner_free = plan_get_block_buffer_available();
+    
+    // 低水位警告：当 planner buffer 可用块数 < 20 时
+    if (planner_free < BUFFER_LOW_THRESHOLD && sys.state == State::Cycle) {
+        grbl_sendf(CLIENT_SERIAL, "[MSG:LOW_BUFFER B=%u]\r\n", planner_free);
+    }
+}
+
 // This function is the general interface to Grbl's real-time command execution system. It is called
 // from various check points in the main program, primarily where there may be a while loop waiting
 // for a buffer to clear space or any point where the execution time from the last check point may
@@ -267,6 +289,10 @@ void protocol_execute_realtime() {
     protocol_exec_rt_system();
     if (sys.suspend.value) {
         protocol_exec_rt_suspend();
+    }
+    // 【新增】检查 buffer 水位（仅在 Cycle 状态下）
+    if (sys.state == State::Cycle) {
+        check_buffer_watermark();
     }
 }
 
@@ -538,13 +564,26 @@ void protocol_exec_rt_system() {
     // 调用点打印一次（包含 mc_line 等待循环中的调用），用于定位卡顿来源。
     if (segment_buffer_underflow) {
         segment_buffer_underflow = false;
-        // 附带 program_flow，便于判断是否是 M30/程序流切换导致的段缓冲耗尽。
-        grbl_sendf(CLIENT_SERIAL,
-                   "[SEG underflow] B=%u st=%u progflow=%u execSys=%u\r\n",
-                   (unsigned)plan_get_block_buffer_available(),
-                   (unsigned)sys.state,
-                   (unsigned)gc_state.modal.program_flow,
-                   (unsigned)sys.step_control.executeSysMotion);
+        
+        uint8_t planner_free = plan_get_block_buffer_available();
+        
+        // 【优化】区分换页场景和真正的 underflow
+        // 换页场景：planner 有大量数据（B > 70），但 segment buffer 被耗尽
+        // 这是正常现象，因为上位机已停止发送，等待换纸完成
+        if (planner_free > 70) {
+            // 换页场景：静默处理，不打印警告
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, 
+                           "[BT] Page end detected, waiting for next page...");
+        } else {
+            // 真正的 underflow：打印警告
+            // 附带 program_flow，便于判断是否是 M30/程序流切换导致的段缓冲耗尽。
+            grbl_sendf(CLIENT_SERIAL,
+                       "[SEG underflow] B=%u st=%u progflow=%u execSys=%u\r\n",
+                       (unsigned)planner_free,
+                       (unsigned)sys.state,
+                       (unsigned)gc_state.modal.program_flow,
+                       (unsigned)sys.step_control.executeSysMotion);
+        }
 
         // 若 planner 仍有可执行块，但 stepper 因 segment buffer 空而停下，
         // 立刻重装载 segment buffer 并启动 cycle，避免蓝牙流式发送时出现停顿卡顿。
