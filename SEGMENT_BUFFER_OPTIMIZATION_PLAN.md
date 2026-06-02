@@ -69,7 +69,8 @@
 | 3 | 状态可见 | 监控日志验证 | - | ✅ |
 | 4 | 逻辑修复 | BUFFER_LOW_THRESHOLD 20→4 | Protocol.cpp | ✅ |
 | 5 | 主动控制 | BLOCK_BUFFER_SIZE 16→32 | Planner.h | ✅ |
-| 6 | 文档 | 更新文档 | - | ✅ |
+| 6 | 主动控制 | BLOCK_BUFFER_SIZE 32→64 | Planner.h | ✅ |
+| 7 | 文档 | 更新文档 | - | ✅ |
 
 ---
 
