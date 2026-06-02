@@ -669,6 +669,12 @@ Error paper_auto_change(void) {
 #endif
 #ifdef PAPER_DRIVER_REF_PIN
     paper_set_ref_dac((PAPER_REF_DAC_PANEL) > (PAPER_REF_DAC_FEEDER) ? (PAPER_REF_DAC_PANEL) : (PAPER_REF_DAC_FEEDER));
+    // 【Superpowers-状态可见】上报面板+进纸器同步参数
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info,
+                   "[PaperMotor] Panel+Feeder sync: panel_dac=%u, feeder_dac=%u, freq=%uHz",
+                   (unsigned)PAPER_REF_DAC_PANEL,
+                   (unsigned)PAPER_REF_DAC_FEEDER,
+                   (unsigned)(1000000 / (PAPER_NORMAL_HI_US + PAPER_NORMAL_LO_US)));
 #endif
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-4] Panel+Feeder sync %.1fcm...", (float)PAPER_ADVANCE_CM_CLAMP_START);
     paper_step_pulses_panel_feeder_sync(steps_before_clamp);

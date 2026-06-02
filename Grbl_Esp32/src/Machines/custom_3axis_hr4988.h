@@ -112,7 +112,7 @@
 #    define PAPER_REF_DAC_CLAMP   130  // 拾落电机（静音优化：降电流13%，保留足够扭矩）
 #endif
 #ifndef PAPER_REF_DAC_PANEL
-#    define PAPER_REF_DAC_PANEL   80   // 面板电机
+#    define PAPER_REF_DAC_PANEL   60    // 面板电机（静音优化：降电流25%）
 #endif
 #ifndef PAPER_REF_DAC_FEEDER
 #    define PAPER_REF_DAC_FEEDER  80   // 进纸器电机
@@ -181,12 +181,12 @@
 #define FEEDER_FIND_NORMAL_HI_US  38u
 #define FEEDER_FIND_NORMAL_LO_US  38u
 
-// 拾落夹紧后面板进纸速度加倍（脉宽减半；仅用于步骤6、8）
+// 拾落夹紧后面板进纸速度（脉宽；仅用于步骤6、8）
 #ifndef PAPER_PANEL_FAST_HI_US
-#    define PAPER_PANEL_FAST_HI_US  75u
+#    define PAPER_PANEL_FAST_HI_US  100u   // 改为均匀脉冲，减少噪音
 #endif
 #ifndef PAPER_PANEL_FAST_LO_US
-#    define PAPER_PANEL_FAST_LO_US  150u
+#    define PAPER_PANEL_FAST_LO_US  100u   // 改为均匀脉冲，减少噪音
 #endif
 #define PAPER_CLAMP_HI_US        1200u  // 拾落电机脉宽 μs（提高到416Hz，减少人耳敏感频率噪音）
 #define PAPER_CLAMP_LO_US        1200u
