@@ -11,7 +11,7 @@
 
 // 【新增】写字模式标志
 #ifdef ENABLE_PANEL_HOLD_MODE
-static bool panel_hold_mode = false;  // 写字模式：面板电机保持使能
+static bool panel_hold_mode = true;  // 默认启用写字模式：面板电机保持使能
 #endif
 
 // 换纸流程结束状态码（上位机可解析 [PaperStatus] N 做分支）
