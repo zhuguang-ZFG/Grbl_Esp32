@@ -25,7 +25,7 @@
 */
 
 #ifndef SEGMENT_BUFFER_SIZE
-#    define SEGMENT_BUFFER_SIZE 48  // 从32增大到48，进一步增加步进段缓冲区，减少步进饥饿
+#    define SEGMENT_BUFFER_SIZE 64  // 从48增大到64，进一步增加步进段缓冲区，减少步进饥饿
 #endif
 
 #include "Grbl.h"

@@ -466,7 +466,7 @@ const int DWELL_TIME_STEP = 50;  // Integer (1-255) (milliseconds)
 // available RAM, like when re-compiling for a Mega2560. Or decrease if the Arduino begins to
 // crash due to the lack of available RAM or if the CPU is having trouble keeping up with planning
 // new incoming motions as they are executed.
-#define BLOCK_BUFFER_SIZE 200 // 从160增大到200，进一步增加planner缓冲区深度，容忍更长的蓝牙延迟
+#define BLOCK_BUFFER_SIZE 250 // 从200增大到250，进一步增加planner缓冲区深度，容忍更长的蓝牙延迟
 
 // Governs the size of the intermediary step segment buffer between the step execution algorithm
 // and the planner blocks. Each segment is set of steps executed at a constant velocity over a
