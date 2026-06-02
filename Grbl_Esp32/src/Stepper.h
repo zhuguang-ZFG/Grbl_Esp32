@@ -25,7 +25,7 @@
 */
 
 #ifndef SEGMENT_BUFFER_SIZE
-#    define SEGMENT_BUFFER_SIZE 6
+#    define SEGMENT_BUFFER_SIZE 12  // Superpowers-主动控制：从6增大到12，减少蓝牙延迟导致的卡顿
 #endif
 
 #include "Grbl.h"

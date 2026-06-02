@@ -152,6 +152,10 @@ void mc_arc(float*            target,
     // is desired, i.e. least-squares, midpoint on arc, just change the mm_per_arc_segment calculation.
     // For the intended uses of Grbl, this value shouldn't exceed 2000 for the strictest of cases.
     uint16_t segments = floor(fabs(0.5 * angular_travel * radius) / sqrt(arc_tolerance->get() * (2 * radius - arc_tolerance->get())));
+    // 【Superpowers-状态可见】圆弧段数上报
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info,
+                   "[Arc] R=%.2fmm, segments=%u, tolerance=%.4fmm",
+                   (double)radius, (unsigned)segments, (double)arc_tolerance->get());
     if (segments) {
         // Multiply inverse feed_rate to compensate for the fact that this movement is approximated
         // by a number of discrete segments. The inverse feed_rate should be correct for the sum of
