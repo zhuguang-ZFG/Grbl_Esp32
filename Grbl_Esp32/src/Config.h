@@ -620,3 +620,7 @@ const int N_PIECES = 3;
 
 const double RPM_MAX = 23935.2;
 const double RPM_MIN = 2412.2;
+
+// 【新增】面板电机保持模式配置
+// 写字模式下面板电机保持使能，防止纸张漂移
+#define ENABLE_PANEL_HOLD_MODE 1  // 启用面板保持功能
