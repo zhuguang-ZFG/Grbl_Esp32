@@ -115,6 +115,9 @@
 #ifndef PAPER_REF_DAC_PANEL
 #    define PAPER_REF_DAC_PANEL   90    // 面板电机（提高电流，增强稳定性）
 #endif
+#ifndef PAPER_REF_DAC_PANEL_HOLD
+#    define PAPER_REF_DAC_PANEL_HOLD  40    // 写字保持模式DAC（降低以减小XYZ电流波动对面板电机的干扰）
+#endif
 #ifndef PAPER_REF_DAC_FEEDER
 #    define PAPER_REF_DAC_FEEDER  110   // 进纸器电机（提高电流，增强稳定性）
 #endif

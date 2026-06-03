@@ -306,4 +306,8 @@ btn_release_confirmed:
     char line[16];
     strcpy(line, "[ESP910]\r");
     WebUI::inputBuffer.push(line);
+
+    // 换纸完成后自动使能面板电机保持（物理按键=用户主动意图写字，不受 panel_hold_mode 影响）
+    strcpy(line, "M902\r");
+    WebUI::inputBuffer.push(line);
 }

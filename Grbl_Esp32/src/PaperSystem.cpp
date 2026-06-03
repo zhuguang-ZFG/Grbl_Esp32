@@ -11,7 +11,7 @@
 
 // 【新增】写字模式标志
 #ifdef ENABLE_PANEL_HOLD_MODE
-static bool panel_hold_mode = true;  // 默认启用写字模式：面板电机保持使能
+static bool panel_hold_mode = false;  // 默认关闭写字模式：面板电机保持禁用
 #endif
 
 // 换纸流程结束状态码（上位机可解析 [PaperStatus] N 做分支）
@@ -789,6 +789,9 @@ Error paper_auto_change(void) {
     if (panel_hold_mode) {
         // 写字模式：仅禁用拾落+进纸器，保持面板电机使能
         paper_enable_panel_only();
+#ifdef PAPER_DRIVER_REF_PIN
+        paper_set_ref_dac(PAPER_REF_DAC_PANEL_HOLD);
+#endif
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Panel motor kept enabled (write mode)");
     } else {
         paper_disable_drivers();
@@ -906,6 +909,9 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
             // M902 - 启用面板保持模式（写字模式）
             panel_hold_mode = true;
             paper_enable_panel_only();
+#ifdef PAPER_DRIVER_REF_PIN
+            paper_set_ref_dac(PAPER_REF_DAC_PANEL_HOLD);
+#endif
             grbl_sendf(CLIENT_SERIAL, "[MSG:PANEL_HOLD_ON]\r\n");
             return Error::Ok;
         }
