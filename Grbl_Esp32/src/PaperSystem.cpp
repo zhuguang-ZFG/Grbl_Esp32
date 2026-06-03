@@ -41,9 +41,8 @@ static volatile bool paper_auto_change_running = false;
 static uint32_t paper_ignore_host_reset_until_ms = 0;
 
 // 蓝牙：SPP 连上后等上位机首条指令回完 ok/ack，再立刻预约并执行换纸
-static bool paper_bt_connect_auto_change_pending      = false;
-static bool paper_bt_auto_change_after_ack_armed      = false;
-static bool paper_skip_next_bt_connect_auto_change    = false;
+static bool paper_bt_connect_auto_change_pending = false;
+static bool paper_bt_auto_change_after_ack_armed = false;
 
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
 bool paper_auto_change_is_running(void) {
@@ -887,21 +886,8 @@ Error paper_auto_change(void) {
 }
 
 void paper_on_soft_reset_restart(void) {
+    // 仅取消已预约；保留 SPP 连上后的 after_ack_armed（连接后上位机常发 0x18）
     paper_bt_connect_auto_change_pending = false;
-    paper_bt_auto_change_after_ack_armed = false;
-    if (paper_recent_auto_change_cooldown_active()) {
-        paper_skip_next_bt_connect_auto_change = true;
-        grbl_msg_sendf(CLIENT_SERIAL,
-                       MsgLevel::Info,
-                       "[PaperBtConnect] Soft reset: skip next BT auto-change (cooldown active)");
-    } else {
-        paper_skip_next_bt_connect_auto_change = false;
-    }
-#ifdef ENABLE_BLUETOOTH
-    if (WebUI::SerialBT.hasClient()) {
-        paper_bt_auto_change_after_ack_armed = true;
-    }
-#endif
 }
 
 void paper_bt_on_spp_connected(void) {
@@ -922,19 +908,6 @@ static bool paper_bt_schedule_auto_change_after_checks(void) {
     return false;
 #endif
     if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
-        return false;
-    }
-    if (paper_skip_next_bt_connect_auto_change) {
-        paper_skip_next_bt_connect_auto_change = false;
-        grbl_msg_sendf(CLIENT_SERIAL,
-                       MsgLevel::Info,
-                       "[PaperBtConnect] Skipped: auto-change suppressed once after soft reset");
-        return false;
-    }
-    if (paper_recent_auto_change_cooldown_active()) {
-        grbl_msg_sendf(CLIENT_SERIAL,
-                       MsgLevel::Info,
-                       "[PaperBtConnect] Skipped: recent auto-change cooldown active");
         return false;
     }
     if (paper_auto_change_is_running() || paper_bt_connect_auto_change_pending) {
@@ -967,17 +940,6 @@ void paper_poll_bt_connect_auto_change(void) {
     return;
 #endif
     if (!paper_bt_connect_auto_change_pending) {
-        return;
-    }
-    if (paper_skip_next_bt_connect_auto_change) {
-        paper_bt_connect_auto_change_pending = false;
-        return;
-    }
-    if (paper_recent_auto_change_cooldown_active()) {
-        paper_bt_connect_auto_change_pending = false;
-        grbl_msg_sendf(CLIENT_SERIAL,
-                       MsgLevel::Info,
-                       "[PaperBtConnect] Skipped poll: recent auto-change cooldown active");
         return;
     }
     if (sys.state != State::Idle) {

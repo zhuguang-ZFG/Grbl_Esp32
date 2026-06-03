@@ -124,7 +124,7 @@ void user_defined_macro(uint8_t index);
 Error paper_system_mcode(uint16_t code, uint16_t steps = 0, int8_t clamp_dir = -1);
 void  paper_system_init(void);
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-void  paper_on_soft_reset_restart(void);  // 软复位重入 run_once：取消预约；冷却期内跳过下一次 BT 自动换纸
+void  paper_on_soft_reset_restart(void);  // 软复位重入 run_once：仅取消 BT 换纸预约，保留 after_ack_armed
 void  paper_bt_on_spp_connected(void);   // SPP 连接：待命，等上位机首条指令 ack 后再换纸
 void  paper_bt_on_spp_disconnected(void);
 void  paper_bt_on_first_host_ack(void);  // 经 BT 回完 ok/error 后调用（Protocol）

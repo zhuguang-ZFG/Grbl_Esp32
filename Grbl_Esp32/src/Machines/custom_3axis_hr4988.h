@@ -56,7 +56,7 @@
 #define MACHINE_NAME "Custom 3-Axis HR4988"
 #define GRBL_PAPER_SYSTEM 1  /* æ¢çº¸ç³»ç» M701/M711/M712/M713 å?GCode.cpp ä¸­ç´åå®ç?*/
 
-// 蓝牙：SPP 连上后等上位机首条指令回完 ack，再立刻执行 [ESP910]；0=关闭
+// 蓝牙：每次 SPP 断开重连后，首条指令回完 ack 即执行 [ESP910]（不受换纸后按键冷却限制）；0=关闭
 #ifndef PAPER_AUTO_CHANGE_ON_BT_CONNECT
 #    define PAPER_AUTO_CHANGE_ON_BT_CONNECT 1
 #endif
