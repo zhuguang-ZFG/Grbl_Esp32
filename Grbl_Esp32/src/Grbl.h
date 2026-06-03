@@ -138,10 +138,10 @@ Error paper_auto_change(void);  // 一键自动换纸流程
 void  paper_led_update(void);   // 按键彩灯 Q0 状态刷新（常亮/慢闪/快闪）
 bool  paper_auto_change_is_running(void);  // 换纸流程是否正在执行（按键/上位机可据此避免重复触发）
 bool  paper_should_ignore_host_reset(void);  // 换纸初期忽略上位机 0x18，避免 BT 连接触发软复位打断流程
-void  paper_btn_reset_press_state(void);   // 清除长按计时状态（蓝牙连接等 EMI 场景防误触发）
-void  paper_btn_arm_post_change_cooldown(void);  // 换纸结束/失败后冷却，防 M30 后误触 [ESP910]
+void  paper_btn_reset_press_state(void);   // 清除连按状态（蓝牙连接等 EMI 场景防误触发）
+void  paper_btn_arm_post_change_cooldown(void);  // 换纸结束/失败后冷却，防 M30 后误连按触发 [ESP910]
 void  paper_btn_arm_bt_suppress(void);     // 蓝牙启动/连接后抑制换纸键（射频 EMI）
 bool  paper_btn_bt_suppress_active(void);
-void  paper_btn_notify_macro_released(void);  // 松开时判定长按并触发 [ESP910]
+void  paper_btn_notify_macro_released(void);  // 去抖任务检测到 Macro0 松开
 bool  paper_btn_ignore_control_events(void);  // 换纸后冷却或蓝牙抑制期内忽略换纸键
 #endif
