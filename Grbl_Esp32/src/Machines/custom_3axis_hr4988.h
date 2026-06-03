@@ -106,16 +106,16 @@
 #define PAPER_PANEL_ENABLE_PIN   I2SO(1)
 #define PAPER_DRIVER_ENABLE_PIN  GPIO_NUM_26
 #define PAPER_DRIVER_REF_PIN    GPIO_NUM_25   // DAC 直连 HR4988 REF，无分压；0–255 → 0–3.3V（三路纸路电机共用此脚，固件按当前运行的电机切换 DAC 值）
-#define PAPER_DRIVER_REF_DAC    50         // 未单独指定时使用的默认 REF（0–255）
+#define PAPER_DRIVER_REF_DAC    80         // XYZ+纸路共用DAC默认值（提高电流，增强抗干扰）
 // 每个电机独立 REF（可选）：不定义则三路均用 PAPER_DRIVER_REF_DAC
 #ifndef PAPER_REF_DAC_CLAMP
-#    define PAPER_REF_DAC_CLAMP   130  // 拾落电机（静音优化：降电流13%，保留足够扭矩）
+#    define PAPER_REF_DAC_CLAMP   160  // 拾落电机（提高电流，确保扭矩）
 #endif
 #ifndef PAPER_REF_DAC_PANEL
-#    define PAPER_REF_DAC_PANEL   60    // 面板电机（静音优化：降电流25%）
+#    define PAPER_REF_DAC_PANEL   90    // 面板电机（提高电流，增强稳定性）
 #endif
 #ifndef PAPER_REF_DAC_FEEDER
-#    define PAPER_REF_DAC_FEEDER  80   // 进纸器电机
+#    define PAPER_REF_DAC_FEEDER  110   // 进纸器电机（提高电流，增强稳定性）
 #endif
 // 使能时 REF 软启动（ms）：先 REF=0 再使能，延时后再升到目标，减轻上电冲击避免板子断电；0=关闭
 #ifndef PAPER_REF_SOFTSTART_MS
@@ -183,10 +183,10 @@
 
 // 拾落夹紧后面板进纸速度（脉宽；仅用于步骤6、8）
 #ifndef PAPER_PANEL_FAST_HI_US
-#    define PAPER_PANEL_FAST_HI_US  100u   // 改为均匀脉冲，减少噪音
+#    define PAPER_PANEL_FAST_HI_US  91u    // 提升10%速度（100→91μs）
 #endif
 #ifndef PAPER_PANEL_FAST_LO_US
-#    define PAPER_PANEL_FAST_LO_US  100u   // 改为均匀脉冲，减少噪音
+#    define PAPER_PANEL_FAST_LO_US  91u    // 提升10%速度（100→91μs）
 #endif
 #define PAPER_CLAMP_HI_US        1200u  // 拾落电机脉宽 μs（提高到416Hz，减少人耳敏感频率噪音）
 #define PAPER_CLAMP_LO_US        1200u

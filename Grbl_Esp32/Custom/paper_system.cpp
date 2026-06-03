@@ -185,20 +185,20 @@ void user_m30() {
 // 设计说明：
 // - 硬件：PAPER_CHANGE_BTN_PIN = GPIO35，实测接法为 LOW=按下，HIGH=松开（外部下拉）。
 // - 上面在 custom_3axis_hr4988.h 中把 MACRO_BUTTON_0_PIN 映射为 PAPER_CHANGE_BTN_PIN，
-//   并通过 INVERT_CONTROL_PIN_MASK 让 Macro0 变为“低电平有效”，仅在按下时产生事件。
+//   并通过 INVERT_CONTROL_PIN_MASK 让 Macro0 变为"低电平有效"，仅在按下时产生事件。
 // - 去抖 1：稳定低电平确认——连续多次采样均为 LOW 才视为真实按下，避免步进/EMI 毛刺误触发。
-// - 去抖 2：两次有效按下至少间隔 500ms。触发方式：连按两次才换纸（第一次提示“再按一次”，0.5～2s 内再按才注入 [ESP910]）。
+// - 去抖 2：长按确认——稳定确认后继续按住 PAPER_BTN_HOLD_MS 才触发换纸，松手则取消，强抗EMI。
 // - 为了复用现有 [ESP910] 逻辑，这里不直接调用 paper_auto_change()，
-//   而是向 WebUI::inputBuffer 注入一行 “[ESP910]”，由原有处理流程执行一键换纸。
-#define PAPER_BTN_STABLE_SAMPLES  10      // 从5增加到10，抗EMI毛刺
-#define PAPER_BTN_STABLE_MS       50      // 从8ms增加到50ms，抗EMI持续干扰
-#define PAPER_BTN_DOUBLE_PRESS_MS_MIN  1000u  // 从500ms增加到1000ms，抗两次EMI误双击
-#define PAPER_BTN_DOUBLE_PRESS_MS_MAX  3000u  // 从2s放宽到3s，人操作仍方便
+//   而是向 WebUI::inputBuffer 注入一行 "[ESP910]"，由原有处理流程执行一键换纸。
+#define PAPER_BTN_STABLE_SAMPLES  10      // 连续采样10次，抗EMI毛刺
+#define PAPER_BTN_STABLE_MS       800     // 800ms稳定确认
+#define PAPER_BTN_HOLD_MS         200     // 稳定确认后还需继续按住200ms（总计约1s）
+#define PAPER_BTN_HOLD_SAMPLES    4       // 长按确认采样次数
 void user_defined_macro(uint8_t index) {
     if (index != 0) {
         return;
     }
-    // 稳定低电平确认：LOW=按下，任一样本为 HIGH 则视为毛刺/误触发
+    // 第一阶段：稳定低电平确认——800ms内连续10次采样均为LOW
     {
         const uint32_t step_ms = (PAPER_BTN_STABLE_MS / PAPER_BTN_STABLE_SAMPLES);
         for (int i = 0; i < PAPER_BTN_STABLE_SAMPLES; i++) {
@@ -207,6 +207,16 @@ void user_defined_macro(uint8_t index) {
             }
             if (digitalRead(PAPER_CHANGE_BTN_PIN) != LOW) {
                 return;
+            }
+        }
+    }
+    // 第二阶段：长按确认——继续按住200ms，松手则取消
+    {
+        const uint32_t step_ms = (PAPER_BTN_HOLD_MS / PAPER_BTN_HOLD_SAMPLES);
+        for (int i = 0; i < PAPER_BTN_HOLD_SAMPLES; i++) {
+            delay(step_ms);
+            if (digitalRead(PAPER_CHANGE_BTN_PIN) != LOW) {
+                return;  // 松手了，取消
             }
         }
     }
@@ -220,28 +230,7 @@ void user_defined_macro(uint8_t index) {
         return;
     }
 
-    // 连按两次才触发：第一次仅记录并提示，第二次在有效窗内按下才执行换纸
-    static bool     wait_second_press = false;
-    static uint32_t first_press_ms   = 0;
-    uint32_t        now_ms           = millis();
-
-    if (!wait_second_press) {
-        wait_second_press = true;
-        first_press_ms   = now_ms;
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Press again within %.1fs to change paper", PAPER_BTN_DOUBLE_PRESS_MS_MAX / 1000.0f);
-        return;
-    }
-    uint32_t elapsed = now_ms - first_press_ms;
-    if (elapsed < PAPER_BTN_DOUBLE_PRESS_MS_MIN) {
-        return;
-    }
-    if (elapsed > PAPER_BTN_DOUBLE_PRESS_MS_MAX) {
-        first_press_ms = now_ms;
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Press again within %.1fs to change paper", PAPER_BTN_DOUBLE_PRESS_MS_MAX / 1000.0f);
-        return;
-    }
-    wait_second_press = false;
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Triggered (double press), queuing [ESP910]...");
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Long press confirmed, queuing [ESP910]...");
 
     char line[16];
     strcpy(line, "[ESP910]\r");
