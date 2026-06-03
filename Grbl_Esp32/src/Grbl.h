@@ -128,9 +128,6 @@ Error paper_run_motor(uint8_t motor_ix, uint16_t steps = 0);
 void  paper_enable_drivers_only(void);  // 仅使能驱动，不动作，便于 M64/M65 后点动调试
 Error paper_auto_change(void);  // 一键自动换纸流程
 void  paper_led_update(void);   // 按键彩灯 Q0 状态刷新（常亮/慢闪/快闪）
-void  paper_panel_hold_refresh_during_cycle(void);  // 写字使能：雕刻时低 REF + 仅钉 STEP（约 15ms）
-uint32_t paper_i2s_apply_panel_hold_mask(uint32_t port_data);  // I2S→595 输出前掩码
-uint8_t  paper_i2s_clamp_pin_value(uint8_t pin, uint8_t val);   // i2s_out_write 时钉死面板 STEP/DIR
 bool  paper_auto_change_is_running(void);  // 换纸流程是否正在执行（按键/上位机可据此避免重复触发）
 void  paper_btn_reset_press_state(void);   // 清除连按状态（蓝牙连接等 EMI 场景防误触发）
 void  paper_btn_arm_post_change_cooldown(void);  // 换纸结束/失败后冷却，防 M30 后误连按触发 [ESP910]

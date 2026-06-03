@@ -101,15 +101,9 @@ static intr_handle_t i2s_out_isr_handle;
 // output value
 static atomic_uint_least32_t i2s_out_port_data = ATOMIC_VAR_INIT(0);
 
-#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-static inline uint32_t IRAM_ATTR i2s_out_port_load_for_output(void) {
-    return paper_i2s_apply_panel_hold_mask(atomic_load(&i2s_out_port_data));
-}
-#else
 static inline uint32_t IRAM_ATTR i2s_out_port_load_for_output(void) {
     return atomic_load(&i2s_out_port_data);
 }
-#endif
 
 // inner lock
 static portMUX_TYPE i2s_out_spinlock = portMUX_INITIALIZER_UNLOCKED;
@@ -564,9 +558,6 @@ void IRAM_ATTR i2s_out_delay() {
 }
 
 void IRAM_ATTR i2s_out_write(uint8_t pin, uint8_t val) {
-#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-    val = paper_i2s_clamp_pin_value(pin, val);
-#endif
     uint32_t bit = bit(pin);
     if (val) {
         atomic_fetch_or(&i2s_out_port_data, bit);

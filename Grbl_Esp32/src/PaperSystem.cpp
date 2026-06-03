@@ -9,11 +9,6 @@
 
 #define PAPER_DISABLED 255
 
-// 【新增】写字模式标志
-#ifdef ENABLE_PANEL_HOLD_MODE
-static bool panel_hold_mode = true;  // 默认启用写字模式：面板电机保持使能
-#endif
-
 // 换纸流程结束状态码（上位机可解析 [PaperStatus] N 做分支）
 #define PAPER_STATUS_OK                0
 #define PAPER_STATUS_PAPER_PRESENT     1  // 开始时传感器仍有纸，无法弹旧纸
@@ -59,121 +54,6 @@ static void paper_set_ref_dac(uint8_t dac_val);
 static void paper_ensure_i2s_passthrough(void);
 #endif
 
-#ifdef ENABLE_PANEL_HOLD_MODE
-static bool panel_hold_low_dac_active = false;
-
-static bool paper_panel_hold_motion_active(void) {
-    return sys.state == State::Cycle || sys.state == State::Hold || sys.state == State::Jog;
-}
-
-static void paper_panel_hold_apply_low_dac(void) {
-#    ifdef PAPER_DRIVER_REF_PIN
-    if (!panel_hold_low_dac_active) {
-        paper_set_ref_dac(PAPER_REF_DAC_PANEL_HOLD);
-        panel_hold_low_dac_active = true;
-    }
-#    endif
-}
-
-static void paper_panel_hold_restore_panel_dac(void) {
-#    ifdef PAPER_DRIVER_REF_PIN
-    if (panel_hold_low_dac_active && panel_hold_mode && digitalRead(PAPER_ENABLE_PIN) == LOW) {
-        paper_set_ref_dac(PAPER_REF_DAC_PANEL);
-    }
-#    endif
-    panel_hold_low_dac_active = false;
-}
-#endif
-
-// 换纸结束：DIR 对位 + STEP 低 + 正常面板 REF
-static void paper_panel_hold_lock_dir_step(void) {
-#ifdef ENABLE_PANEL_HOLD_MODE
-    if (!panel_hold_mode || paper_auto_change_running) {
-        return;
-    }
-    if (digitalRead(PAPER_ENABLE_PIN) != LOW) {
-        return;
-    }
-    paper_panel_hold_restore_panel_dac();
-    const uint8_t dir_level = PANEL_DIR_HOLD ? HIGH : LOW;
-    digitalWrite(PANEL_MOTOR_DIR_PIN, dir_level);
-    digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
-#    ifdef USE_I2S_OUT
-    i2s_out_write((uint8_t)(PANEL_MOTOR_DIR_PIN - I2S_OUT_PIN_BASE), PANEL_DIR_HOLD ? 1 : 0);
-    i2s_out_write((uint8_t)(PANEL_MOTOR_STEP_PIN - I2S_OUT_PIN_BASE), 0);
-#    endif
-#endif
-}
-
-// 雕刻/点动：只钉 STEP，不改 DIR（避免出纸/反出纸两侧蠕动）
-static void paper_panel_hold_lock_step_only(void) {
-#ifdef ENABLE_PANEL_HOLD_MODE
-    if (!panel_hold_mode || paper_auto_change_running) {
-        return;
-    }
-    if (digitalRead(PAPER_ENABLE_PIN) != LOW) {
-        return;
-    }
-    digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
-#    ifdef USE_I2S_OUT
-    i2s_out_write((uint8_t)(PANEL_MOTOR_STEP_PIN - I2S_OUT_PIN_BASE), 0);
-#    endif
-#endif
-}
-
-#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-// XY 步进经 I2S 刷 595 时：仅钉死面板 STEP，DIR 保持换纸结束后的电平不变
-uint32_t IRAM_ATTR paper_i2s_apply_panel_hold_mask(uint32_t port_data) {
-#    ifdef ENABLE_PANEL_HOLD_MODE
-    if (!panel_hold_mode || paper_auto_change_running) {
-        return port_data;
-    }
-    if (!paper_panel_hold_motion_active()) {
-        return port_data;
-    }
-    const uint8_t en_bit = (uint8_t)(PAPER_PANEL_ENABLE_PIN - I2S_OUT_PIN_BASE);
-    if (port_data & bit(en_bit)) {
-        return port_data;
-    }
-    const uint8_t step_bit = (uint8_t)(PANEL_MOTOR_STEP_PIN - I2S_OUT_PIN_BASE);
-    port_data &= ~bit(step_bit);
-#    endif
-    return port_data;
-}
-
-// 任意代码写 I2SO 时先钳位，避免 atomic 里短暂出现 STEP 高
-uint8_t IRAM_ATTR paper_i2s_clamp_pin_value(uint8_t pin, uint8_t val) {
-#    ifdef ENABLE_PANEL_HOLD_MODE
-    if (!panel_hold_mode || paper_auto_change_running) {
-        return val;
-    }
-    if (!paper_panel_hold_motion_active()) {
-        return val;
-    }
-    const uint8_t en_ix   = (uint8_t)(PAPER_PANEL_ENABLE_PIN - I2S_OUT_PIN_BASE);
-    const uint8_t step_ix = (uint8_t)(PANEL_MOTOR_STEP_PIN - I2S_OUT_PIN_BASE);
-    if (i2s_out_read(en_ix) != 0) {
-        return val;
-    }
-    if (pin == step_ix) {
-        return 0;
-    }
-#    endif
-    return val;
-}
-#endif
-
-static void paper_panel_guard_step_low(void) {
-    paper_panel_hold_lock_dir_step();
-#    ifdef USE_I2S_OUT
-#        ifdef ENABLE_PANEL_HOLD_MODE
-    if (panel_hold_mode && !paper_auto_change_running && digitalRead(PAPER_ENABLE_PIN) == LOW) {
-        i2s_out_delay();
-    }
-#        endif
-#    endif
-}
-
 // 按键彩灯：Q0/QA，HIGH=灭，LOW=亮
 static void paper_led_set(bool on) {
     static bool led_cached_on    = false;
@@ -188,7 +68,6 @@ static void paper_led_set(bool on) {
     digitalWrite(PAPER_LED_PIN, target_on ? LOW : HIGH);
     led_cached_on   = target_on;
     led_cache_valid = true;
-    paper_panel_guard_step_low();
 }
 
 // 彩灯状态刷新（在主循环中周期调用，内部节流约 80ms）
@@ -234,28 +113,6 @@ void paper_led_update(void) {
 #else
 void paper_led_update(void) {}
 #endif
-
-// 雕刻/点动：降 REF + 周期性钉 STEP（约 15ms）；不在此改 DIR
-void paper_panel_hold_refresh_during_cycle(void) {
-#ifdef ENABLE_PANEL_HOLD_MODE
-    if (!panel_hold_mode || paper_auto_change_running) {
-        paper_panel_hold_restore_panel_dac();
-        return;
-    }
-    if (!paper_panel_hold_motion_active()) {
-        paper_panel_hold_restore_panel_dac();
-        return;
-    }
-    static uint32_t last_ms = 0;
-    uint32_t        now_ms  = millis();
-    if (now_ms - last_ms < 15u) {
-        return;
-    }
-    last_ms = now_ms;
-    paper_panel_hold_apply_low_dac();
-    paper_panel_hold_lock_step_only();
-#endif
-}
 
 // 每 YIELD_STEPS 步 yield 一次，避免长时间阻塞触发 ESP32 Interrupt Watchdog (Core 1 panic)
 #define PAPER_YIELD_STEPS 50u
@@ -945,21 +802,9 @@ Error paper_auto_change(void) {
     paper_step_pulses_panel_after_clamp(PANEL_FINAL_STEPS);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Done");
 
-    // 9. 换纸流程完成后，关闭换纸相关电机使能，防止长时间发热
-    #ifdef ENABLE_PANEL_HOLD_MODE
-    if (panel_hold_mode) {
-        // 写字模式：仅禁用拾落+进纸器，保持面板电机使能
-        paper_enable_panel_only();
-        paper_panel_hold_lock_dir_step();
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info,
-                       "[PaperAuto] Panel hold: EN on, DIR=align, STEP masked (cycle: STEP only, REF=%u)",
-                       (unsigned)PAPER_REF_DAC_PANEL_HOLD);
-    } else {
-        paper_disable_drivers();
-    }
-    #else
+    // 9. 换纸流程完成后关闭全部纸路使能（含面板），避免发热与蓝牙雕刻时 595 串扰
     paper_disable_drivers();
-    #endif
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Paper drivers disabled (no panel hold)");
 
     paper_auto_change_running = false;
     paper_btn_arm_post_change_cooldown();
@@ -1066,28 +911,6 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[M721] Done.");
             return e;
         }
-#ifdef ENABLE_PANEL_HOLD_MODE
-        case 902: {
-            // M902 - 启用面板保持模式（写字模式）
-            panel_hold_mode = true;
-            paper_enable_panel_only();
-            paper_panel_hold_lock_dir_step();
-            grbl_sendf(CLIENT_SERIAL, "[MSG:PANEL_HOLD_ON align+low_ref]\r\n");
-            return Error::Ok;
-        }
-        case 903: {
-            // M903 - 禁用面板保持模式
-            panel_hold_mode = false;
-            paper_disable_drivers();
-            grbl_sendf(CLIENT_SERIAL, "[MSG:PANEL_HOLD_OFF]\r\n");
-            return Error::Ok;
-        }
-        case 904: {
-            // M904 - 查询面板保持模式状态
-            grbl_sendf(CLIENT_SERIAL, "[MSG:PANEL_HOLD=%s]\r\n", panel_hold_mode ? "ON" : "OFF");
-            return Error::Ok;
-        }
-#endif
         default:
             if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
                 return Error::GcodeUnsupportedCommand;

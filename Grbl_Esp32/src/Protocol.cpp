@@ -254,7 +254,6 @@ void protocol_main_loop() {
             }
         }
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-        paper_panel_hold_refresh_during_cycle();
         paper_led_update();
 #endif
     }
