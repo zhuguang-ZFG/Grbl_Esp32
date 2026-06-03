@@ -224,28 +224,34 @@ void user_m30() {
 // - 上面在 custom_3axis_hr4988.h 中把 MACRO_BUTTON_0_PIN 映射为 PAPER_CHANGE_BTN_PIN，
 //   并通过 INVERT_CONTROL_PIN_MASK 让 Macro0 变为“低电平有效”，仅在按下时产生事件。
 // - 去抖 1：稳定低电平确认——连续多次采样均为 LOW 才视为真实按下，避免步进/EMI 毛刺误触发。
-// - 去抖 2：两次有效按下至少间隔 500ms。触发方式：连按两次才换纸（第一次提示“再按一次”，0.5～2s 内再按才注入 [ESP910]）。
+// - 触发方式：长按一次（按下稳定后计时，松开后若按住 ≥ PAPER_BTN_LONG_PRESS_MS 则注入 [ESP910]）。
 // - 为了复用现有 [ESP910] 逻辑，这里不直接调用 paper_auto_change()，
 //   而是向 WebUI::inputBuffer 注入一行 “[ESP910]”，由原有处理流程执行一键换纸。
 #define PAPER_BTN_STABLE_SAMPLES  5
 #define PAPER_BTN_STABLE_MS       8
-#define PAPER_BTN_DOUBLE_PRESS_MS_MIN  500u   // 两次按下最小间隔
-#define PAPER_BTN_DOUBLE_PRESS_MS_MAX  2000u  // 第二次有效窗：首次后 0.5～2s 内再按才触发
-// M30/换纸电机与 I2S 结束后 GPIO35 易有 EMI 毛刺，易被误判为“连按两次”
+#ifndef PAPER_BTN_LONG_PRESS_MS
+#    define PAPER_BTN_LONG_PRESS_MS  1000u  // 长按阈值（ms），可在 custom_3axis_hr4988.h 覆盖
+#endif
+// M30/换纸电机与 I2S 结束后 GPIO35 易有 EMI 毛刺
 #define PAPER_BTN_POST_CHANGE_COOLDOWN_MS  15000u
-// 蓝牙栈启动/首次 SPP 连接时射频易干扰 GPIO35，需长于连按有效窗(2s)
+// 蓝牙栈启动/首次 SPP 连接时射频易干扰 GPIO35
 #define PAPER_BTN_BT_SUPPRESS_MS           10000u
 
-static bool     paper_btn_wait_second_press = false;
-static bool     paper_btn_saw_release       = true;  // 第二次按下前必须先检测到松开
-static uint32_t paper_btn_first_press_ms   = 0;
+static bool     paper_btn_hold_timing_active = false;
+static uint32_t paper_btn_press_ms           = 0;
 static uint32_t paper_btn_post_change_ignore_until_ms = 0;
 static uint32_t paper_btn_bt_ignore_until_ms         = 0;
 
+static void paper_btn_queue_auto_change(void) {
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Triggered (long press), queuing [ESP910]...");
+    char line[16];
+    strcpy(line, "[ESP910]\r");
+    WebUI::inputBuffer.push(line);
+}
+
 void paper_btn_reset_press_state(void) {
-    paper_btn_wait_second_press = false;
-    paper_btn_saw_release       = true;
-    paper_btn_first_press_ms   = 0;
+    paper_btn_hold_timing_active = false;
+    paper_btn_press_ms           = 0;
 }
 
 void paper_btn_arm_post_change_cooldown(void) {
@@ -263,9 +269,24 @@ bool paper_btn_bt_suppress_active(void) {
 }
 
 void paper_btn_notify_macro_released(void) {
-    if (paper_btn_wait_second_press) {
-        paper_btn_saw_release = true;
+    if (!paper_btn_hold_timing_active) {
+        return;
     }
+    paper_btn_hold_timing_active = false;
+    if (paper_btn_ignore_control_events()) {
+        return;
+    }
+    if (sys.state != State::Idle) {
+        return;
+    }
+    if (paper_auto_change_is_running()) {
+        return;
+    }
+    uint32_t held_ms = millis() - paper_btn_press_ms;
+    if (held_ms < PAPER_BTN_LONG_PRESS_MS) {
+        return;  // 短按忽略，防误触
+    }
+    paper_btn_queue_auto_change();
 }
 
 bool paper_btn_ignore_control_events(void) {
@@ -311,33 +332,7 @@ void user_defined_macro(uint8_t index) {
         return;
     }
 
-    // 连按两次才触发：第一次仅记录并提示，第二次在有效窗内按下才执行换纸
-    uint32_t now_ms = millis();
-
-    if (!paper_btn_wait_second_press) {
-        paper_btn_wait_second_press = true;
-        paper_btn_saw_release       = false;
-        paper_btn_first_press_ms   = now_ms;
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Press again within %.1fs to change paper", PAPER_BTN_DOUBLE_PRESS_MS_MAX / 1000.0f);
-        return;
-    }
-    if (!paper_btn_saw_release) {
-        return;  // 第一次按下后须先松开，避免 EMI 连续低电平当成连按
-    }
-    uint32_t elapsed = now_ms - paper_btn_first_press_ms;
-    if (elapsed < PAPER_BTN_DOUBLE_PRESS_MS_MIN) {
-        return;
-    }
-    if (elapsed > PAPER_BTN_DOUBLE_PRESS_MS_MAX) {
-        paper_btn_first_press_ms = now_ms;
-        paper_btn_saw_release       = false;
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Press again within %.1fs to change paper", PAPER_BTN_DOUBLE_PRESS_MS_MAX / 1000.0f);
-        return;
-    }
-    paper_btn_wait_second_press = false;
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Triggered (double press), queuing [ESP910]...");
-
-    char line[16];
-    strcpy(line, "[ESP910]\r");
-    WebUI::inputBuffer.push(line);
+    // 长按：按下时仅开始计时，松开后由 paper_btn_notify_macro_released() 判定并触发
+    paper_btn_press_ms           = millis();
+    paper_btn_hold_timing_active = true;
 }

@@ -226,7 +226,7 @@
 #define PAPER_SENSOR_PIN        GPIO_NUM_34
 #define PAPER_CHANGE_BTN_PIN    GPIO_NUM_35  // LOW=pressed (with external pulldown)
 
-// 一键换纸物理按键 → Macro0，后端在 Custom/paper_system.cpp 里做了额外软件去抖。
+// 一键换纸物理按键 → Macro0：长按一次（默认 1s）松开后触发 [ESP910]；见 PAPER_BTN_LONG_PRESS_MS
 // 注意：按键为“低电平按下”，已在上方 INVERT_CONTROL_PIN_MASK 中把 Macro0 置为低电平有效。
 #define MACRO_BUTTON_0_PIN      PAPER_CHANGE_BTN_PIN
 // GPIO34-39 无内部上拉，须依赖板载外部电阻；勿用 INPUT_PULLUP（无效且易在蓝牙射频下误读为按下）
