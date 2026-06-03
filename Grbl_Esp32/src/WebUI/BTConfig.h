@@ -49,6 +49,8 @@ namespace WebUI {
         static void        reset_settings();
         static bool        Is_BT_on();
         static String      _btclient;
+        // BT连接时间戳（毫秒），供换纸按键判断射频稳定期
+        static uint32_t     connect_time_ms;
 
         ~BTConfig();
 

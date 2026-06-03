@@ -35,8 +35,9 @@ namespace WebUI {
     }
 #    endif
 
-    String BTConfig::_btname   = "";
-    String BTConfig::_btclient = "";
+    String    BTConfig::_btname        = "";
+    String    BTConfig::_btclient      = "";
+    uint32_t  BTConfig::connect_time_ms = 0;
 
     BTConfig::BTConfig() {}
 
@@ -47,7 +48,8 @@ namespace WebUI {
                 str[17]       = '\0';
                 uint8_t* addr = param->srv_open.rem_bda;
                 sprintf(str, "%02X:%02X:%02X:%02X:%02X:%02X", addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
-                BTConfig::_btclient = str;
+                BTConfig::_btclient      = str;
+                BTConfig::connect_time_ms = millis();
                 grbl_sendf(CLIENT_ALL, "[MSG:BT Connected with %s]\r\n", str);
             } break;
             case ESP_SPP_CLOSE_EVT:  //Client connection closed

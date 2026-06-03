@@ -6,7 +6,8 @@
 // 这里不需要再次 include。
 
 static void license_load_from_nvs(void);  // 前向声明，供 machine_init 使用
-static bool paper_change_last_ok = true;  // 最近一次 user_m30 触发的换纸结果（true=成功）
+static bool     paper_change_last_ok     = true;   // 最近一次 user_m30 触发的换纸结果（true=成功）
+static uint32_t paper_change_cooldown_ms = 0;      // M30 和按键共用的换纸冷却计时器（防 EMI 误触发）
 
 // 机器初始化钩子：在 Grbl 启动时调用（弱符号在 Grbl.cpp 中，这里覆盖）
 // 打印芯片 ID（用于向厂商申请授权码），并从 NVS 恢复授权状态。
@@ -163,6 +164,7 @@ void user_m30() {
     }
 
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperM30] End of page (M30) detected, starting auto paper change...");
+    paper_change_cooldown_ms = millis();  // 更新冷却计时器，防止换纸后 EMI 立即误触发按键
     Error e = paper_auto_change();
     if (e == Error::Ok) {
         // 换纸完成后机械上 Z 已在抬笔极限（原点），将系统 Z 设为 0，避免下一页首条指令再让 Z 往“上”走
@@ -180,24 +182,59 @@ void user_m30() {
 }
 
 // 一键换纸物理按键（接在 GPIO35，对应 Macro0）回调。
-// 要求：“按键按下松开后去抖，加入到一键换纸流程中”
 //
-// 设计说明：
-// - 硬件：PAPER_CHANGE_BTN_PIN = GPIO35，实测接法为 LOW=按下，HIGH=松开（外部下拉）。
-// - 上面在 custom_3axis_hr4988.h 中把 MACRO_BUTTON_0_PIN 映射为 PAPER_CHANGE_BTN_PIN，
-//   并通过 INVERT_CONTROL_PIN_MASK 让 Macro0 变为"低电平有效"，仅在按下时产生事件。
-// - 去抖 1：稳定低电平确认——连续多次采样均为 LOW 才视为真实按下，避免步进/EMI 毛刺误触发。
-// - 去抖 2：长按确认——稳定确认后继续按住 PAPER_BTN_HOLD_MS 才触发换纸，松手则取消，强抗EMI。
-// - 为了复用现有 [ESP910] 逻辑，这里不直接调用 paper_auto_change()，
-//   而是向 WebUI::inputBuffer 注入一行 "[ESP910]"，由原有处理流程执行一键换纸。
+// 核心难点：GPIO35 仅 INPUT_PULLUP (~45kΩ)，电机 PWM / 蓝牙 RF 等 EMI 可将其持续拉低。
+//
+// 三层 EMI 防护策略：
+//   1. 上升沿守卫：下降沿到来前，引脚必须已 HIGH 至少 2 秒（排除 EMI 尖峰/间歇 LOW）
+//   2. 释放检测（核心创新）：1s 稳定 LOW 后，必须等待引脚回到 HIGH（释放）；
+//      真实按键会在 1~5 秒内释放，EMI 会持续 LOW 超时（>5s）→ 判定为 EMI 忽略
+//   3. 冷却期：任何换纸（M30 或按键）后 120 秒内屏蔽按键，消除连锁误触发
+//
+// 为什么释放检测有效：
+//   - 真实按键：用户按住 1s 左右 → 松开 → LOW→HIGH（释放）
+//   - EMI：电机 PWM 持续拉低 GPIO35，数秒~数分钟不回升 → 释放超时 → 忽略
+//
+// 复用现有 [ESP910] 逻辑，不直接调用 paper_auto_change()。
 #define PAPER_BTN_STABLE_SAMPLES  10      // 连续采样10次，抗EMI毛刺
 #define PAPER_BTN_STABLE_MS       800     // 800ms稳定确认
-#define PAPER_BTN_HOLD_MS         200     // 稳定确认后还需继续按住200ms（总计约1s）
+#define PAPER_BTN_HOLD_MS         200     // 稳定确认后继续按住200ms（总计约1s）
 #define PAPER_BTN_HOLD_SAMPLES    4       // 长按确认采样次数
+#define PAPER_BTN_RELEASE_TIMEOUT 5000    // 释放检测超时（5秒内必须释放，否则视为EMI）
+#define PAPER_BTN_COOLDOWN_MS     120000  // 按键冷却期（2分钟）
 void user_defined_macro(uint8_t index) {
     if (index != 0) {
         return;
     }
+
+    static uint32_t last_btn_high_ms = 0;  // 最后一次检测到 HIGH 的时间
+
+#ifdef ENABLE_BLUETOOTH
+    // 蓝牙连接后 25 秒内额外屏蔽 GPIO35，双重保险
+    if (WebUI::SerialBT.hasClient() && (millis() - WebUI::bt_config.connect_time_ms) < 25000) {
+        return;
+    }
+#endif
+
+    // 判断当前边沿：ISR 在 CHANGE 时触发，通过读取当前电平区分上升/下降沿
+    if (digitalRead(PAPER_CHANGE_BTN_PIN) != LOW) {
+        // 上升沿（LOW→HIGH = 释放）：记录时间，等待下次下降沿
+        last_btn_high_ms = millis();
+        return;
+    }
+
+    // === 第 1 层：上升沿守卫 — 下降沿到来前必须已 HIGH ≥ 2 秒 ===
+    // 注意：不再有 last_btn_high_ms==0 的绕过！如果从未 HIGH（last_btn_high_ms==0），
+    // 说明引脚自开机就被 EMI 持续拉低 → 拒绝所有下降沿，直到真正出现过一次 HIGH。
+    if (last_btn_high_ms == 0 || (millis() - last_btn_high_ms) < 2000) {
+        return;
+    }
+
+    // === 第 2 层：冷却期 — 任何换纸后 120 秒内屏蔽按键 ===
+    if (millis() - paper_change_cooldown_ms < PAPER_BTN_COOLDOWN_MS) {
+        return;
+    }
+
     // 第一阶段：稳定低电平确认——800ms内连续10次采样均为LOW
     {
         const uint32_t step_ms = (PAPER_BTN_STABLE_MS / PAPER_BTN_STABLE_SAMPLES);
@@ -206,7 +243,7 @@ void user_defined_macro(uint8_t index) {
                 delay(step_ms);
             }
             if (digitalRead(PAPER_CHANGE_BTN_PIN) != LOW) {
-                return;
+                return;  // 噪声，取消
             }
         }
     }
@@ -220,7 +257,28 @@ void user_defined_macro(uint8_t index) {
             }
         }
     }
-    // 必须在 Idle 状态才能开始一键换纸（运行中按下仅忽略，不发 Info 避免串口/蓝牙发送阻塞主循环导致 XY 卡顿）
+
+    // === 第 3 层：释放检测（核心）— 等待引脚回到 HIGH ===
+    // 已确认 1s 稳定 LOW（符合长按条件），但还需确认这是"松开"而非"EMI 持续拉低"。
+    // 真实按键：用户松手 → LOW→HIGH，通常在 1~3 秒内发生。
+    // EMI：电机 PWM 持续拉低 → 引脚可能数秒甚至数分钟不回升。
+    // 在 5 秒超时窗口内轮询，一旦检测到 HIGH 即判定为有效释放。
+    {
+        const int check_interval_ms = 50;
+        for (int waited = 0; waited < PAPER_BTN_RELEASE_TIMEOUT; waited += check_interval_ms) {
+            delay(check_interval_ms);
+            if (digitalRead(PAPER_CHANGE_BTN_PIN) != LOW) {
+                // 释放确认：引脚已回到 HIGH → 这是真实按键释放
+                goto btn_release_confirmed;
+            }
+        }
+        // 超时 5 秒仍未释放 → EMI 持续拉低，忽略
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] EMI rejection: pin stuck LOW > %d s", PAPER_BTN_RELEASE_TIMEOUT / 1000);
+        return;
+    }
+
+btn_release_confirmed:
+    // 必须在 Idle 状态才能开始一键换纸
     if (sys.state != State::Idle) {
         return;
     }
@@ -230,7 +288,8 @@ void user_defined_macro(uint8_t index) {
         return;
     }
 
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Long press confirmed, queuing [ESP910]...");
+    paper_change_cooldown_ms = millis();
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Long press confirmed (release detected), queuing [ESP910]...");
 
     char line[16];
     strcpy(line, "[ESP910]\r");
