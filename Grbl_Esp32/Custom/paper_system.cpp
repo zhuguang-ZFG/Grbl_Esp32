@@ -190,10 +190,10 @@ void user_m30() {
 // - 去抖 2：两次有效按下至少间隔 500ms。触发方式：连按两次才换纸（第一次提示“再按一次”，0.5～2s 内再按才注入 [ESP910]）。
 // - 为了复用现有 [ESP910] 逻辑，这里不直接调用 paper_auto_change()，
 //   而是向 WebUI::inputBuffer 注入一行 “[ESP910]”，由原有处理流程执行一键换纸。
-#define PAPER_BTN_STABLE_SAMPLES  5
-#define PAPER_BTN_STABLE_MS       8
-#define PAPER_BTN_DOUBLE_PRESS_MS_MIN  500u   // 两次按下最小间隔
-#define PAPER_BTN_DOUBLE_PRESS_MS_MAX  2000u  // 第二次有效窗：首次后 0.5～2s 内再按才触发
+#define PAPER_BTN_STABLE_SAMPLES  10      // 从5增加到10，抗EMI毛刺
+#define PAPER_BTN_STABLE_MS       50      // 从8ms增加到50ms，抗EMI持续干扰
+#define PAPER_BTN_DOUBLE_PRESS_MS_MIN  1000u  // 从500ms增加到1000ms，抗两次EMI误双击
+#define PAPER_BTN_DOUBLE_PRESS_MS_MAX  3000u  // 从2s放宽到3s，人操作仍方便
 void user_defined_macro(uint8_t index) {
     if (index != 0) {
         return;

@@ -57,7 +57,7 @@ Some features should not be changed. See notes below.
 #define INVERT_CONTROL_PIN_MASK B00001111
 
 // #define ENABLE_CONTROL_SW_DEBOUNCE     // Default disabled. Uncomment to enable.
-#define CONTROL_SW_DEBOUNCE_PERIOD 32  // in milliseconds default 32 microseconds
+#define CONTROL_SW_DEBOUNCE_PERIOD 64  // in milliseconds, from 32 to 64ms for EMI rejection
 
 #define USE_RMT_STEPS
 
@@ -501,7 +501,7 @@ const int DWELL_TIME_STEP = 50;  // Integer (1-255) (milliseconds)
 // switch interrupt unblock a waiting task which will recheck the limit switch pins after
 // a short delay. Default disabled
 //#define ENABLE_SOFTWARE_DEBOUNCE // Default disabled. Uncomment to enable.
-const int DEBOUNCE_PERIOD = 32;  // in milliseconds default 32 microseconds
+const int DEBOUNCE_PERIOD = 64;  // in milliseconds, from 32 to 64ms for EMI rejection
 
 // Configures the position after a probing cycle during Grbl's check mode. Disabled sets
 // the position to the probe target, when enabled sets the position to the start position.
