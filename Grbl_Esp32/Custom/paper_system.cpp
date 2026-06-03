@@ -224,17 +224,17 @@ void user_m30() {
 // - 上面在 custom_3axis_hr4988.h 中把 MACRO_BUTTON_0_PIN 映射为 PAPER_CHANGE_BTN_PIN，
 //   并通过 INVERT_CONTROL_PIN_MASK 让 Macro0 变为“低电平有效”，仅在按下时产生事件。
 // - 去抖 1：稳定低电平确认——连续多次采样均为 LOW 才视为真实按下，避免步进/EMI 毛刺误触发。
-// - 去抖 2：两次有效按下至少间隔 500ms。触发方式：连按两次才换纸（第一次提示“再按一次”，0.5～2s 内再按才注入 [ESP910]）。
+// - 去抖 2：两次有效按下至少间隔 500ms。触发方式：连按两次才换纸（第一次提示“再按一次”，0.5～5s 内再按才注入 [ESP910]）。
 // - 为了复用现有 [ESP910] 逻辑，这里不直接调用 paper_auto_change()，
 //   而是向 WebUI::inputBuffer 注入一行 “[ESP910]”，由原有处理流程执行一键换纸。
 #define PAPER_BTN_STABLE_SAMPLES  5
 #define PAPER_BTN_STABLE_MS       8
 #define PAPER_BTN_DOUBLE_PRESS_MS_MIN  500u   // 两次按下最小间隔
-#define PAPER_BTN_DOUBLE_PRESS_MS_MAX  2000u  // 第二次有效窗：首次后 0.5～2s 内再按才触发
-// M30/换纸电机与 I2S 结束后 GPIO35 易有 EMI 毛刺，易被误判为“连按两次”
-#define PAPER_BTN_POST_CHANGE_COOLDOWN_MS  15000u
-// 蓝牙栈启动/首次 SPP 连接时射频易干扰 GPIO35，需长于连按有效窗(2s)
-#define PAPER_BTN_BT_SUPPRESS_MS           10000u
+#define PAPER_BTN_DOUBLE_PRESS_MS_MAX  5000u  // 第二次有效窗：首次后 0.5～5s 内再按才触发
+// 换纸结束后物理键冷却：0=立刻可再按（仍须双击触发）；>0 则该毫秒内忽略 Macro0
+#define PAPER_BTN_POST_CHANGE_COOLDOWN_MS  0u
+// 蓝牙栈启动/首次 SPP 连接时射频易干扰 GPIO35
+#define PAPER_BTN_BT_SUPPRESS_MS           1000u
 
 static bool     paper_btn_wait_second_press = false;
 static bool     paper_btn_saw_release       = true;  // 第二次按下前必须先检测到松开
