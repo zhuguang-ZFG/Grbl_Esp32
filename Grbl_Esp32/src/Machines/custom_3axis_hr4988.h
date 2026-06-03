@@ -106,16 +106,16 @@
 #define PAPER_PANEL_ENABLE_PIN   I2SO(1)
 #define PAPER_DRIVER_ENABLE_PIN  GPIO_NUM_26
 #define PAPER_DRIVER_REF_PIN    GPIO_NUM_25   // DAC 直连 HR4988 REF，无分压；0–255 → 0–3.3V（三路纸路电机共用此脚，固件按当前运行的电机切换 DAC 值）
-#define PAPER_DRIVER_REF_DAC    50         // 未单独指定时使用的默认 REF（0–255）
+#define PAPER_DRIVER_REF_DAC    70         // 未单独指定时使用的默认 REF（0–255）
 // 每个电机独立 REF（可选）：不定义则三路均用 PAPER_DRIVER_REF_DAC
 #ifndef PAPER_REF_DAC_CLAMP
-#    define PAPER_REF_DAC_CLAMP   130  // 拾落电机（静音优化：降电流13%，保留足够扭矩）
+#    define PAPER_REF_DAC_CLAMP   155  // 拾落电机（约 2.0V REF；发烫则略减）
 #endif
 #ifndef PAPER_REF_DAC_PANEL
-#    define PAPER_REF_DAC_PANEL   60    // 面板电机（静音优化：降电流25%）
+#    define PAPER_REF_DAC_PANEL   90    // 面板电机（约 1.17V）
 #endif
 #ifndef PAPER_REF_DAC_FEEDER
-#    define PAPER_REF_DAC_FEEDER  80   // 进纸器电机
+#    define PAPER_REF_DAC_FEEDER  110   // 进纸器电机（约 1.42V）
 #endif
 // 使能时 REF 软启动（ms）：先 REF=0 再使能，延时后再升到目标，减轻上电冲击避免板子断电；0=关闭
 #ifndef PAPER_REF_SOFTSTART_MS
@@ -224,6 +224,8 @@
 // 一键换纸物理按键 → Macro0，后端在 Custom/paper_system.cpp 里做了额外软件去抖。
 // 注意：按键为“低电平按下”，已在上方 INVERT_CONTROL_PIN_MASK 中把 Macro0 置为低电平有效。
 #define MACRO_BUTTON_0_PIN      PAPER_CHANGE_BTN_PIN
+// GPIO34-39 无内部上拉，须依赖板载外部电阻；勿用 INPUT_PULLUP（无效且易在蓝牙射频下误读为按下）
+#define MACRO_BUTTON_0_PIN_MODE INPUT
 
 // Map user digital outputs (M62..M65 Px) to paper-handling signals
 // M62/M64 Px = ON (HIGH), M63/M65 Px = OFF (LOW)

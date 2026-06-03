@@ -102,6 +102,60 @@ bool can_park() {
         homing_enable->get() && !spindle->inLaserMode();
 }
 
+// 规划器接近断粮时优先吃 BT 队列里已到达的 G 代码（不依赖上位机降速）
+static const uint8_t PLANNER_STARVE_THRESHOLD = 8;
+
+// 从指定 client 读入并执行；若完整执行了一行 G 代码则返回 true
+static bool protocol_poll_client(uint8_t client) {
+    int     c;
+    bool    line_executed = false;
+    char*   line;
+    while ((c = client_read(client)) != -1) {
+        Error res = add_char_to_line(c, client);
+        switch (res) {
+            case Error::Ok:
+                break;
+            case Error::Eol:
+                protocol_execute_realtime();
+                if (sys.abort) {
+                    return line_executed;
+                }
+                line = client_lines[client].buffer;
+#ifdef ENABLE_BLUETOOTH
+                if (client == CLIENT_BT) {
+                    uint32_t now_ms = millis();
+                    if (last_bt_eol_ms != 0) {
+                        uint32_t gap_ms = now_ms - last_bt_eol_ms;
+                        if (gap_ms > 2000u) {
+                            grbl_sendf(CLIENT_SERIAL,
+                                       "[BT-EOL gap=%u ms B=%u st=%u] %s\r\n",
+                                       (unsigned)gap_ms,
+                                       (unsigned)plan_get_block_buffer_available(),
+                                       (unsigned)sys.state,
+                                       line);
+                        }
+                    }
+                    last_bt_eol_ms = now_ms;
+                }
+#endif
+#ifdef REPORT_ECHO_RAW_LINE_RECEIVED
+                report_echo_line_received(line, client);
+#endif
+                report_status_message(execute_line(line, client, WebUI::AuthenticationLevel::LEVEL_GUEST), client);
+                empty_line(client);
+                line_executed = true;
+                break;
+            case Error::Overflow:
+                report_status_message(Error::Overflow, client);
+                empty_line(client);
+                break;
+            default:
+                break;
+        }
+    }
+    return line_executed;
+}
+
 /*
   GRBL PRIMARY LOOP:
 */
@@ -138,7 +192,6 @@ void protocol_main_loop() {
     // Primary loop! Upon a system abort, this exits back to main() to reset the system.
     // This is also where Grbl idles while waiting for something to do.
     // ---------------------------------------------------------------------------------
-    int c;
     for (;;) {
 #ifdef ENABLE_SD_CARD
         if (SD_ready_next) {
@@ -154,57 +207,37 @@ void protocol_main_loop() {
             }
         }
 #endif
-        // Receive one line of incoming serial data, as the data becomes available.
-        // Filtering, if necessary, is done later in gc_execute_line(), so the
-        // filtering is the same with serial and file input.
-        uint8_t client = CLIENT_SERIAL;
-        char*   line;
-        for (client = 0; client < CLIENT_COUNT; client++) {
-            while ((c = client_read(client)) != -1) {
-                Error res = add_char_to_line(c, client);
-                switch (res) {
-                    case Error::Ok:
+        // 上位机（奎享等）无法改流控：BT 连接时先排空蓝牙，避免 COM 监视口杂字节占满主循环
+#ifdef ENABLE_BLUETOOTH
+        const bool bt_active = WebUI::SerialBT.hasClient();
+        if (bt_active) {
+            protocol_poll_client(CLIENT_BT);
+            if (sys.state == State::Cycle && plan_get_block_buffer_available() < PLANNER_STARVE_THRESHOLD) {
+                for (uint8_t pass = 0; pass < 6; pass++) {
+                    if (!protocol_poll_client(CLIENT_BT)) {
                         break;
-                    case Error::Eol:
-                        protocol_execute_realtime();  // Runtime command check point.
-                        if (sys.abort) {
-                            return;  // Bail to calling function upon system abort
-                        }
-                        line = client_lines[client].buffer;
-                        // BT 节奏排查：只在“BT 接收间隔异常变大”时打印，避免刷屏导致进一步卡顿
-                        if (client == CLIENT_BT) {
-                            uint32_t now_ms = millis();
-                            if (last_bt_eol_ms != 0) {
-                                uint32_t gap_ms = now_ms - last_bt_eol_ms;
-                                // 阈值可按现象调整：越小打印越多，越大越不容易干扰
-                                // 阈值提高，减少打印干扰：只看明显“断流/等待”的间隔
-                                if (gap_ms > 200u) {
-                                    grbl_sendf(CLIENT_SERIAL,
-                                               "[BT-EOL gap=%u ms B=%u st=%u] %s\r\n",
-                                               (unsigned)gap_ms,
-                                               (unsigned)plan_get_block_buffer_available(),
-                                               (unsigned)sys.state,
-                                               line);
-                                }
-                            }
-                            last_bt_eol_ms = now_ms;
-                        }
-#ifdef REPORT_ECHO_RAW_LINE_RECEIVED
-                        report_echo_line_received(line, client);
-#endif
-                        // auth_level can be upgraded by supplying a password on the command line
-                        report_status_message(execute_line(line, client, WebUI::AuthenticationLevel::LEVEL_GUEST), client);
-                        empty_line(client);
+                    }
+                    if (sys.abort) {
+                        return;
+                    }
+                    if (plan_get_block_buffer_available() >= PLANNER_STARVE_THRESHOLD) {
                         break;
-                    case Error::Overflow:
-                        report_status_message(Error::Overflow, client);
-                        empty_line(client);
-                        break;
-                    default:
-                        break;
+                    }
                 }
-            }  // while serial read
-        }      // for clients
+            }
+        }
+#else
+        const bool bt_active = false;
+#endif
+        for (uint8_t client = 0; client < CLIENT_COUNT; client++) {
+            if (bt_active && client == CLIENT_BT) {
+                continue;
+            }
+            protocol_poll_client(client);
+            if (sys.abort) {
+                return;
+            }
+        }
         // If there are no more characters in the serial read buffer to be processed and executed,
         // this indicates that g-code streaming has either filled the planner buffer or has
         // completed. In either case, auto-cycle start, if enabled, any queued moves.
@@ -221,6 +254,7 @@ void protocol_main_loop() {
             }
         }
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+        paper_panel_hold_refresh_during_cycle();
         paper_led_update();
 #endif
     }
@@ -256,7 +290,10 @@ void protocol_auto_cycle_start() {
 // 每 500ms 检查一次 planner buffer 水位
 // 当水位低于阈值时，通知上位机降低发送速度
 static uint32_t last_buffer_check_ms = 0;
-const uint32_t BUFFER_CHECK_INTERVAL_MS = 500;  // 检查间隔 500ms
+static uint32_t last_low_buffer_msg_ms = 0;
+static bool     buffer_low_warn_latched = false;
+const uint32_t BUFFER_CHECK_INTERVAL_MS = 500;   // 检查间隔 500ms
+const uint32_t LOW_BUFFER_MSG_INTERVAL_MS = 3000;  // 同一次饥饿期最多 3s 报一次
 const uint8_t BUFFER_LOW_THRESHOLD = 3;  // 低水位阈值（~1.2% of BLOCK_BUFFER_SIZE=250）
 
 void check_buffer_watermark() {
@@ -265,13 +302,26 @@ void check_buffer_watermark() {
         return;
     }
     last_buffer_check_ms = now;
-    
-    uint8_t planner_free = plan_get_block_buffer_available();
-    
-    // 低水位警告：当 planner buffer 可用块数 < BUFFER_LOW_THRESHOLD 时
-    if (planner_free < BUFFER_LOW_THRESHOLD && sys.state == State::Cycle) {
-        grbl_sendf(CLIENT_SERIAL, "[MSG:LOW_BUFFER B=%u]\r\n", planner_free);
+
+    if (sys.state != State::Cycle) {
+        buffer_low_warn_latched = false;
+        return;
     }
+
+    uint8_t planner_free = plan_get_block_buffer_available();
+    if (planner_free >= BUFFER_LOW_THRESHOLD) {
+        buffer_low_warn_latched = false;
+        return;
+    }
+
+    if (buffer_low_warn_latched && (now - last_low_buffer_msg_ms < LOW_BUFFER_MSG_INTERVAL_MS)) {
+        return;
+    }
+    buffer_low_warn_latched = true;
+    last_low_buffer_msg_ms  = now;
+
+    // 奎享等上位机无法根据 B= 降速，发 BT 只会占带宽；仅 COM 监视口低频记录便于排查
+    grbl_sendf(CLIENT_SERIAL, "[MSG:LOW_BUFFER B=%u]\r\n", planner_free);
 }
 
 // This function is the general interface to Grbl's real-time command execution system. It is called

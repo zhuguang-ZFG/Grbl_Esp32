@@ -171,6 +171,8 @@ void user_m30() {
         gc_sync_position();
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperM30] Auto paper change completed.");
         paper_change_last_ok = true;
+        paper_btn_arm_post_change_cooldown();
+        paper_btn_arm_bt_suppress();
     } else {
         grbl_msg_sendf(CLIENT_SERIAL,
                        MsgLevel::Warning,
@@ -194,9 +196,59 @@ void user_m30() {
 #define PAPER_BTN_STABLE_MS       8
 #define PAPER_BTN_DOUBLE_PRESS_MS_MIN  500u   // 两次按下最小间隔
 #define PAPER_BTN_DOUBLE_PRESS_MS_MAX  2000u  // 第二次有效窗：首次后 0.5～2s 内再按才触发
+// M30/换纸电机与 I2S 结束后 GPIO35 易有 EMI 毛刺，易被误判为“连按两次”
+#define PAPER_BTN_POST_CHANGE_COOLDOWN_MS  15000u
+// 蓝牙栈启动/首次 SPP 连接时射频易干扰 GPIO35，需长于连按有效窗(2s)
+#define PAPER_BTN_BT_SUPPRESS_MS           10000u
+
+static bool     paper_btn_wait_second_press = false;
+static bool     paper_btn_saw_release       = true;  // 第二次按下前必须先检测到松开
+static uint32_t paper_btn_first_press_ms   = 0;
+static uint32_t paper_btn_post_change_ignore_until_ms = 0;
+static uint32_t paper_btn_bt_ignore_until_ms         = 0;
+
+void paper_btn_reset_press_state(void) {
+    paper_btn_wait_second_press = false;
+    paper_btn_saw_release       = true;
+    paper_btn_first_press_ms   = 0;
+}
+
+void paper_btn_arm_post_change_cooldown(void) {
+    paper_btn_reset_press_state();
+    paper_btn_post_change_ignore_until_ms = millis() + PAPER_BTN_POST_CHANGE_COOLDOWN_MS;
+}
+
+void paper_btn_arm_bt_suppress(void) {
+    paper_btn_reset_press_state();
+    paper_btn_bt_ignore_until_ms = millis() + PAPER_BTN_BT_SUPPRESS_MS;
+}
+
+bool paper_btn_bt_suppress_active(void) {
+    return millis() < paper_btn_bt_ignore_until_ms;
+}
+
+void paper_btn_notify_macro_released(void) {
+    if (paper_btn_wait_second_press) {
+        paper_btn_saw_release = true;
+    }
+}
+
+bool paper_btn_ignore_control_events(void) {
+    if (millis() < paper_btn_post_change_ignore_until_ms) {
+        return true;
+    }
+    if (millis() < paper_btn_bt_ignore_until_ms) {
+        return true;
+    }
+    return false;
+}
+
 void user_defined_macro(uint8_t index) {
     if (index != 0) {
         return;
+    }
+    if (paper_btn_ignore_control_events()) {
+        return;  // 蓝牙连接抑制或换纸刚结束冷却，静默丢弃
     }
     // 稳定低电平确认：LOW=按下，任一样本为 HIGH 则视为毛刺/误触发
     {
@@ -221,26 +273,29 @@ void user_defined_macro(uint8_t index) {
     }
 
     // 连按两次才触发：第一次仅记录并提示，第二次在有效窗内按下才执行换纸
-    static bool     wait_second_press = false;
-    static uint32_t first_press_ms   = 0;
-    uint32_t        now_ms           = millis();
+    uint32_t now_ms = millis();
 
-    if (!wait_second_press) {
-        wait_second_press = true;
-        first_press_ms   = now_ms;
+    if (!paper_btn_wait_second_press) {
+        paper_btn_wait_second_press = true;
+        paper_btn_saw_release       = false;
+        paper_btn_first_press_ms   = now_ms;
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Press again within %.1fs to change paper", PAPER_BTN_DOUBLE_PRESS_MS_MAX / 1000.0f);
         return;
     }
-    uint32_t elapsed = now_ms - first_press_ms;
+    if (!paper_btn_saw_release) {
+        return;  // 第一次按下后须先松开，避免 EMI 连续低电平当成连按
+    }
+    uint32_t elapsed = now_ms - paper_btn_first_press_ms;
     if (elapsed < PAPER_BTN_DOUBLE_PRESS_MS_MIN) {
         return;
     }
     if (elapsed > PAPER_BTN_DOUBLE_PRESS_MS_MAX) {
-        first_press_ms = now_ms;
+        paper_btn_first_press_ms = now_ms;
+        paper_btn_saw_release       = false;
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Press again within %.1fs to change paper", PAPER_BTN_DOUBLE_PRESS_MS_MAX / 1000.0f);
         return;
     }
-    wait_second_press = false;
+    paper_btn_wait_second_press = false;
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Triggered (double press), queuing [ESP910]...");
 
     char line[16];

@@ -69,7 +69,11 @@ void system_ini() {  // Renamed from system_init() due to conflict with esp32 fi
 #endif
 #ifdef MACRO_BUTTON_0_PIN
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "Macro Pin 0 %s", pinName(MACRO_BUTTON_0_PIN).c_str());
+#    ifdef MACRO_BUTTON_0_PIN_MODE
+    pinMode(MACRO_BUTTON_0_PIN, MACRO_BUTTON_0_PIN_MODE);
+#    else
     pinMode(MACRO_BUTTON_0_PIN, INPUT_PULLUP);
+#    endif
     attachInterrupt(digitalPinToInterrupt(MACRO_BUTTON_0_PIN), isr_control_inputs, CHANGE);
 #endif
 #ifdef MACRO_BUTTON_1_PIN
@@ -126,6 +130,10 @@ void controlCheckTask(void* pvParameters) {
         ControlPins pins = system_control_get_state();
         if (pins.value) {
             system_exec_control_pin(pins);
+        } else {
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+            paper_btn_notify_macro_released();
+#endif
         }
         debouncing = false;
 
@@ -267,6 +275,11 @@ void system_exec_control_pin(ControlPins pins) {
     } else if (pins.bit.safetyDoor) {
         sys_rt_exec_state.bit.safetyDoor = true;
     } else if (pins.bit.macro0) {
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+        if (paper_auto_change_is_running() || paper_btn_ignore_control_events()) {
+            return;
+        }
+#endif
         user_defined_macro(0);  // function must be implemented by user
     } else if (pins.bit.macro1) {
         user_defined_macro(1);  // function must be implemented by user

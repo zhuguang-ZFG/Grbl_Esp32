@@ -40,6 +40,14 @@ namespace WebUI {
 
     BTConfig::BTConfig() {}
 
+    bool BTConfig::suppress_paper_button_events() {
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+        return paper_btn_bt_suppress_active();
+#else
+        return false;
+#endif
+    }
+
     static void my_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
         switch (event) {
             case ESP_SPP_SRV_OPEN_EVT: {  //Server connection open
@@ -48,6 +56,9 @@ namespace WebUI {
                 uint8_t* addr = param->srv_open.rem_bda;
                 sprintf(str, "%02X:%02X:%02X:%02X:%02X:%02X", addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
                 BTConfig::_btclient = str;
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+                paper_btn_arm_bt_suppress();
+#endif
                 grbl_sendf(CLIENT_ALL, "[MSG:BT Connected with %s]\r\n", str);
             } break;
             case ESP_SPP_CLOSE_EVT:  //Client connection closed
@@ -122,6 +133,9 @@ namespace WebUI {
                 report_status_message(Error::BtFailBegin, CLIENT_ALL);
             } else {
                 SerialBT.register_callback(&my_spp_cb);
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+                paper_btn_arm_bt_suppress();
+#endif
                 grbl_sendf(CLIENT_ALL, "[MSG:BT Started with %s]\r\n", _btname.c_str());
             }
         } else {

@@ -205,7 +205,12 @@ void clientCheckTask(void* pvParameters) {
 #if defined(ENABLE_WIFI) && defined(ENABLE_HTTP) && defined(ENABLE_SERIAL2SOCKET_IN)
         WebUI::Serial2Socket.handle_flush();
 #endif
-        vTaskDelay(1 / portTICK_RATE_MS);  // Yield to other tasks
+        // 规划器饥饿时少让出 CPU，尽快把 SPP 字节搬进 client_buffer（上位机无法改流控）
+        if (sys.state == State::Cycle && plan_get_block_buffer_available() < 8) {
+            taskYIELD();
+        } else {
+            vTaskDelay(1 / portTICK_RATE_MS);
+        }
 
         static UBaseType_t uxHighWaterMark = 0;
 #ifdef DEBUG_TASK_STACK

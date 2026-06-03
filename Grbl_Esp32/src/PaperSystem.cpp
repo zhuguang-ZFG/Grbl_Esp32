@@ -54,12 +54,37 @@ bool paper_auto_change_is_running(void) {
 static void paper_ensure_i2s_passthrough(void);
 #endif
 
+// 写字模式下面板驱动常使能：刷新 74HC595 后把 STEP 拉回低，避免锁存毛刺被驱动器当成步进
+static void paper_panel_guard_step_low(void) {
+#ifdef ENABLE_PANEL_HOLD_MODE
+    if (!panel_hold_mode || paper_auto_change_running) {
+        return;
+    }
+    if (digitalRead(PAPER_ENABLE_PIN) != LOW) {
+        return;
+    }
+    digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
+#    ifdef USE_I2S_OUT
+    i2s_out_delay();
+#    endif
+#endif
+}
+
 // 按键彩灯：Q0/QA，HIGH=灭，LOW=亮
 static void paper_led_set(bool on) {
+    static bool led_cached_on    = false;
+    static bool led_cache_valid  = false;
+    const bool  target_on        = on;
+    if (led_cache_valid && (led_cached_on == target_on)) {
+        return;
+    }
 #ifdef USE_I2S_OUT
     paper_ensure_i2s_passthrough();
 #endif
-    digitalWrite(PAPER_LED_PIN, on ? LOW : HIGH);
+    digitalWrite(PAPER_LED_PIN, target_on ? LOW : HIGH);
+    led_cached_on   = target_on;
+    led_cache_valid = true;
+    paper_panel_guard_step_low();
 }
 
 // 彩灯状态刷新（在主循环中周期调用，内部节流约 80ms）
@@ -72,6 +97,12 @@ void paper_led_update(void) {
         return;
     }
     last_ms = now_ms;
+
+    // 雕刻/点动/回零时不再刷新 74HC595（LED 与面板 STEP 同芯片）。
+    // 蓝牙上位机高频 ? 报告会放大主循环抖动，重复锁存易导致面板电机微动。
+    if (sys.state == State::Cycle || sys.state == State::Jog || sys.state == State::Homing || sys.state == State::Hold) {
+        return;
+    }
 
     bool paper_ok = (PAPER_SENSOR_PIN != PAPER_DISABLED) && (digitalRead(PAPER_SENSOR_PIN) == 0);
     bool idle     = (sys.state == State::Idle);
@@ -99,6 +130,32 @@ void paper_led_update(void) {
 #else
 void paper_led_update(void) {}
 #endif
+
+// 雕刻/点动时面板电机常使能：通过 i2s_out_port_data 把面板 STEP 位钉在低，降低与 XY 同链 595 的串扰
+void paper_panel_hold_refresh_during_cycle(void) {
+#ifdef ENABLE_PANEL_HOLD_MODE
+    if (!panel_hold_mode || paper_auto_change_running) {
+        return;
+    }
+    if (sys.state != State::Cycle && sys.state != State::Hold && sys.state != State::Jog) {
+        return;
+    }
+    static uint32_t last_ms = 0;
+    uint32_t        now_ms  = millis();
+    if (now_ms - last_ms < 50u) {
+        return;
+    }
+    last_ms = now_ms;
+    if (digitalRead(PAPER_ENABLE_PIN) != LOW) {
+        return;
+    }
+#    ifdef USE_I2S_OUT
+    i2s_out_write((uint8_t)PANEL_MOTOR_STEP_PIN, 0);
+#    else
+    digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
+#    endif
+#endif
+}
 
 // 每 YIELD_STEPS 步 yield 一次，避免长时间阻塞触发 ESP32 Interrupt Watchdog (Core 1 panic)
 #define PAPER_YIELD_STEPS 50u
@@ -286,6 +343,7 @@ void paper_system_init(void) {
     paper_led_update();
 #endif
     // 注意：I2S_OUT已在Grbl.cpp中全局初始化，这里只在需要时切到 passthrough
+    paper_ensure_i2s_passthrough();
 }
 
 
@@ -304,15 +362,15 @@ void paper_get_status_str(char* buf, size_t len) {
     snprintf(buf, len, "Paper=%s MotorEn=%s", paper_ok ? "OK" : "No", en_ok ? "On" : "Off");
 }
 
-// 内部辅助函数：确保 I2S 处于 passthrough 模式
+// 内部辅助函数：确保 I2S 处于 passthrough 模式（仅首次做长延时，避免主循环反复阻塞/锁存 595）
 static void paper_ensure_i2s_passthrough(void) {
 #ifdef USE_I2S_OUT
     if (!paper_i2s_setup) {
         i2s_out_set_passthrough();  // I2S已在Grbl.cpp全局初始化，这里仅设置passthrough模式
         paper_i2s_setup = true;
+        delay(I2S_OUT_DELAY_MS * 2);
+        i2s_out_delay();
     }
-    delay(I2S_OUT_DELAY_MS * 2);
-    i2s_out_delay();
 #endif
 }
 
@@ -567,6 +625,7 @@ Error paper_auto_change(void) {
     }
 
     // 允许起始有纸：用于“开始队列前出旧纸”和“M30 后出本页再进下一页”。第 1 步会先弹旧纸，再进新纸。
+    paper_btn_reset_press_state();
     paper_auto_change_running = true;
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Starting auto paper change...");
     // 先全部失能，再按步骤使能需要运动的电机，避免不运动时电机仍带电
@@ -622,6 +681,7 @@ Error paper_auto_change(void) {
         }
         if (!found) {
             paper_auto_change_running = false;
+            paper_btn_arm_post_change_cooldown();
             // 缺纸/进纸异常：立即停机并关闭驱动，等待下次从 Step1 重新开始
             st_go_idle();
             motors_set_disable(true);
@@ -726,6 +786,7 @@ Error paper_auto_change(void) {
         bool sensor_still_active = paper_sensor_stable();
         if (jam_timeout || sensor_still_active) {
             paper_auto_change_running = false;
+            paper_btn_arm_post_change_cooldown();
             // 卡纸：立即停机并关闭驱动，等待下次从 Step1 重新开始
             st_go_idle();
             motors_set_disable(true);
@@ -798,6 +859,7 @@ Error paper_auto_change(void) {
     #endif
 
     paper_auto_change_running = false;
+    paper_btn_arm_post_change_cooldown();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] All steps completed successfully!");
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", step7_sensor_ok ? PAPER_STATUS_OK : PAPER_STATUS_SENSOR_NOT_FOUND);
     return Error::Ok;
