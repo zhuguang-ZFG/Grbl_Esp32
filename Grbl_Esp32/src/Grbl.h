@@ -123,6 +123,8 @@ void user_defined_macro(uint8_t index);
 Error paper_system_mcode(uint16_t code, uint16_t steps = 0, int8_t clamp_dir = -1);
 void  paper_system_init(void);
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+void  paper_run_boot_auto_change(void);       // 重启初始化完成后执行一次自动换纸
+void  paper_mark_first_page_change_done(void);  // 已换纸则跳过 G0 X0 Y0 Z0 触发的首次换纸
 void  paper_get_status_str(char* buf, size_t len);
 Error paper_run_motor(uint8_t motor_ix, uint16_t steps = 0);
 void  paper_enable_drivers_only(void);  // 仅使能驱动，不动作，便于 M64/M65 后点动调试

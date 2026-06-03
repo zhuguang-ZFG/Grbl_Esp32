@@ -56,6 +56,11 @@
 #define MACHINE_NAME "Custom 3-Axis HR4988"
 #define GRBL_PAPER_SYSTEM 1  /* æ¢çº¸ç³»ç» M701/M711/M712/M713 å?GCode.cpp ä¸­ç´åå®ç?*/
 
+// 重启进入主循环且 Idle 后自动执行一次 [ESP910] 换纸流程；0=关闭
+#ifndef PAPER_AUTO_CHANGE_ON_BOOT
+#    define PAPER_AUTO_CHANGE_ON_BOOT 1
+#endif
+
 // Use custom machine code (Custom/paper_system.cpp)
 #define CUSTOM_CODE_FILENAME "Custom/paper_system.cpp"
 // Enable user-defined M codes (handled in paper_system.cpp)

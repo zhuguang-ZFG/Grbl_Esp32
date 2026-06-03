@@ -813,6 +813,39 @@ Error paper_auto_change(void) {
     return Error::Ok;
 }
 
+void paper_run_boot_auto_change(void) {
+#if !defined(PAPER_AUTO_CHANGE_ON_BOOT) || !PAPER_AUTO_CHANGE_ON_BOOT
+    return;
+#endif
+    if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
+        return;
+    }
+    if (sys.state != State::Idle) {
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[PaperBoot] Skipped auto-change: system not idle (state=%d)",
+                       (int)sys.state);
+        return;
+    }
+
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBoot] Init complete, running auto paper change...");
+    Error e = paper_auto_change();
+    if (e == Error::Ok) {
+        sys_position[Z_AXIS] = 0;
+        plan_sync_position();
+        gc_sync_position();
+        paper_mark_first_page_change_done();
+        paper_btn_arm_post_change_cooldown();
+        paper_btn_arm_bt_suppress();
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBoot] Auto paper change completed.");
+    } else {
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Warning,
+                       "[PaperBoot] Auto paper change failed, error=%d",
+                       (int)e);
+    }
+}
+
 Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
     if (code == 189) {
         code = 701;

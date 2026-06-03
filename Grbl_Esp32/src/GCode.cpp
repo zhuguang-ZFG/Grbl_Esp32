@@ -58,6 +58,12 @@ void gc_init() {
     paper_change_done_before_first_page = false;  // 下次运行“开始写字”前会再自动换纸一次
 }
 
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+void paper_mark_first_page_change_done(void) {
+    paper_change_done_before_first_page = true;
+}
+#endif
+
 // Sets g-code parser position in mm. Input in steps. Called by the system abort and hard
 // limit pull-off routines.
 void gc_sync_position() {

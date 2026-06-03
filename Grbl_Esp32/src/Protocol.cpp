@@ -187,6 +187,9 @@ void protocol_main_loop() {
         }
         // All systems go!
         system_execute_startup(line);  // Execute startup script.
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+        paper_run_boot_auto_change();
+#endif
     }
     // ---------------------------------------------------------------------------------
     // Primary loop! Upon a system abort, this exits back to main() to reset the system.
