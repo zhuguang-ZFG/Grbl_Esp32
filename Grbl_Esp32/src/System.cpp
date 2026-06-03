@@ -44,8 +44,48 @@ UserOutput::DigitalOutput* myDigitalOutputs[MaxUserDigitalPin];
 xQueueHandle control_sw_queue;    // used by control switch debouncing
 bool         debouncing = false;  // debouncing in process
 
+void system_detach_control_interrupts() {
+#ifdef CONTROL_SAFETY_DOOR_PIN
+    detachInterrupt(digitalPinToInterrupt(CONTROL_SAFETY_DOOR_PIN));
+#endif
+#ifdef CONTROL_RESET_PIN
+    detachInterrupt(digitalPinToInterrupt(CONTROL_RESET_PIN));
+#endif
+#ifdef CONTROL_FEED_HOLD_PIN
+    detachInterrupt(digitalPinToInterrupt(CONTROL_FEED_HOLD_PIN));
+#endif
+#ifdef CONTROL_CYCLE_START_PIN
+    detachInterrupt(digitalPinToInterrupt(CONTROL_CYCLE_START_PIN));
+#endif
+#ifdef MACRO_BUTTON_0_PIN
+    detachInterrupt(digitalPinToInterrupt(MACRO_BUTTON_0_PIN));
+#endif
+#ifdef MACRO_BUTTON_1_PIN
+    detachInterrupt(digitalPinToInterrupt(MACRO_BUTTON_1_PIN));
+#endif
+#ifdef MACRO_BUTTON_2_PIN
+    detachInterrupt(digitalPinToInterrupt(MACRO_BUTTON_2_PIN));
+#endif
+#ifdef MACRO_BUTTON_3_PIN
+    detachInterrupt(digitalPinToInterrupt(MACRO_BUTTON_3_PIN));
+#endif
+}
+
 void system_ini() {  // Renamed from system_init() due to conflict with esp32 files
     // setup control inputs
+
+#ifdef ENABLE_CONTROL_SW_DEBOUNCE
+    // Queue and debounce task MUST exist before attachInterrupt — GPIO35 (paper btn)
+    // can edge on pinMode/attach and isr_control_inputs uses xQueueSendFromISR.
+    debouncing       = false;
+    control_sw_queue = xQueueCreate(10, sizeof(int));
+    xTaskCreate(controlCheckTask,
+                "controlCheckTask",
+                3096,
+                NULL,
+                5,  // priority
+                NULL);
+#endif
 
 #ifdef CONTROL_SAFETY_DOOR_PIN
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "Door switch on pin %s", pinName(CONTROL_SAFETY_DOOR_PIN).c_str());
@@ -90,16 +130,6 @@ void system_ini() {  // Renamed from system_init() due to conflict with esp32 fi
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "Macro Pin 3 %s", pinName(MACRO_BUTTON_3_PIN).c_str());
     pinMode(MACRO_BUTTON_3_PIN, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(MACRO_BUTTON_3_PIN), isr_control_inputs, CHANGE);
-#endif
-#ifdef ENABLE_CONTROL_SW_DEBOUNCE
-    // setup task used for debouncing
-    control_sw_queue = xQueueCreate(10, sizeof(int));
-    xTaskCreate(controlCheckTask,
-                "controlCheckTask",
-                3096,
-                NULL,
-                5,  // priority
-                NULL);
 #endif
 
     //customize pin definition if needed
@@ -149,9 +179,14 @@ void IRAM_ATTR isr_control_inputs() {
 #ifdef ENABLE_CONTROL_SW_DEBOUNCE
     // we will start a task that will recheck the switches after a small delay
     int evt;
-    if (!debouncing) {  // prevent resending until debounce is done
-        debouncing = true;
-        xQueueSendFromISR(control_sw_queue, &evt, NULL);
+    if (!debouncing && control_sw_queue != NULL) {  // prevent resending until debounce is done
+        debouncing           = true;
+        BaseType_t hp_task   = pdFALSE;
+        if (xQueueSendFromISR(control_sw_queue, &evt, &hp_task) != pdPASS) {
+            debouncing = false;  // queue full — allow a later edge
+        } else if (hp_task) {
+            portYIELD_FROM_ISR();
+        }
     }
 #else
     ControlPins pins = system_control_get_state();

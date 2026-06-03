@@ -37,9 +37,25 @@
 // 一键换纸流程是否正在执行（用于彩灯“快闪”与互斥）
 static volatile bool paper_auto_change_running = false;
 
+// 换纸开始后短时忽略上位机 0x18（蓝牙连接常误发软复位，会打断弹纸）
+static uint32_t paper_ignore_host_reset_until_ms = 0;
+
+// 蓝牙：SPP 连上后等上位机首条指令回完 ok/ack，再立刻预约并执行换纸
+static bool paper_bt_connect_auto_change_pending      = false;
+static bool paper_bt_auto_change_after_ack_armed      = false;
+static bool paper_skip_next_bt_connect_auto_change    = false;
+
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
 bool paper_auto_change_is_running(void) {
     return paper_auto_change_running;
+}
+
+bool paper_should_ignore_host_reset(void) {
+    if (!paper_auto_change_running) {
+        return false;
+    }
+    uint32_t now = millis();
+    return paper_ignore_host_reset_until_ms != 0 && now < paper_ignore_host_reset_until_ms;
 }
 #endif
 
@@ -120,13 +136,18 @@ void paper_led_update(void) {}
 // 换纸流程里会长时间用 delay/延时打步进脉冲；
 // 此期间主协议线程不会持续执行 st_prep_buffer()，导致 segment buffer 被 ISR 耗空而 st_go_idle。
 // 在每个“yield 点”额外续料一次 segment buffer，尽量避免运动卡顿。
-static inline void paper_refill_segment_buffer_during_blocking() {
+static inline bool paper_refill_segment_buffer_during_blocking() {
     // 只在运动相关状态下续料，避免无意义计算
     if (sys.state == State::Cycle || sys.state == State::Hold || sys.state == State::SafetyDoor || sys.state == State::Homing ||
         sys.state == State::Sleep || sys.state == State::Jog) {
         st_prep_buffer();
     }
-    yield();
+    protocol_service_during_blocking();
+    return sys.abort;
+}
+
+static inline bool paper_blocking_abort_requested(void) {
+    return paper_refill_segment_buffer_during_blocking();
 }
 
 // 拾落夹紧后面板进纸：单步，前 PAPER_PANEL_FAST_RAMP_STEPS 缓起步，之后用 PAPER_PANEL_FAST_*（加速更早）
@@ -573,6 +594,24 @@ static void paper_step_pulses_panel_eject(uint32_t steps) {
 }
 #endif
 
+static Error paper_auto_change_abort_cleanup(const char* reason) {
+    paper_auto_change_running      = false;
+    paper_ignore_host_reset_until_ms = 0;
+    paper_btn_arm_post_change_cooldown();
+    st_go_idle();
+    motors_set_disable(true);
+    paper_disable_drivers();
+    plan_reset();
+    plan_sync_position();
+    gc_sync_position();
+    sys.state                      = State::Idle;
+    sys_rt_exec_state.value        = 0;
+    sys_rt_exec_state.bit.cycleStart = false;
+    cycle_stop                     = false;
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Aborted: %s", reason);
+    return Error::MessageFailed;
+}
+
 // 一键自动换纸流程（[ESP910] / M30 调用）
 // 步骤：1 弹旧纸 → 2 进纸器找纸 → 3 松夹 → 4 面板+进纸器同速送纸 → 5 夹紧 → 6 面板快送直到脱传感器 → 7 回找传感器 → 8 最终对位 → 9 失能
 // 结束时会发送 [PaperStatus] N（0=成功，2=进纸超时，3=第7步未找到传感器；1 保留）
@@ -584,6 +623,7 @@ Error paper_auto_change(void) {
     // 允许起始有纸：用于“开始队列前出旧纸”和“M30 后出本页再进下一页”。第 1 步会先弹旧纸，再进新纸。
     paper_btn_reset_press_state();
     paper_auto_change_running = true;
+    paper_ignore_host_reset_until_ms = millis() + 8000u;
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Starting auto paper change...");
     // 先全部失能，再按步骤使能需要运动的电机，避免不运动时电机仍带电
     paper_disable_drivers();
@@ -604,6 +644,9 @@ Error paper_auto_change(void) {
 #else
     paper_dir_steps(PANEL_MOTOR_DIR_PIN, PANEL_DIR_EJECT, PANEL_MOTOR_STEP_PIN, PANEL_EJECT_STEPS);
 #endif
+    if (sys.abort) {
+        return paper_auto_change_abort_cleanup("host reset after eject");
+    }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-1] Done");
 
     // 2. 进纸器开始运动，直到纸张传感器检测到纸或达到上限
@@ -632,12 +675,17 @@ Error paper_auto_change(void) {
             paper_step_pulses_feeder_find(1);  // 找传感器阶段：加速一倍
             steps++;
             if (steps % PAPER_YIELD_STEPS == 0) {
-                paper_refill_segment_buffer_during_blocking();
-                delay(1);  // yield to RTOS, avoid Interrupt wdt timeout
+                if (paper_blocking_abort_requested()) {
+                    return paper_auto_change_abort_cleanup("host reset during feeder search");
+                }
             }
         }
+        if (sys.abort) {
+            return paper_auto_change_abort_cleanup("host reset during feeder search");
+        }
         if (!found) {
-            paper_auto_change_running = false;
+            paper_auto_change_running        = false;
+            paper_ignore_host_reset_until_ms = 0;
             paper_btn_arm_post_change_cooldown();
             // 缺纸/进纸异常：立即停机并关闭驱动，等待下次从 Step1 重新开始
             st_go_idle();
@@ -671,6 +719,9 @@ Error paper_auto_change(void) {
                    (unsigned)PAPER_REF_DAC_CLAMP);
 #endif
     paper_dir_steps(CLAMP_MOTOR_DIR_PIN, CLAMP_DIR_RELEASE, CLAMP_MOTOR_STEP_PIN, CLAMP_TOGGLE_STEPS);
+    if (sys.abort) {
+        return paper_auto_change_abort_cleanup("host reset after clamp release");
+    }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-3] Done");
 
     // 4. 拾落抬起后面板与进纸器同速送纸 6cm，然后面板+进纸器停止，仅拾落夹紧；夹紧完成后再同速送纸至 8cm，送纸器停止
@@ -695,6 +746,9 @@ Error paper_auto_change(void) {
 #endif
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-4] Panel+Feeder sync %.1fcm...", (float)PAPER_ADVANCE_CM_CLAMP_START);
     paper_step_pulses_panel_feeder_sync(steps_before_clamp);
+    if (sys.abort) {
+        return paper_auto_change_abort_cleanup("host reset during panel+feeder sync");
+    }
 
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-5] Clamping (%u steps, panel+feeder stopped)...", (unsigned)CLAMP_TOGGLE_STEPS);
 #ifdef PAPER_DRIVER_REF_PIN
@@ -707,6 +761,9 @@ Error paper_auto_change(void) {
                    (unsigned)PAPER_REF_DAC_CLAMP);
 #endif
     paper_dir_steps(CLAMP_MOTOR_DIR_PIN, CLAMP_DIR_CLAMP, CLAMP_MOTOR_STEP_PIN, CLAMP_TOGGLE_STEPS);
+    if (sys.abort) {
+        return paper_auto_change_abort_cleanup("host reset after clamp");
+    }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-5] Done");
 
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-4b] Panel+Feeder sync again to %.1fcm total...", (float)PAPER_ADVANCE_CM);
@@ -714,6 +771,9 @@ Error paper_auto_change(void) {
     paper_set_ref_dac((PAPER_REF_DAC_PANEL) > (PAPER_REF_DAC_FEEDER) ? (PAPER_REF_DAC_PANEL) : (PAPER_REF_DAC_FEEDER));
 #endif
     paper_step_pulses_panel_feeder_sync(steps_after_clamp);
+    if (sys.abort) {
+        return paper_auto_change_abort_cleanup("host reset during panel+feeder sync (2)");
+    }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-4/5] Done (feeder stops at %.1fcm)", (float)PAPER_ADVANCE_CM);
     paper_enable_panel_only();
 
@@ -736,13 +796,18 @@ Error paper_auto_change(void) {
             paper_one_step_panel_after_clamp(steps);  // 夹紧后面板进纸速度加倍
             steps++;
             if (steps % PAPER_YIELD_STEPS == 0) {
-                paper_refill_segment_buffer_during_blocking();
-                delay(1);
+                if (paper_blocking_abort_requested()) {
+                    return paper_auto_change_abort_cleanup("host reset during fast feed");
+                }
             }
+        }
+        if (sys.abort) {
+            return paper_auto_change_abort_cleanup("host reset during fast feed");
         }
         bool sensor_still_active = paper_sensor_stable();
         if (jam_timeout || sensor_still_active) {
-            paper_auto_change_running = false;
+            paper_auto_change_running        = false;
+            paper_ignore_host_reset_until_ms = 0;
             paper_btn_arm_post_change_cooldown();
             // 卡纸：立即停机并关闭驱动，等待下次从 Step1 重新开始
             st_go_idle();
@@ -779,9 +844,13 @@ Error paper_auto_change(void) {
             paper_step_pulses(PANEL_MOTOR_STEP_PIN, 1);
             steps++;
             if (steps % PAPER_YIELD_STEPS == 0) {
-                paper_refill_segment_buffer_during_blocking();
-                delay(1);  // yield to RTOS, avoid Interrupt wdt timeout
+                if (paper_blocking_abort_requested()) {
+                    return paper_auto_change_abort_cleanup("host reset during panel re-search");
+                }
             }
+        }
+        if (sys.abort) {
+            return paper_auto_change_abort_cleanup("host reset during panel re-search");
         }
         step7_sensor_ok = paper_sensor_stable();
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel re-search completed (%u steps, sensor=%s)", 
@@ -800,35 +869,126 @@ Error paper_auto_change(void) {
     delay(2);
 #endif
     paper_step_pulses_panel_after_clamp(PANEL_FINAL_STEPS);
+    if (sys.abort) {
+        return paper_auto_change_abort_cleanup("host reset during final alignment");
+    }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Done");
 
     // 9. 换纸流程完成后关闭全部纸路使能（含面板），避免发热与蓝牙雕刻时 595 串扰
     paper_disable_drivers();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Paper drivers disabled (no panel hold)");
 
-    paper_auto_change_running = false;
+    paper_auto_change_running        = false;
+    paper_ignore_host_reset_until_ms = 0;
     paper_btn_arm_post_change_cooldown();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] All steps completed successfully!");
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", step7_sensor_ok ? PAPER_STATUS_OK : PAPER_STATUS_SENSOR_NOT_FOUND);
     return Error::Ok;
 }
 
-void paper_run_boot_auto_change(void) {
-#if !defined(PAPER_AUTO_CHANGE_ON_BOOT) || !PAPER_AUTO_CHANGE_ON_BOOT
+void paper_on_soft_reset_restart(void) {
+    paper_bt_connect_auto_change_pending = false;
+    paper_bt_auto_change_after_ack_armed = false;
+    if (paper_recent_auto_change_cooldown_active()) {
+        paper_skip_next_bt_connect_auto_change = true;
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[PaperBtConnect] Soft reset: skip next BT auto-change (cooldown active)");
+    } else {
+        paper_skip_next_bt_connect_auto_change = false;
+    }
+#ifdef ENABLE_BLUETOOTH
+    if (WebUI::SerialBT.hasClient()) {
+        paper_bt_auto_change_after_ack_armed = true;
+    }
+#endif
+}
+
+void paper_bt_on_spp_connected(void) {
+#if !defined(PAPER_AUTO_CHANGE_ON_BT_CONNECT) || !PAPER_AUTO_CHANGE_ON_BT_CONNECT
     return;
 #endif
+    paper_bt_connect_auto_change_pending = false;
+    paper_bt_auto_change_after_ack_armed  = true;
+}
+
+void paper_bt_on_spp_disconnected(void) {
+    paper_bt_connect_auto_change_pending = false;
+    paper_bt_auto_change_after_ack_armed = false;
+}
+
+static bool paper_bt_schedule_auto_change_after_checks(void) {
+#if !defined(PAPER_AUTO_CHANGE_ON_BT_CONNECT) || !PAPER_AUTO_CHANGE_ON_BT_CONNECT
+    return false;
+#endif
     if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
+        return false;
+    }
+    if (paper_skip_next_bt_connect_auto_change) {
+        paper_skip_next_bt_connect_auto_change = false;
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[PaperBtConnect] Skipped: auto-change suppressed once after soft reset");
+        return false;
+    }
+    if (paper_recent_auto_change_cooldown_active()) {
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[PaperBtConnect] Skipped: recent auto-change cooldown active");
+        return false;
+    }
+    if (paper_auto_change_is_running() || paper_bt_connect_auto_change_pending) {
+        return false;
+    }
+    paper_bt_connect_auto_change_pending = true;
+    grbl_msg_sendf(CLIENT_SERIAL,
+                   MsgLevel::Info,
+                   "[PaperBtConnect] Host ack done, auto-change scheduled (wait Idle)");
+    return true;
+}
+
+void paper_bt_on_first_host_ack(void) {
+#if !defined(PAPER_AUTO_CHANGE_ON_BT_CONNECT) || !PAPER_AUTO_CHANGE_ON_BT_CONNECT
+    return;
+#endif
+    if (!paper_bt_auto_change_after_ack_armed) {
+        return;
+    }
+    paper_bt_auto_change_after_ack_armed = false;
+    if (!paper_bt_schedule_auto_change_after_checks()) {
+        return;
+    }
+    // 应答已发出，立刻尝试执行（若已 Idle）
+    paper_poll_bt_connect_auto_change();
+}
+
+void paper_poll_bt_connect_auto_change(void) {
+#if !defined(PAPER_AUTO_CHANGE_ON_BT_CONNECT) || !PAPER_AUTO_CHANGE_ON_BT_CONNECT
+    return;
+#endif
+    if (!paper_bt_connect_auto_change_pending) {
+        return;
+    }
+    if (paper_skip_next_bt_connect_auto_change) {
+        paper_bt_connect_auto_change_pending = false;
+        return;
+    }
+    if (paper_recent_auto_change_cooldown_active()) {
+        paper_bt_connect_auto_change_pending = false;
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[PaperBtConnect] Skipped poll: recent auto-change cooldown active");
         return;
     }
     if (sys.state != State::Idle) {
-        grbl_msg_sendf(CLIENT_SERIAL,
-                       MsgLevel::Info,
-                       "[PaperBoot] Skipped auto-change: system not idle (state=%d)",
-                       (int)sys.state);
+        return;
+    }
+    if (paper_auto_change_is_running()) {
         return;
     }
 
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBoot] Init complete, running auto paper change...");
+    paper_bt_connect_auto_change_pending = false;
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtConnect] Running auto paper change...");
     Error e = paper_auto_change();
     if (e == Error::Ok) {
         sys_position[Z_AXIS] = 0;
@@ -837,11 +997,11 @@ void paper_run_boot_auto_change(void) {
         paper_mark_first_page_change_done();
         paper_btn_arm_post_change_cooldown();
         paper_btn_arm_bt_suppress();
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBoot] Auto paper change completed.");
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtConnect] Auto paper change completed.");
     } else {
         grbl_msg_sendf(CLIENT_SERIAL,
                        MsgLevel::Warning,
-                       "[PaperBoot] Auto paper change failed, error=%d",
+                       "[PaperBtConnect] Auto paper change failed, error=%d",
                        (int)e);
     }
 }

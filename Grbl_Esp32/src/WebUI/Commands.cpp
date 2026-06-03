@@ -65,7 +65,10 @@ namespace WebUI {
     /**
      * Restart ESP
      */
-    void COMMANDS::restart_ESP() { restart_ESP_module = true; }
+    void COMMANDS::restart_ESP() {
+        system_detach_control_interrupts();
+        restart_ESP_module = true;
+    }
 
     /**
      * Handle not critical actions that must be done in sync environement

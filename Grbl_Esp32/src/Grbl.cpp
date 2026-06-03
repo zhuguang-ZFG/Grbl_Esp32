@@ -115,7 +115,15 @@ static void reset_variables() {
     sys_pl_data_inflight = NULL;
 }
 
+static bool grbl_has_run_once = false;
+
 void run_once() {
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+    if (grbl_has_run_once) {
+        paper_on_soft_reset_restart();
+    }
+#endif
+    grbl_has_run_once = true;
     reset_variables();
     // Start Grbl main loop. Processes program inputs and executes them.
     // This can exit on a system abort condition, in which case run_once()
@@ -145,6 +153,8 @@ bool __attribute__((weak)) license_set_from_p_param(uint32_t p_value) {
     (void)p_value;
     return true;
 }
+
+void __attribute__((weak)) license_notify_motion_blocked(void) {}
 /*
   setup() and loop() in the Arduino .ino implements this control flow:
 

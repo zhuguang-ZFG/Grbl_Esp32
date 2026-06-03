@@ -42,6 +42,9 @@ void protocol_main_loop();
 void protocol_execute_realtime();
 void protocol_exec_rt_system();
 
+// 长时间阻塞（换纸步进等）时轮询串口/BT 并处理实时命令，避免上位机心跳超时判断开
+void protocol_service_during_blocking(void);
+
 // Executes the auto cycle feature, if enabled.
 void protocol_auto_cycle_start();
 

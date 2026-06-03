@@ -1613,7 +1613,7 @@ Error gc_execute_line(char* line, uint8_t client) {
             // Move to intermediate position before going home. Obeys current coordinate system and offsets
             // and absolute and incremental modes.
             if (!check_license()) {
-                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[License] Motion blocked");
+                license_notify_motion_blocked();
             } else {
                 pl_data->motion.rapidMotion = 1;  // Set rapid motion flag.
                 if (axis_command != AxisCommand::None) {
@@ -1663,7 +1663,7 @@ Error gc_execute_line(char* line, uint8_t client) {
     if (gc_state.modal.motion != Motion::None) {
         if (axis_command == AxisCommand::MotionMode) {
             if (!check_license()) {
-                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[License] Motion blocked");
+                license_notify_motion_blocked();
             } else {
                 GCUpdatePos gc_update_pos = GCUpdatePos::Target;
                 if (gc_state.modal.motion == Motion::Linear) {

@@ -102,6 +102,7 @@ void user_tool_change(uint8_t new_tool);  // weak definition in Grbl.cpp
 // 授权：运动前检查，Custom 可覆盖；M800 写入授权码用 license_set_from_p_param。
 bool check_license(void);
 bool license_set_from_p_param(uint32_t p_value);
+void license_notify_motion_blocked(void);  // 未授权拦截运动时提示用户（仅一次，直至 M800 授权成功）
 
 bool user_defined_homing(uint8_t cycle_mask);  // weak definition in Limits.cpp
 
@@ -123,7 +124,12 @@ void user_defined_macro(uint8_t index);
 Error paper_system_mcode(uint16_t code, uint16_t steps = 0, int8_t clamp_dir = -1);
 void  paper_system_init(void);
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-void  paper_run_boot_auto_change(void);       // 重启初始化完成后执行一次自动换纸
+void  paper_on_soft_reset_restart(void);  // 软复位重入 run_once：取消预约；冷却期内跳过下一次 BT 自动换纸
+void  paper_bt_on_spp_connected(void);   // SPP 连接：待命，等上位机首条指令 ack 后再换纸
+void  paper_bt_on_spp_disconnected(void);
+void  paper_bt_on_first_host_ack(void);  // 经 BT 回完 ok/error 后调用（Protocol）
+void  paper_poll_bt_connect_auto_change(void);
+bool  paper_recent_auto_change_cooldown_active(void);  // M30/BT 换纸结束后的冷却期（paper_system.cpp）
 void  paper_mark_first_page_change_done(void);  // 已换纸则跳过 G0 X0 Y0 Z0 触发的首次换纸
 void  paper_get_status_str(char* buf, size_t len);
 Error paper_run_motor(uint8_t motor_ix, uint16_t steps = 0);
@@ -131,6 +137,7 @@ void  paper_enable_drivers_only(void);  // 仅使能驱动，不动作，便于 
 Error paper_auto_change(void);  // 一键自动换纸流程
 void  paper_led_update(void);   // 按键彩灯 Q0 状态刷新（常亮/慢闪/快闪）
 bool  paper_auto_change_is_running(void);  // 换纸流程是否正在执行（按键/上位机可据此避免重复触发）
+bool  paper_should_ignore_host_reset(void);  // 换纸初期忽略上位机 0x18，避免 BT 连接触发软复位打断流程
 void  paper_btn_reset_press_state(void);   // 清除连按状态（蓝牙连接等 EMI 场景防误触发）
 void  paper_btn_arm_post_change_cooldown(void);  // 换纸结束/失败后冷却，防 M30 后误连按触发 [ESP910]
 void  paper_btn_arm_bt_suppress(void);     // 蓝牙启动/连接后抑制换纸键（射频 EMI）

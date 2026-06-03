@@ -248,6 +248,14 @@ bool is_realtime_command(uint8_t data) {
 void execute_realtime_command(Cmd command, uint8_t client) {
     switch (command) {
         case Cmd::Reset:
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+            if (paper_should_ignore_host_reset()) {
+                grbl_msg_sendf(CLIENT_SERIAL,
+                               MsgLevel::Info,
+                               "[PaperAuto] Host reset (0x18) ignored during paper change");
+                break;
+            }
+#endif
             grbl_msg_sendf(CLIENT_ALL, MsgLevel::Debug, "Cmd::Reset");
             mc_reset();  // Call motion control reset routine.
             break;

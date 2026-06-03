@@ -105,6 +105,45 @@ bool can_park() {
 // 规划器接近断粮时优先吃 BT 队列里已到达的 G 代码（不依赖上位机降速）
 static const uint8_t PLANNER_STARVE_THRESHOLD = 8;
 
+// G0–G3 会真正走运动；G92/G10 等设置类指令不在此列
+static bool protocol_line_is_motion_gcode_g0_g3(const char* line) {
+    while (*line == ' ' || *line == '\t') {
+        line++;
+    }
+    if (*line != 'G' && *line != 'g') {
+        return false;
+    }
+    if (line[1] == '\0' || line[1] == '\r' || line[1] == '\n') {
+        return false;
+    }
+    line++;
+    while (*line == ' ' || *line == '\t') {
+        line++;
+    }
+    char d = *line;
+    return (d >= '0' && d <= '3');
+}
+
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+// 换纸阻塞期间：不执行 G0–G3，保留 G92 等设置指令
+static bool protocol_defer_host_motion_line_during_paper_change(const char* line) {
+    if (!paper_auto_change_is_running()) {
+        return false;
+    }
+    return protocol_line_is_motion_gcode_g0_g3(line);
+}
+
+static void protocol_notify_paper_motion_deferred(void) {
+    static uint32_t last_defer_msg_ms = 0;
+    uint32_t        now_ms            = millis();
+    if (last_defer_msg_ms != 0 && (now_ms - last_defer_msg_ms) < 3000u) {
+        return;
+    }
+    last_defer_msg_ms = now_ms;
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Host G-code deferred (paper change running)");
+}
+#endif
+
 // 从指定 client 读入并执行；若完整执行了一行 G 代码则返回 true
 static bool protocol_poll_client(uint8_t client) {
     int     c;
@@ -141,12 +180,40 @@ static bool protocol_poll_client(uint8_t client) {
 #ifdef REPORT_ECHO_RAW_LINE_RECEIVED
                 report_echo_line_received(line, client);
 #endif
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+                if (protocol_defer_host_motion_line_during_paper_change(line)) {
+                    protocol_notify_paper_motion_deferred();
+                    report_status_message(Error::IdleError, client);
+                    if (client == CLIENT_BT) {
+                        paper_bt_on_first_host_ack();
+                    }
+                    empty_line(client);
+                    line_executed = true;
+                    break;
+                }
+#endif
+                if (!check_license() && protocol_line_is_motion_gcode_g0_g3(line)) {
+                    license_notify_motion_blocked();
+                    report_status_message(Error::AuthenticationFailed, client);
+                    if (client == CLIENT_BT) {
+                        paper_bt_on_first_host_ack();
+                    }
+                    empty_line(client);
+                    line_executed = true;
+                    break;
+                }
                 report_status_message(execute_line(line, client, WebUI::AuthenticationLevel::LEVEL_GUEST), client);
+                if (client == CLIENT_BT) {
+                    paper_bt_on_first_host_ack();
+                }
                 empty_line(client);
                 line_executed = true;
                 break;
             case Error::Overflow:
                 report_status_message(Error::Overflow, client);
+                if (client == CLIENT_BT) {
+                    paper_bt_on_first_host_ack();
+                }
                 empty_line(client);
                 break;
             default:
@@ -154,6 +221,51 @@ static bool protocol_poll_client(uint8_t client) {
         }
     }
     return line_executed;
+}
+
+// 换纸等阻塞流程中调用：排空 BT/串口接收队列并执行 ?/复位 等实时命令
+void protocol_service_during_blocking(void) {
+#ifdef ENABLE_BLUETOOTH
+    if (WebUI::SerialBT.hasClient()) {
+        const uint8_t bt_pass_max =
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+            paper_auto_change_is_running() ? 2u : 8u;
+#else
+            8u;
+#endif
+        for (uint8_t pass = 0; pass < bt_pass_max; pass++) {
+            if (!protocol_poll_client(CLIENT_BT)) {
+                break;
+            }
+            if (sys.abort) {
+                return;
+            }
+        }
+    }
+#endif
+    for (uint8_t client = 0; client < CLIENT_COUNT; client++) {
+#ifdef ENABLE_BLUETOOTH
+        if (WebUI::SerialBT.hasClient() && client == CLIENT_BT) {
+            continue;
+        }
+#endif
+        protocol_poll_client(client);
+        if (sys.abort) {
+            return;
+        }
+    }
+#ifdef ENABLE_BLUETOOTH
+    // 部分上位机连接后只等状态行，不主动发 ?；周期性上报避免判死
+    if (WebUI::SerialBT.hasClient()) {
+        static uint32_t last_bt_keepalive_ms = 0;
+        uint32_t        now_ms               = millis();
+        if (last_bt_keepalive_ms == 0 || (now_ms - last_bt_keepalive_ms) >= 400u) {
+            last_bt_keepalive_ms = now_ms;
+            sys_rt_exec_state.bit.statusReport = true;
+        }
+    }
+#endif
+    protocol_execute_realtime();
 }
 
 /*
@@ -187,15 +299,15 @@ void protocol_main_loop() {
         }
         // All systems go!
         system_execute_startup(line);  // Execute startup script.
-#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-        paper_run_boot_auto_change();
-#endif
     }
     // ---------------------------------------------------------------------------------
     // Primary loop! Upon a system abort, this exits back to main() to reset the system.
     // This is also where Grbl idles while waiting for something to do.
     // ---------------------------------------------------------------------------------
     for (;;) {
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+        paper_poll_bt_connect_auto_change();
+#endif
 #ifdef ENABLE_SD_CARD
         if (SD_ready_next) {
             char fileLine[255];
@@ -306,6 +418,12 @@ void check_buffer_watermark() {
     last_buffer_check_ms = now;
 
     if (sys.state != State::Cycle) {
+        buffer_low_warn_latched = false;
+        return;
+    }
+
+    // 步进已停且规划器无当前块：多为换纸/复位后的残留 Cycle，不报 LOW_BUFFER
+    if (stepper_idle && plan_get_current_block() == NULL) {
         buffer_low_warn_latched = false;
         return;
     }

@@ -78,20 +78,42 @@ static uint32_t license_expected_code();  // 前向声明
 
 static void license_load_from_nvs() {
     Preferences prefs;
-    if (!prefs.begin(LICENSE_NVS_NAMESPACE, true))
+    if (!prefs.begin(LICENSE_NVS_NAMESPACE, true)) {
+        license_ok = false;
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[License] Not authorized (no NVS entry yet; use M800 P<code>)");
         return;
+    }
     uint32_t stored = prefs.getULong(LICENSE_NVS_KEY_CODE, 0);
     prefs.end();
+    if (stored == 0) {
+        license_ok = false;
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[License] Not authorized (use M800 P<code>)");
+        return;
+    }
     // 每次启动都用当前芯片 MAC 重算期望码比对，克隆芯片无法通过
-    license_ok = (stored != 0 && stored == license_expected_code());
+    uint32_t expect = license_expected_code();
+    license_ok      = (stored == expect);
+    if (license_ok) {
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[License] Authorized (restored from NVS)");
+    } else {
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Warning,
+                       "[License] NVS code mismatch for this chip (re-send M800 P<code> from vendor)");
+    }
 }
 
 static void license_save_to_nvs() {
     Preferences prefs;
-    if (!prefs.begin(LICENSE_NVS_NAMESPACE, false))
+    if (!prefs.begin(LICENSE_NVS_NAMESPACE, false)) {
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning, "[License] NVS save failed (cannot open namespace)");
         return;
-    prefs.putULong(LICENSE_NVS_KEY_CODE, license_ok ? license_expected_code() : 0);
+    }
+    uint32_t code = license_ok ? license_expected_code() : 0;
+    size_t   n    = prefs.putULong(LICENSE_NVS_KEY_CODE, code);
     prefs.end();
+    if (n == 0 && license_ok) {
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning, "[License] NVS save failed (write returned 0)");
+    }
 }
 
 static uint32_t license_expected_code()
@@ -112,6 +134,19 @@ bool check_license()
     return license_ok;
 }
 
+void license_notify_motion_blocked(void) {
+    static bool user_notified = false;
+    if (license_ok) {
+        user_notified = false;
+        return;
+    }
+    if (user_notified) {
+        return;
+    }
+    user_notified = true;
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[License] Motion blocked (use M800 P<code> to unlock)");
+}
+
 bool paper_last_change_ok() {
     return paper_change_last_ok;
 }
@@ -126,7 +161,7 @@ bool license_set_from_p_param(uint32_t p_value)
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[License] OK for this chip (saved to NVS)");
         return true;
     }
-    license_ok = false;
+    // 错误授权码不清除 NVS 中已保存的有效授权（仅本次校验失败）
     grbl_msg_sendf(CLIENT_SERIAL,
                    MsgLevel::Warning,
                    "[License] INVALID (wrong code, get license from vendor with ChipID)");
@@ -241,6 +276,10 @@ bool paper_btn_ignore_control_events(void) {
         return true;
     }
     return false;
+}
+
+bool paper_recent_auto_change_cooldown_active(void) {
+    return millis() < paper_btn_post_change_ignore_until_ms;
 }
 
 void user_defined_macro(uint8_t index) {

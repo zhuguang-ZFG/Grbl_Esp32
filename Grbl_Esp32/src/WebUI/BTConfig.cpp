@@ -58,10 +58,14 @@ namespace WebUI {
                 BTConfig::_btclient = str;
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
                 paper_btn_arm_bt_suppress();
+                paper_bt_on_spp_connected();
 #endif
                 grbl_sendf(CLIENT_ALL, "[MSG:BT Connected with %s]\r\n", str);
             } break;
             case ESP_SPP_CLOSE_EVT:  //Client connection closed
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+                paper_bt_on_spp_disconnected();
+#endif
                 grbl_send(CLIENT_ALL, "[MSG:BT Disconnected]\r\n");
                 BTConfig::_btclient = "";
                 break;

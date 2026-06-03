@@ -144,6 +144,7 @@ extern volatile bool sys_rt_exec_debug;
 #endif
 
 void system_ini();  // Renamed from system_init() due to conflict with esp32 files
+void system_detach_control_interrupts();
 
 // Returns bitfield of control pin states, organized by CONTROL_PIN_INDEX. (1=triggered, 0=not triggered).
 ControlPins system_control_get_state();
