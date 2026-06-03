@@ -179,7 +179,7 @@ void protocol_main_loop() {
                                 // 阈值可按现象调整：越小打印越多，越大越不容易干扰
                                 // 阈值提高，减少打印干扰：只看明显“断流/等待”的间隔
                                 if (gap_ms > 200u) {
-                                    grbl_sendf(CLIENT_SERIAL,
+                                    grbl_sendf(CLIENT_BT,
                                                "[BT-EOL gap=%u ms B=%u st=%u] %s\r\n",
                                                (unsigned)gap_ms,
                                                (unsigned)plan_get_block_buffer_available(),
@@ -257,7 +257,7 @@ void protocol_auto_cycle_start() {
 // 当水位低于阈值时，通知上位机降低发送速度
 static uint32_t last_buffer_check_ms = 0;
 const uint32_t BUFFER_CHECK_INTERVAL_MS = 500;  // 检查间隔 500ms
-const uint8_t BUFFER_LOW_THRESHOLD = 3;  // 低水位阈值（~1.2% of BLOCK_BUFFER_SIZE=250）
+const uint8_t BUFFER_LOW_THRESHOLD = 50;  // 低水位阈值（20% of BLOCK_BUFFER_SIZE=250），给上位机充足反应时间
 
 void check_buffer_watermark() {
     uint32_t now = millis();
@@ -270,7 +270,7 @@ void check_buffer_watermark() {
     
     // 低水位警告：当 planner buffer 可用块数 < BUFFER_LOW_THRESHOLD 时
     if (planner_free < BUFFER_LOW_THRESHOLD && sys.state == State::Cycle) {
-        grbl_sendf(CLIENT_SERIAL, "[MSG:LOW_BUFFER B=%u]\r\n", planner_free);
+        grbl_sendf(CLIENT_BT, "[MSG:LOW_BUFFER B=%u]\r\n", planner_free);
     }
 }
 

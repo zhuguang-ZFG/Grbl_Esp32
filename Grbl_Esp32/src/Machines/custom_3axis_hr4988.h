@@ -63,14 +63,15 @@
 
 // === Control pin invert mask ===
 // 默认在 Config.h 中定义为 B00001111（仅反相 SafetyDoor/Reset/FeedHold/CycleStart）。
-// 本机型的“一键换纸”按键接在 GPIO35，实际接法为 LOW=按下、HIGH=松开（外部下拉），
-// 所以需要把 Macro0 也设置为“低电平有效”，避免松开时被视为按下。
+// Macro0（换纸按键 GPIO35）不在此反转：user_defined_macro(0) 需要在双沿（CHANGE）
+// 都触发以自行检测上升/下降沿（释放检测依赖上升沿设置 last_btn_high_ms）。
+// controlCheckTask 中通过静态状态追踪实现双沿调度。
 #ifdef INVERT_CONTROL_PIN_MASK
 #    undef INVERT_CONTROL_PIN_MASK
 #endif
 // 位顺序: Macro3 | Macro2 | Macro1 | Macro0 | CycleStart | FeedHold | Reset | SafetyDoor
-// 这里在原来的低 4 位基础上，额外打开 Macro0（bit4），得到 B00011111。
-#define INVERT_CONTROL_PIN_MASK B00011111
+// Macro0（bit4）保持 0 = raw 电平，不反转
+#define INVERT_CONTROL_PIN_MASK B00001111
 
 // Enable software debounce since no hardware R/C filters
 #define ENABLE_SOFTWARE_DEBOUNCE

@@ -124,6 +124,31 @@ void controlCheckTask(void* pvParameters) {
         xQueueReceive(control_sw_queue, &evt, portMAX_DELAY);  // block until receive queue
         vTaskDelay(CONTROL_SW_DEBOUNCE_PERIOD);                // delay a while
         ControlPins pins = system_control_get_state();
+
+        // Macro0 需要双沿调度：user_defined_macro(0) 内部通过 digitalRead() 自行检测
+        // 上升/下降沿。但 system_exec_control_pin 的 else-if 链只在引脚为"有效"态时
+        // 调用，无法捕获释放沿（上升沿）。这里通过静态变量追踪状态变化实现双沿触发。
+#ifdef MACRO_BUTTON_0_PIN
+        {
+            static bool prev_macro0  = false;
+            static bool macro0_inited = false;
+            bool        cur_macro0   = (bool)(pins.bit.macro0);  // 移除反转后 raw 电平
+
+            // 首次调用时同步 prev_macro0 到当前实际电平，避免初始化值偏差导致
+            // 第一次边沿（如 HIGH→LOW）被误判为"无变化"而丢失。
+            if (!macro0_inited) {
+                prev_macro0    = cur_macro0;
+                macro0_inited  = true;
+            }
+
+            if (cur_macro0 != prev_macro0) {
+                user_defined_macro(0);  // 双沿均调用，函数内部判断具体边沿
+                prev_macro0    = cur_macro0;
+                pins.bit.macro0 = 0;    // 清除，避免下方 else-if 链重复触发
+            }
+        }
+#endif
+
         if (pins.value) {
             system_exec_control_pin(pins);
         }
@@ -266,8 +291,6 @@ void system_exec_control_pin(ControlPins pins) {
         sys_rt_exec_state.bit.feedHold = true;
     } else if (pins.bit.safetyDoor) {
         sys_rt_exec_state.bit.safetyDoor = true;
-    } else if (pins.bit.macro0) {
-        user_defined_macro(0);  // function must be implemented by user
     } else if (pins.bit.macro1) {
         user_defined_macro(1);  // function must be implemented by user
     } else if (pins.bit.macro2) {

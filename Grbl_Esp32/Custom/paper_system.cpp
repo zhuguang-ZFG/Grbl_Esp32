@@ -7,7 +7,7 @@
 
 static void license_load_from_nvs(void);  // 前向声明，供 machine_init 使用
 static bool     paper_change_last_ok     = true;   // 最近一次 user_m30 触发的换纸结果（true=成功）
-static uint32_t paper_change_cooldown_ms = 0;      // M30 和按键共用的换纸冷却计时器（防 EMI 误触发）
+static uint32_t paper_change_cooldown_ms = 0xFFFFFFFF;  // Sentinel: 开机未换纸时不启用冷却
 
 // 机器初始化钩子：在 Grbl 启动时调用（弱符号在 Grbl.cpp 中，这里覆盖）
 // 打印芯片 ID（用于向厂商申请授权码），并从 NVS 恢复授权状态。
@@ -164,9 +164,10 @@ void user_m30() {
     }
 
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperM30] End of page (M30) detected, starting auto paper change...");
-    paper_change_cooldown_ms = millis();  // 更新冷却计时器，防止换纸后 EMI 立即误触发按键
     Error e = paper_auto_change();
     if (e == Error::Ok) {
+        // 仅在换纸成功后设置冷却（失败时允许立即按键重试）
+        paper_change_cooldown_ms = millis();
         // 换纸完成后机械上 Z 已在抬笔极限（原点），将系统 Z 设为 0，避免下一页首条指令再让 Z 往“上”走
         sys_position[Z_AXIS] = 0;
         plan_sync_position();
@@ -208,6 +209,17 @@ void user_defined_macro(uint8_t index) {
     }
 
     static uint32_t last_btn_high_ms = 0;  // 最后一次检测到 HIGH 的时间
+    static bool     edge_seeded      = false;  // 是否已从当前引脚状态播种 last_btn_high_ms
+
+    // 冷启动时引脚通常已 HIGH（INPUT_PULLUP），但 attachInterrupt(CHANGE) 注册时
+    // 不会产生初始沿事件。首次调用时如果引脚已 HIGH，主动播种 last_btn_high_ms，
+    // 避免第一次按键被上升沿守卫误拒绝。
+    if (!edge_seeded) {
+        if (digitalRead(PAPER_CHANGE_BTN_PIN) == HIGH) {
+            last_btn_high_ms = millis();
+        }
+        edge_seeded = true;
+    }
 
 #ifdef ENABLE_BLUETOOTH
     // 蓝牙连接后 25 秒内额外屏蔽 GPIO35，双重保险
@@ -231,7 +243,7 @@ void user_defined_macro(uint8_t index) {
     }
 
     // === 第 2 层：冷却期 — 任何换纸后 120 秒内屏蔽按键 ===
-    if (millis() - paper_change_cooldown_ms < PAPER_BTN_COOLDOWN_MS) {
+    if (paper_change_cooldown_ms != 0xFFFFFFFF && (millis() - paper_change_cooldown_ms) < PAPER_BTN_COOLDOWN_MS) {
         return;
     }
 
