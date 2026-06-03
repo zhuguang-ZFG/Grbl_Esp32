@@ -121,6 +121,12 @@ uint8_t i2s_out_read(uint8_t pin);
 */
 void i2s_out_write(uint8_t pin, uint8_t val);
 
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+// 写字保持：在送往 74HC595 前仅强制面板 STEP=低（雕刻/点动时不改 DIR）
+uint32_t IRAM_ATTR paper_i2s_apply_panel_hold_mask(uint32_t port_data);
+uint8_t  IRAM_ATTR paper_i2s_clamp_pin_value(uint8_t pin, uint8_t val);
+#endif
+
 /*
     Set current pin state to the I2S bitstream buffer
     (This call will generate a future I2S_OUT_USEC_PER_PULSE μs x N bitstream)

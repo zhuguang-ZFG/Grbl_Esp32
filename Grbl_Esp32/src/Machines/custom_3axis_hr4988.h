@@ -109,13 +109,16 @@
 #define PAPER_DRIVER_REF_DAC    70         // 未单独指定时使用的默认 REF（0–255）
 // 每个电机独立 REF（可选）：不定义则三路均用 PAPER_DRIVER_REF_DAC
 #ifndef PAPER_REF_DAC_CLAMP
-#    define PAPER_REF_DAC_CLAMP   155  // 拾落电机（约 2.0V REF；发烫则略减）
+#    define PAPER_REF_DAC_CLAMP   155  // 拾落电机（加大扭矩；发烫则调小）
 #endif
 #ifndef PAPER_REF_DAC_PANEL
-#    define PAPER_REF_DAC_PANEL   90    // 面板电机（约 1.17V）
+#    define PAPER_REF_DAC_PANEL   90    // 面板电机
+#endif
+#ifndef PAPER_REF_DAC_PANEL_HOLD
+#    define PAPER_REF_DAC_PANEL_HOLD  40   // 雕刻/点动保持：降低 REF 减轻蠕动（可调到 25–35）
 #endif
 #ifndef PAPER_REF_DAC_FEEDER
-#    define PAPER_REF_DAC_FEEDER  110   // 进纸器电机（约 1.42V）
+#    define PAPER_REF_DAC_FEEDER  110   // 进纸器电机
 #endif
 // 使能时 REF 软启动（ms）：先 REF=0 再使能，延时后再升到目标，减轻上电冲击避免板子断电；0=关闭
 #ifndef PAPER_REF_SOFTSTART_MS
@@ -212,6 +215,10 @@
 #define PANEL_DIR_FEED          false  // 送新纸 / 快速进纸 / 最终对位（你反馈进纸反了，只改此项）
 #define PANEL_DIR_EJECT         false  // 弹出旧纸（单独调，不动）
 #define PANEL_DIR_REVERSE       true   // 回找传感器（你反馈此方向反了，单独取反）
+// 换纸结束一次性对位：DIR 与第 8 步一致（PANEL_DIR_FEED）。雕刻中不再改 DIR，只钉 STEP + 降 REF
+#ifndef PANEL_DIR_HOLD
+#    define PANEL_DIR_HOLD  (PANEL_DIR_FEED)
+#endif
 #define FEEDER_DIR_FORWARD      false  // 进纸器“送纸进入机器”方向（反向）
 #define CLAMP_DIR_RELEASE       true   // 拾落电机“松开纸张”方向（再次反向）
 #define CLAMP_DIR_CLAMP         false  // 拾落电机“压紧纸张”方向
