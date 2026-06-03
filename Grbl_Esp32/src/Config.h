@@ -623,6 +623,5 @@ const int N_PIECES = 3;
 const double RPM_MAX = 23935.2;
 const double RPM_MIN = 2412.2;
 
-// 【新增】面板电机保持模式配置
-// 写字模式下面板电机保持使能，防止纸张漂移
-#define ENABLE_PANEL_HOLD_MODE 1  // 启用面板保持功能
+// 面板保持：M902 已停用；M903/M904 仍可关断/查询（换纸结束始终 paper_disable_drivers）
+#define ENABLE_PANEL_HOLD_MODE 1

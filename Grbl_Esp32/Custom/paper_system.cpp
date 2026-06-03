@@ -234,7 +234,6 @@ void user_defined_macro(uint8_t index) {
     char line[16];
     strcpy(line, "[ESP910]\r");
     WebUI::inputBuffer.push(line);
-
-    strcpy(line, "M902\r");
-    WebUI::inputBuffer.push(line);
+    // 不自动入队 M902：换纸后 panel_hold_mode 保持 false，写字时面板失能。
+    // 需要防漂移时由上位机或串口手动发 M902；关闭保持用 M903。
 }

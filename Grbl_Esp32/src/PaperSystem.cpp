@@ -9,9 +9,8 @@
 
 #define PAPER_DISABLED 255
 
-// 【新增】写字模式标志
 #ifdef ENABLE_PANEL_HOLD_MODE
-static bool panel_hold_mode = false;  // 默认关闭写字模式：面板电机保持禁用
+static bool panel_hold_mode = false;  // M902 已停用，恒为 false；换纸结束始终全电机失能
 #endif
 
 // 换纸流程结束状态码（上位机可解析 [PaperStatus] N 做分支）
@@ -785,9 +784,8 @@ Error paper_auto_change(void) {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Done");
 
     // 9. 换纸流程完成后，关闭换纸相关电机使能，防止长时间发热
-    #ifdef ENABLE_PANEL_HOLD_MODE
+#ifdef ENABLE_PANEL_HOLD_MODE
     if (panel_hold_mode) {
-        // 写字模式：仅禁用拾落+进纸器，保持面板电机使能
         paper_enable_panel_only();
 #ifdef PAPER_DRIVER_REF_PIN
         paper_set_ref_dac(PAPER_REF_DAC_PANEL_HOLD);
@@ -796,9 +794,9 @@ Error paper_auto_change(void) {
     } else {
         paper_disable_drivers();
     }
-    #else
+#else
     paper_disable_drivers();
-    #endif
+#endif
 
     paper_auto_change_running = false;
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] All steps completed successfully!");
@@ -906,24 +904,19 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
         }
 #ifdef ENABLE_PANEL_HOLD_MODE
         case 902: {
-            // M902 - 启用面板保持模式（写字模式）
-            panel_hold_mode = true;
-            paper_enable_panel_only();
-#ifdef PAPER_DRIVER_REF_PIN
-            paper_set_ref_dac(PAPER_REF_DAC_PANEL_HOLD);
-#endif
-            grbl_sendf(CLIENT_SERIAL, "[MSG:PANEL_HOLD_ON]\r\n");
+            // M902 已停用：不再开启写字时面板保持，避免误使能
+            panel_hold_mode = false;
+            paper_disable_drivers();
+            grbl_sendf(CLIENT_SERIAL, "[MSG:M902 disabled; panel hold remains OFF]\r\n");
             return Error::Ok;
         }
         case 903: {
-            // M903 - 禁用面板保持模式
             panel_hold_mode = false;
             paper_disable_drivers();
             grbl_sendf(CLIENT_SERIAL, "[MSG:PANEL_HOLD_OFF]\r\n");
             return Error::Ok;
         }
         case 904: {
-            // M904 - 查询面板保持模式状态
             grbl_sendf(CLIENT_SERIAL, "[MSG:PANEL_HOLD=%s]\r\n", panel_hold_mode ? "ON" : "OFF");
             return Error::Ok;
         }
