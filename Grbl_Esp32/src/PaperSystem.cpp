@@ -129,8 +129,28 @@ void paper_led_update(void) {
 void paper_led_update(void) {}
 #endif
 
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+// 运行时诊断：每 30s 打印一次堆/状态/换纸标志，便于长期运行问题排查
+void paper_diagnostic_update(void) {
+    static uint32_t last_diag_ms = 0;
+    uint32_t        now_ms       = millis();
+    if (now_ms - last_diag_ms < 30000u) {
+        return;
+    }
+    last_diag_ms = now_ms;
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info,
+                   "[PaperDiag] heap=%u state=%d paper_running=%d",
+                   (unsigned)xPortGetFreeHeapSize(),
+                   (int)sys.state,
+                   (int)paper_auto_change_running);
+}
+#else
+void paper_diagnostic_update(void) {}
+#endif
+
 // 每 YIELD_STEPS 步 yield 一次，避免长时间阻塞触发 ESP32 Interrupt Watchdog (Core 1 panic)
-#define PAPER_YIELD_STEPS 50u
+// 100+ 页后系统负载/中断抖动增大，提高 yield 频率
+#define PAPER_YIELD_STEPS 25u
 
 // 换纸流程里会长时间用 delay/延时打步进脉冲；
 // 此期间主协议线程不会持续执行 st_prep_buffer()，导致 segment buffer 被 ISR 耗空而 st_go_idle。
@@ -295,6 +315,17 @@ static void paper_step_pulses_feeder_find(uint16_t steps) {
 #endif
 #ifndef PANEL_RETRY_BACKOFF_STEPS
 #    define PANEL_RETRY_BACKOFF_STEPS 500u  // Step 6 失败后回退步数
+#endif
+
+// 纸张传感器防抖参数：100+ 页后灰尘/纸屑/EMI 干扰增大，提高采样次数和间隔
+#ifndef PAPER_SENSOR_STABLE_SAMPLES
+#    define PAPER_SENSOR_STABLE_SAMPLES 5  // 采样次数
+#endif
+#ifndef PAPER_SENSOR_STABLE_THRESHOLD
+#    define PAPER_SENSOR_STABLE_THRESHOLD 4  // 至少多少次 LOW 才认为有纸
+#endif
+#ifndef PAPER_SENSOR_STABLE_INTERVAL_US
+#    define PAPER_SENSOR_STABLE_INTERVAL_US 500u  // 采样间隔 us
 #endif
 
 // 标记I2S是否已初始化（延迟到第一次需要时）
@@ -549,14 +580,16 @@ static inline bool paper_sensor_active() {
     return digitalRead(PAPER_SENSOR_PIN) == 0;
 }
 
-// 纸张传感器防抖读取：连续采样，确保稳定（高速步进时传感器易抖动）
+// 纸张传感器防抖读取：连续采样，确保稳定（高速步进/老化灰尘/EMI 时传感器易抖动）
 static inline bool paper_sensor_stable() {
     int count_low = 0;
-    for (int i = 0; i < 3; i++) {
-        if (digitalRead(PAPER_SENSOR_PIN) == 0) count_low++;
-        delayMicroseconds(100);  // 100us 防抖窗口
+    for (int i = 0; i < PAPER_SENSOR_STABLE_SAMPLES; i++) {
+        if (digitalRead(PAPER_SENSOR_PIN) == 0) {
+            count_low++;
+        }
+        delayMicroseconds(PAPER_SENSOR_STABLE_INTERVAL_US);
     }
-    return count_low >= 2;  // 至少2次读到 LOW 才认为有纸
+    return count_low >= PAPER_SENSOR_STABLE_THRESHOLD;  // 多数 LOW 才认为有纸
 }
 
 // 设定方向并发送 N 步脉冲（DIR 先稳定再 STEP，避免丢步）

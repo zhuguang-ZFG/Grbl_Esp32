@@ -370,6 +370,7 @@ void protocol_main_loop() {
         }
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
         paper_led_update();
+        paper_diagnostic_update();
 #endif
     }
     return; /* Never reached */

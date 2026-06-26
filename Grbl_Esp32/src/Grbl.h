@@ -136,6 +136,7 @@ Error paper_run_motor(uint8_t motor_ix, uint16_t steps = 0);
 void  paper_enable_drivers_only(void);  // 仅使能驱动，不动作，便于 M64/M65 后点动调试
 Error paper_auto_change(void);  // 一键自动换纸流程
 void  paper_led_update(void);   // 按键彩灯 Q0 状态刷新（常亮/慢闪/快闪）
+void  paper_diagnostic_update(void);  // 运行时诊断：每 30s 打印堆/状态/换纸标志
 bool  paper_auto_change_is_running(void);  // 换纸流程是否正在执行（按键/上位机可据此避免重复触发）
 bool  paper_should_ignore_host_reset(void);  // 换纸初期忽略上位机 0x18，避免 BT 连接触发软复位打断流程
 void  paper_btn_reset_press_state(void);   // 清除连按状态（蓝牙连接等 EMI 场景防误触发）
