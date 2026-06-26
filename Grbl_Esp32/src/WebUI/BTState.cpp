@@ -27,6 +27,7 @@
 #    include "BTState.h"
 #    include "BTConfig.h"
 #    include "../Serial.h"
+#    include "../Planner.h"
 
 // Connection state is written by the Bluetooth SPP callback task and read by the main loop.
 static std::atomic<BTState>  bt_state{BTState::Idle};
@@ -37,6 +38,15 @@ static bool                 bt_recovery_active   = false;
 static uint8_t              bt_recovery_step     = 0;
 static uint32_t             bt_recovery_ts       = 0;
 static std::atomic<uint8_t> bt_recovery_attempts{0};
+
+// Planner 饥饿阈值：与 Protocol.cpp 中的 PLANNER_STARVE_THRESHOLD 一致。
+// 当运动中 planner 可用块低于此值时，跳过所有可能阻塞的 BT TX 操作，
+// 避免 SerialBT.write() 的 xQueueSend 1000ms 超时导致段缓冲欠载。
+static const uint8_t BT_PLANNER_STARVE_THRESHOLD = 8;
+
+static bool bt_planner_is_starving(void) {
+    return sys.state == State::Cycle && plan_get_block_buffer_available() < BT_PLANNER_STARVE_THRESHOLD;
+}
 
 // TX ring buffer for congested-but-critical messages. Protected by bt_tx_mux.
 static uint8_t      bt_tx_ring[BT_TX_RING_SIZE];
@@ -225,6 +235,19 @@ bool bt_tx_send(const char* text, size_t len, bool critical) {
             return false;
         }
 
+        // 运动中 planner 即将饥饿时，不做可能阻塞的 SerialBT.write()——
+        // xQueueSend 的 1000ms 超时会让主循环停顿，导致段缓冲欠载、电机停转。
+        // 关键消息直接入环等待后续 flush，非关键消息丢弃。
+        if (bt_planner_is_starving()) {
+            if (critical) {
+                vTaskEnterCritical(&bt_tx_mux);
+                bool ok = bt_tx_ring_push(text, len);
+                vTaskExitCritical(&bt_tx_mux);
+                return ok;
+            }
+            return false;
+        }
+
         size_t written = WebUI::SerialBT.write((const uint8_t*)text, len);
         if (written == len) {
             return true;
@@ -251,6 +274,11 @@ bool bt_tx_send(const char* text, size_t len, bool critical) {
 
 void bt_tx_flush(void) {
     if (!WebUI::SerialBT.hasClient()) {
+        return;
+    }
+    // 运动中 planner 即将饥饿时，不做可能阻塞的 SerialBT.write()——
+    // xQueueSend 的 1000ms 超时会让主循环停顿，导致段缓冲欠载、电机停转。
+    if (bt_planner_is_starving()) {
         return;
     }
 

@@ -329,9 +329,6 @@ void protocol_main_loop() {
             }
         }
 #endif
-        // Service Bluetooth state machine before polling client data
-        bt_state_update();
-
         // 上位机（奎享等）无法改流控：BT 连接时先排空蓝牙，避免 COM 监视口杂字节占满主循环
 #ifdef ENABLE_BLUETOOTH
         const bool bt_active = WebUI::SerialBT.hasClient();
@@ -351,6 +348,9 @@ void protocol_main_loop() {
                 }
             }
         }
+        // Service Bluetooth state machine after planner feeding is done,
+        // so BT TX flush can never starve the planner during active motion.
+        bt_state_update();
 #else
         const bool bt_active = false;
 #endif
