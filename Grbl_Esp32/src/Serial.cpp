@@ -220,11 +220,13 @@ void clientCheckTask(void* pvParameters) {
 }
 
 void client_reset_read_buffer(uint8_t client) {
+    vTaskEnterCritical(&myMutex);
     for (uint8_t client_num = 0; client_num < CLIENT_COUNT; client_num++) {
         if (client == client_num || client == CLIENT_ALL) {
             client_buffer[client_num].begin();
         }
     }
+    vTaskExitCritical(&myMutex);
 }
 
 // Fetches the first byte in the client read buffer. Called by protocol loop.

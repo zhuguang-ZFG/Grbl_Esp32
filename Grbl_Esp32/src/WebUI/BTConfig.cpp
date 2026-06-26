@@ -135,6 +135,7 @@ namespace WebUI {
             } else {
                 SerialBT.register_callback(&my_spp_cb);
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+                // Arm button suppression during startup/advertising phase; SRV_OPEN will re-arm it on connection.
                 paper_btn_arm_bt_suppress();
 #endif
                 grbl_sendf(CLIENT_ALL, "[MSG:BT Started with %s]\r\n", _btname.c_str());
