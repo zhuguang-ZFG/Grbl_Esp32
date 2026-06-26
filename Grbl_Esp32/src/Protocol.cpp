@@ -196,7 +196,9 @@ static bool protocol_poll_client(uint8_t client) {
                     license_notify_motion_blocked();
                     report_status_message(Error::AuthenticationFailed, client);
                     if (client == CLIENT_BT) {
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
                         paper_bt_on_first_host_ack();
+#endif
                     }
                     empty_line(client);
                     line_executed = true;
@@ -204,7 +206,9 @@ static bool protocol_poll_client(uint8_t client) {
                 }
                 report_status_message(execute_line(line, client, WebUI::AuthenticationLevel::LEVEL_GUEST), client);
                 if (client == CLIENT_BT) {
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
                     paper_bt_on_first_host_ack();
+#endif
                 }
                 empty_line(client);
                 line_executed = true;
@@ -212,7 +216,9 @@ static bool protocol_poll_client(uint8_t client) {
             case Error::Overflow:
                 report_status_message(Error::Overflow, client);
                 if (client == CLIENT_BT) {
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
                     paper_bt_on_first_host_ack();
+#endif
                 }
                 empty_line(client);
                 break;

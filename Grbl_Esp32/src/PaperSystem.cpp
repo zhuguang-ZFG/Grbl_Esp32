@@ -148,6 +148,7 @@ void paper_diagnostic_update(void) {
 void paper_diagnostic_update(void) {}
 #endif
 
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
 // 每 YIELD_STEPS 步 yield 一次，避免长时间阻塞触发 ESP32 Interrupt Watchdog (Core 1 panic)
 // 100+ 页后系统负载/中断抖动增大，提高 yield 频率
 #define PAPER_YIELD_STEPS 25u
@@ -366,7 +367,6 @@ void paper_system_init(void) {
 }
 
 
-#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
 void paper_get_status_str(char* buf, size_t len) {
     if (PAPER_SENSOR_PIN == PAPER_DISABLED || len < 32) {
         snprintf(buf, len, "paper system not configured");
@@ -1181,5 +1181,10 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
             }
             return Error::GcodeUnsupportedCommand;
     }
+}
+#else
+void paper_system_init(void) {}
+Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
+    return Error::GcodeUnsupportedCommand;
 }
 #endif
