@@ -22,46 +22,51 @@
 
 #ifdef ENABLE_BLUETOOTH
 
-#    include "BTConfig.h"
+#    include <atomic>
+
 #    include "BTState.h"
+#    include "BTConfig.h"
 #    include "../Serial.h"
 
-static volatile BTState  bt_state         = BTState::Idle;
-static volatile uint32_t bt_last_event_ms = 0;
+// Connection state is written by the Bluetooth SPP callback task and read by the main loop.
+static std::atomic<BTState>  bt_state{BTState::Idle};
+static std::atomic<uint32_t> bt_last_event_ms{0};
 
-// Recovery state
-static uint8_t  bt_recovery_step      = 0;
-static uint32_t bt_recovery_timestamp = 0;
-static uint8_t  bt_recovery_attempts  = 0;
+// Recovery state, driven by bt_state_update() in the main loop.
+static bool     bt_recovery_active   = false;
+static uint8_t  bt_recovery_step     = 0;
+static uint32_t bt_recovery_ts       = 0;
+static uint8_t  bt_recovery_attempts = 0;
 
-// TX ring buffer for congested-but-critical messages
-static uint8_t bt_tx_ring[BT_TX_RING_SIZE];
-static size_t  bt_tx_ring_head = 0;
-static size_t  bt_tx_ring_tail = 0;
-static size_t  bt_tx_ring_used = 0;
+// TX ring buffer for congested-but-critical messages. Protected by bt_tx_mux.
+static uint8_t      bt_tx_ring[BT_TX_RING_SIZE];
+static size_t       bt_tx_ring_head = 0;
+static size_t       bt_tx_ring_tail = 0;
+static size_t       bt_tx_ring_used = 0;
+static portMUX_TYPE bt_tx_mux       = portMUX_INITIALIZER_UNLOCKED;
 
 void bt_state_init(void) {
-    bt_state              = BTState::Idle;
-    bt_last_event_ms      = 0;
-    bt_recovery_step      = 0;
-    bt_recovery_timestamp = 0;
-    bt_recovery_attempts  = 0;
-    bt_tx_ring_head       = 0;
-    bt_tx_ring_tail       = 0;
-    bt_tx_ring_used       = 0;
+    bt_state.store(BTState::Idle);
+    bt_last_event_ms.store(0);
+    bt_recovery_active   = false;
+    bt_recovery_step     = 0;
+    bt_recovery_ts       = 0;
+    bt_recovery_attempts = 0;
+    bt_tx_ring_head      = 0;
+    bt_tx_ring_tail      = 0;
+    bt_tx_ring_used      = 0;
 }
 
 BTState bt_state_get(void) {
-    BTState s = bt_state;
-    return s;
+    return bt_state.load();
 }
 
 static void bt_state_set(BTState new_state) {
-    bt_state = new_state;
+    bt_state.store(new_state);
 }
 
 void bt_state_on_event(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
-    bt_last_event_ms = millis();
+    bt_last_event_ms.store(millis());
     switch (event) {
         case ESP_SPP_INIT_EVT:
         case ESP_SPP_START_EVT:
@@ -108,7 +113,7 @@ void bt_state_on_event(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
             break;
 
         case ESP_SPP_DATA_IND_EVT: {
-            BTState s = bt_state;
+            BTState s = bt_state_get();
             if (s == BTState::Advertising) {
                 // 在 DATA_IND 之前已收到 SRV_OPEN，保险起见切到 Connected
                 bt_state_set(BTState::Connected);
@@ -118,6 +123,39 @@ void bt_state_on_event(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
         default:
             break;
     }
+}
+
+// 判断 BT 消息是否关键：ok/error、状态报告、报警、普通 MSG 都是关键；
+// 调试/诊断类 MSG 在拥塞时可丢弃，避免阻塞控制面。
+bool bt_tx_message_is_critical(const char* text) {
+    if (text == nullptr || text[0] == '\0') {
+        return false;
+    }
+    if (text[0] == 'o' && text[1] == 'k') {
+        return true;
+    }
+    if (strncmp(text, "error:", 6) == 0 || strncmp(text, "error ", 6) == 0) {
+        return true;
+    }
+    if (text[0] == '<') {
+        return true;
+    }
+    if (strncmp(text, "[MSG:", 5) == 0) {
+        if (strncmp(text, "[BT-EOL", 7) == 0) {
+            return false;
+        }
+        if (strncmp(text, "[PaperDiag]", 11) == 0) {
+            return false;
+        }
+        if (strncmp(text, "[BTState]", 9) == 0) {
+            return false;
+        }
+        return true;
+    }
+    if (strncmp(text, "ALARM:", 6) == 0 || strncmp(text, "ALM:", 4) == 0) {
+        return true;
+    }
+    return false;
 }
 
 static size_t bt_tx_ring_free(void) {
@@ -136,16 +174,6 @@ static bool bt_tx_ring_push(const char* data, size_t len) {
     return true;
 }
 
-static size_t bt_tx_ring_pop(char* out, size_t max_len) {
-    size_t n = (bt_tx_ring_used < max_len) ? bt_tx_ring_used : max_len;
-    for (size_t i = 0; i < n; i++) {
-        out[i]          = bt_tx_ring[bt_tx_ring_tail];
-        bt_tx_ring_tail = (bt_tx_ring_tail + 1) % BT_TX_RING_SIZE;
-    }
-    bt_tx_ring_used -= n;
-    return n;
-}
-
 static void bt_tx_ring_reset(void) {
     bt_tx_ring_head = 0;
     bt_tx_ring_tail = 0;
@@ -153,7 +181,10 @@ static void bt_tx_ring_reset(void) {
 }
 
 bool bt_tx_send(const char* text, size_t len, bool critical) {
-    if (text == nullptr || len == 0) {
+    if (text == nullptr) {
+        return false;
+    }
+    if (len == 0) {
         return true;
     }
 
@@ -172,90 +203,115 @@ bool bt_tx_send(const char* text, size_t len, bool critical) {
             return true;
         }
         // 底层队列已满：关键消息入环，非关键消息丢弃
-        if (critical && written < len && bt_tx_ring_push(text + written, len - written)) {
-            return true;
+        if (critical && written < len) {
+            vTaskEnterCritical(&bt_tx_mux);
+            bool ok = bt_tx_ring_push(text + written, len - written);
+            vTaskExitCritical(&bt_tx_mux);
+            return ok;
         }
         return false;
     }
 
     // Congested：只缓存关键消息
-    if (critical && bt_tx_ring_push(text, len)) {
-        return true;
+    if (critical) {
+        vTaskEnterCritical(&bt_tx_mux);
+        bool ok = bt_tx_ring_push(text, len);
+        vTaskExitCritical(&bt_tx_mux);
+        return ok;
     }
     return false;
 }
 
 void bt_tx_flush(void) {
-    if (!WebUI::SerialBT.hasClient() || bt_tx_ring_used == 0) {
+    if (!WebUI::SerialBT.hasClient()) {
         return;
     }
 
-    char   chunk[64];
-    size_t total = 0;
-    while (bt_tx_ring_used > 0 && total < BT_TX_RING_SIZE) {
-        size_t n       = bt_tx_ring_pop(chunk, sizeof(chunk));
-        size_t written = WebUI::SerialBT.write((const uint8_t*)chunk, n);
-        if (written < n) {
-            // 仍拥塞：把未发送部分塞回环首（保持顺序）
-            size_t remain = n - written;
-            if (remain > bt_tx_ring_free()) {
-                // 空间不足，只能丢弃尾部（不应发生，因刚弹出）
-                remain = bt_tx_ring_free();
-            }
-            // 临时回退 tail，把剩余字节写回（保持原有顺序）
-            bt_tx_ring_tail = (bt_tx_ring_tail + BT_TX_RING_SIZE - remain) % BT_TX_RING_SIZE;
-            for (size_t i = 0; i < remain; i++) {
-                bt_tx_ring[bt_tx_ring_tail] = chunk[written + i];
-                bt_tx_ring_tail             = (bt_tx_ring_tail + 1) % BT_TX_RING_SIZE;
-            }
-            bt_tx_ring_used += remain;
+    while (true) {
+        vTaskEnterCritical(&bt_tx_mux);
+        if (bt_tx_ring_used == 0) {
+            vTaskExitCritical(&bt_tx_mux);
             break;
         }
-        total += n;
+
+        // 取出从 tail 开始的一段连续字节（不跨越环尾或 head）
+        size_t contiguous;
+        if (bt_tx_ring_head > bt_tx_ring_tail) {
+            contiguous = bt_tx_ring_head - bt_tx_ring_tail;
+        } else {
+            contiguous = BT_TX_RING_SIZE - bt_tx_ring_tail;
+        }
+        if (contiguous > 64) {
+            contiguous = 64;
+        }
+
+        char    chunk[64];
+        size_t  local_tail = bt_tx_ring_tail;  // avoid touching shared state while writing
+        vTaskExitCritical(&bt_tx_mux);
+
+        // 将连续段复制到本地后再写，避免持锁期间调用 SerialBT.write()
+        memcpy(chunk, &bt_tx_ring[local_tail], contiguous);
+        size_t written = WebUI::SerialBT.write((const uint8_t*)chunk, contiguous);
+        if (written == 0) {
+            break;
+        }
+
+        vTaskEnterCritical(&bt_tx_mux);
+        size_t advance = (written < contiguous) ? written : contiguous;
+        bt_tx_ring_tail = (bt_tx_ring_tail + advance) % BT_TX_RING_SIZE;
+        bt_tx_ring_used -= advance;
+        vTaskExitCritical(&bt_tx_mux);
+
+        if (written < contiguous) {
+            break;
+        }
     }
 }
 
 static void bt_execute_recovery(uint32_t now_ms) {
+    // 恢复期间回调可能把 bt_state 改回 Idle/Advertising；用 recovery_active 标志保证流程不被中断
+    bt_state_set(BTState::Recovering);
+
     switch (bt_recovery_step) {
         case 0:  // 结束 SPP
-            WebUI::SerialBT.end();
-            bt_recovery_step      = 1;
-            bt_recovery_timestamp = now_ms;
             bt_tx_ring_reset();
+            WebUI::SerialBT.end();
+            bt_recovery_step = 1;
+            bt_recovery_ts   = now_ms;
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[BTState] SPP ended for recovery");
             break;
 
         case 1:  // 冷却
-            if (now_ms - bt_recovery_timestamp < BT_RECOVERY_COOLDOWN_MS) {
+            if (now_ms - bt_recovery_ts < BT_RECOVERY_COOLDOWN_MS) {
                 return;
             }
-            bt_recovery_step      = 2;
-            bt_recovery_timestamp = now_ms;
+            bt_recovery_step = 2;
+            bt_recovery_ts   = now_ms;
             break;
 
         case 2: {  // 重新启动 SPP
+            bt_recovery_attempts++;
             String bt_name = WebUI::bt_config.BTname();
             if (WebUI::SerialBT.begin(bt_name.c_str())) {
                 bt_recovery_attempts = 0;
+                bt_recovery_active   = false;
                 bt_state_set(BTState::Advertising);
                 grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[BTState] SPP restarted, advertising as %s", bt_name.c_str());
+            } else if (bt_recovery_attempts >= BT_RECOVERY_MAX_RETRIES) {
+                bt_recovery_active = false;
+                bt_state_set(BTState::Idle);
+                grbl_msg_sendf(CLIENT_SERIAL,
+                               MsgLevel::Info,
+                               "[BTState] SPP restart failed %u times, giving up",
+                               bt_recovery_attempts);
             } else {
-                bt_recovery_attempts++;  // begin 失败，计入尝试次数
-                if (bt_recovery_attempts > BT_RECOVERY_MAX_RETRIES) {
-                    bt_state_set(BTState::Idle);
-                    grbl_msg_sendf(CLIENT_SERIAL,
-                                   MsgLevel::Info,
-                                   "[BTState] SPP restart failed %u times, giving up",
-                                   bt_recovery_attempts);
-                } else {
-                    // 重试：回到 step 0 重新 end/begin
-                    bt_recovery_step = 0;
-                    grbl_msg_sendf(CLIENT_SERIAL,
-                                   MsgLevel::Info,
-                                   "[BTState] SPP restart failed (attempt %u/%u), retrying",
-                                   bt_recovery_attempts,
-                                   BT_RECOVERY_MAX_RETRIES);
-                }
+                // 重试：回到 step 0 重新 end/begin
+                bt_recovery_step = 0;
+                grbl_msg_sendf(CLIENT_SERIAL,
+                               MsgLevel::Info,
+                               "[BTState] SPP restart failed (attempt %u/%u), retrying",
+                               bt_recovery_attempts,
+                               BT_RECOVERY_MAX_RETRIES);
             }
         } break;
 
@@ -269,9 +325,15 @@ void bt_state_update(void) {
     uint32_t now_ms = millis();
     BTState  s      = bt_state_get();
 
-    // 1. 假连接检测
+    // 1. 恢复流程优先级最高：即使回调改动了 bt_state，也要把恢复进行到底
+    if (bt_recovery_active) {
+        bt_execute_recovery(now_ms);
+        return;
+    }
+
+    // 2. 假连接检测
     if (s == BTState::Connected || s == BTState::Congested) {
-        if (now_ms - bt_last_event_ms > BT_LINK_SILENCE_TIMEOUT_MS) {
+        if (now_ms - bt_last_event_ms.load() > BT_LINK_SILENCE_TIMEOUT_MS) {
             if (bt_recovery_attempts >= BT_RECOVERY_MAX_RETRIES) {
                 bt_state_set(BTState::Idle);
                 grbl_msg_sendf(CLIENT_SERIAL,
@@ -280,42 +342,35 @@ void bt_state_update(void) {
                                BT_RECOVERY_MAX_RETRIES);
                 return;
             }
+            bt_recovery_active   = true;
+            bt_recovery_step     = 0;
+            bt_recovery_ts       = now_ms;
             bt_state_set(BTState::Recovering);
-            bt_recovery_step      = 0;
-            bt_recovery_timestamp = now_ms;
-            bt_recovery_attempts  = 1;  // 本次恢复周期的第一次尝试
             grbl_msg_sendf(CLIENT_SERIAL,
                            MsgLevel::Info,
                            "[BTState] Link silent for %u ms, entering recovery",
                            BT_LINK_SILENCE_TIMEOUT_MS);
         }
-        return;
-    }
-
-    // 2. 恢复执行
-    if (s == BTState::Recovering) {
-        bt_execute_recovery(now_ms);
-        return;
     }
 
     // 3. 拥塞解除后刷出缓存的关键消息
-    if (s == BTState::Connected && bt_tx_ring_used > 0) {
+    if (bt_state_get() == BTState::Connected && bt_tx_ring_used > 0) {
         bt_tx_flush();
     }
 }
 
 bool bt_state_is_connected(void) {
-    BTState s = bt_state;
+    BTState s = bt_state_get();
     return s == BTState::Connected || s == BTState::Congested;
 }
 
 bool bt_state_can_tx(void) {
-    BTState s = bt_state;
+    BTState s = bt_state_get();
     return s == BTState::Connected;
 }
 
 uint32_t bt_state_last_activity_ms(void) {
-    return bt_last_event_ms;
+    return bt_last_event_ms.load();
 }
 
 #endif

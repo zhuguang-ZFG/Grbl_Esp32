@@ -46,6 +46,7 @@ uint32_t bt_state_last_activity_ms(void);
 // TX flow control
 bool bt_tx_send(const char* text, size_t len, bool critical);
 void bt_tx_flush(void);
+bool bt_tx_message_is_critical(const char* text);
 
 #else
 
@@ -64,5 +65,6 @@ static inline bool bt_state_can_tx(void) { return false; }
 static inline uint32_t bt_state_last_activity_ms(void) { return 0; }
 static inline bool bt_tx_send(const char* /*text*/, size_t /*len*/, bool /*critical*/) { return false; }
 static inline void bt_tx_flush(void) {}
+static inline bool bt_tx_message_is_critical(const char* /*text*/) { return true; }
 
 #endif
