@@ -1,3 +1,23 @@
+/*
+  BTState.cpp - Bluetooth SPP connection state machine
+
+  Copyright (c) 2014 Luc Lebosse. All rights reserved.
+
+  This library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.
+
+  You should have received a copy of the GNU Lesser General Public
+  License along with this library; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+*/
+
 #include "../Grbl.h"
 
 #ifdef ENABLE_BLUETOOTH
@@ -14,7 +34,8 @@ void bt_state_init(void) {
 }
 
 BTState bt_state_get(void) {
-    return bt_state;
+    BTState s = bt_state;
+    return s;
 }
 
 static void bt_state_set(BTState new_state) {
@@ -28,6 +49,17 @@ void bt_state_on_event(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
         case ESP_SPP_START_EVT:
             bt_state_set(BTState::Advertising);
             break;
+
+#    ifdef ESP_SPP_UNINIT_EVT
+        case ESP_SPP_UNINIT_EVT:
+#    endif
+#    ifdef ESP_SPP_SRV_STOP_EVT
+        case ESP_SPP_SRV_STOP_EVT:
+#    endif
+#    if defined(ESP_SPP_UNINIT_EVT) || defined(ESP_SPP_SRV_STOP_EVT)
+            bt_state_set(BTState::Idle);
+            break;
+#    endif
 
         case ESP_SPP_SRV_OPEN_EVT: {
             // 连接建立：清空旧缓冲，避免重连后执行半条旧指令
@@ -56,12 +88,13 @@ void bt_state_on_event(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
             bt_state_set(param->write.cong ? BTState::Congested : BTState::Connected);
             break;
 
-        case ESP_SPP_DATA_IND_EVT:
-            if (bt_state == BTState::Advertising) {
+        case ESP_SPP_DATA_IND_EVT: {
+            BTState s = bt_state;
+            if (s == BTState::Advertising) {
                 // 在 DATA_IND 之前已收到 SRV_OPEN，保险起见切到 Connected
                 bt_state_set(BTState::Connected);
             }
-            break;
+        } break;
 
         default:
             break;
@@ -73,11 +106,13 @@ void bt_state_update(void) {
 }
 
 bool bt_state_is_connected(void) {
-    return bt_state == BTState::Connected || bt_state == BTState::Congested;
+    BTState s = bt_state;
+    return s == BTState::Connected || s == BTState::Congested;
 }
 
 bool bt_state_can_tx(void) {
-    return bt_state == BTState::Connected;
+    BTState s = bt_state;
+    return s == BTState::Connected;
 }
 
 uint32_t bt_state_last_activity_ms(void) {

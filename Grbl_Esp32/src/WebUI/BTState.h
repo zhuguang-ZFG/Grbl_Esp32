@@ -1,7 +1,7 @@
 /*
   BTState.h - Bluetooth SPP connection state machine
 
-  Copyright (c) 2024 [Project]. All rights reserved.
+  Copyright (c) 2014 Luc Lebosse. All rights reserved.
 
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
