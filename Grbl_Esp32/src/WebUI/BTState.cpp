@@ -45,6 +45,10 @@ static size_t       bt_tx_ring_tail = 0;
 static size_t       bt_tx_ring_used = 0;
 static portMUX_TYPE bt_tx_mux       = portMUX_INITIALIZER_UNLOCKED;
 
+// Forward declaration — bt_state_on_event (SPP callback) needs to reset
+// the ring on disconnect, but the helper is defined later in the file.
+static void bt_tx_ring_reset(void);
+
 void bt_state_init(void) {
     bt_state.store(BTState::Idle);
     bt_last_event_ms.store(0);
@@ -99,8 +103,11 @@ void bt_state_on_event(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
 #    if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
             paper_bt_on_spp_disconnected();
 #    endif
-            // 断开：同样清空缓冲，防止重连污染
+            // 断开：清空读写缓冲，防止重连后旧数据污染新连接
             client_reset_read_buffer(CLIENT_BT);
+            vTaskEnterCritical(&bt_tx_mux);
+            bt_tx_ring_reset();
+            vTaskExitCritical(&bt_tx_mux);
             bt_state_set(BTState::Advertising);
             break;
 
@@ -200,6 +207,24 @@ bool bt_tx_send(const char* text, size_t len, bool critical) {
     }
 
     if (s == BTState::Connected) {
+        // 如果 ring buffer 已有积压数据，新消息必须排在后面，避免直接写入
+        // 的字节先于积压数据到达对端，导致消息交错（例如 "ok" 插入到
+        // 一条被截断的 error 报文中间）。
+        vTaskEnterCritical(&bt_tx_mux);
+        bool ring_has_data = (bt_tx_ring_used > 0);
+        vTaskExitCritical(&bt_tx_mux);
+
+        if (ring_has_data) {
+            // 积压未清：关键消息入环保持 FIFO 顺序，非关键消息丢弃
+            if (critical) {
+                vTaskEnterCritical(&bt_tx_mux);
+                bool ok = bt_tx_ring_push(text, len);
+                vTaskExitCritical(&bt_tx_mux);
+                return ok;
+            }
+            return false;
+        }
+
         size_t written = WebUI::SerialBT.write((const uint8_t*)text, len);
         if (written == len) {
             return true;
@@ -299,7 +324,12 @@ static void bt_execute_recovery(uint32_t now_ms) {
             if (WebUI::SerialBT.begin(bt_name.c_str())) {
                 bt_recovery_attempts.store(0);
                 bt_recovery_active   = false;
-                bt_state_set(BTState::Advertising);
+                // begin() 可能已触发 SRV_OPEN_EVT 回调（客户端在恢复窗口内重连），
+                // 此时 bt_state 已被回调设为 Connected；不要覆盖它。
+                BTState cur = bt_state_get();
+                if (cur != BTState::Connected && cur != BTState::Congested) {
+                    bt_state_set(BTState::Advertising);
+                }
                 grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[BTState] SPP restarted, advertising as %s", bt_name.c_str());
             } else if (attempts >= BT_RECOVERY_MAX_RETRIES) {
                 bt_recovery_active = false;
@@ -358,8 +388,13 @@ void bt_state_update(void) {
     }
 
     // 3. 拥塞解除后刷出缓存的关键消息
-    if (bt_state_get() == BTState::Connected && bt_tx_ring_used > 0) {
-        bt_tx_flush();
+    if (bt_state_get() == BTState::Connected) {
+        vTaskEnterCritical(&bt_tx_mux);
+        bool need_flush = (bt_tx_ring_used > 0);
+        vTaskExitCritical(&bt_tx_mux);
+        if (need_flush) {
+            bt_tx_flush();
+        }
     }
 }
 
