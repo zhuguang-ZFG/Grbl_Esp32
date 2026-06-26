@@ -23,6 +23,7 @@
 #ifdef ENABLE_BLUETOOTH
 #    include <BluetoothSerial.h>
 #    include "BTConfig.h"
+#    include "BTState.h"
 
 namespace WebUI {
     BTConfig        bt_config;
@@ -50,28 +51,23 @@ namespace WebUI {
 
     static void my_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
         switch (event) {
-            case ESP_SPP_SRV_OPEN_EVT: {  //Server connection open
+            case ESP_SPP_SRV_OPEN_EVT: {
                 char str[18];
                 str[17]       = '\0';
                 uint8_t* addr = param->srv_open.rem_bda;
                 sprintf(str, "%02X:%02X:%02X:%02X:%02X:%02X", addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
                 BTConfig::_btclient = str;
-#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-                paper_btn_arm_bt_suppress();
-                paper_bt_on_spp_connected();
-#endif
                 grbl_sendf(CLIENT_ALL, "[MSG:BT Connected with %s]\r\n", str);
             } break;
-            case ESP_SPP_CLOSE_EVT:  //Client connection closed
-#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-                paper_bt_on_spp_disconnected();
-#endif
+            case ESP_SPP_CLOSE_EVT:
                 grbl_send(CLIENT_ALL, "[MSG:BT Disconnected]\r\n");
                 BTConfig::_btclient = "";
                 break;
             default:
                 break;
         }
+        // 所有事件统一交给状态机处理（含纸张系统通知与缓冲清理）
+        bt_state_on_event(event, param);
     }
 
     const char* BTConfig::info() {
@@ -131,6 +127,7 @@ namespace WebUI {
     void BTConfig::begin() {
         //stop active services
         end();
+        bt_state_init();
         _btname = bt_name->get();
         if (wifi_radio_mode->get() == ESP_BT) {
             if (!SerialBT.begin(_btname)) {
