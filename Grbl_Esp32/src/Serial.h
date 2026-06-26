@@ -46,6 +46,7 @@ uint8_t check_action_command(uint8_t data);
 
 void client_init();
 void client_reset_read_buffer(uint8_t client);
+int  client_buffer_free(uint8_t client);
 
 // Returns the number of bytes available in the RX serial buffer.
 uint8_t client_get_rx_buffer_available(uint8_t client);
