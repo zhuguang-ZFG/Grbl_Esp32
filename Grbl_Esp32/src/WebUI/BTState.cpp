@@ -33,10 +33,10 @@ static std::atomic<BTState>  bt_state{BTState::Idle};
 static std::atomic<uint32_t> bt_last_event_ms{0};
 
 // Recovery state, driven by bt_state_update() in the main loop.
-static bool     bt_recovery_active   = false;
-static uint8_t  bt_recovery_step     = 0;
-static uint32_t bt_recovery_ts       = 0;
-static uint8_t  bt_recovery_attempts = 0;
+static bool                 bt_recovery_active   = false;
+static uint8_t              bt_recovery_step     = 0;
+static uint32_t             bt_recovery_ts       = 0;
+static std::atomic<uint8_t> bt_recovery_attempts{0};
 
 // TX ring buffer for congested-but-critical messages. Protected by bt_tx_mux.
 static uint8_t      bt_tx_ring[BT_TX_RING_SIZE];
@@ -51,7 +51,7 @@ void bt_state_init(void) {
     bt_recovery_active   = false;
     bt_recovery_step     = 0;
     bt_recovery_ts       = 0;
-    bt_recovery_attempts = 0;
+    bt_recovery_attempts.store(0);
     bt_tx_ring_head      = 0;
     bt_tx_ring_tail      = 0;
     bt_tx_ring_used      = 0;
@@ -88,7 +88,7 @@ void bt_state_on_event(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
             // 连接建立：清空旧缓冲，避免重连后执行半条旧指令
             client_reset_read_buffer(CLIENT_BT);
             bt_state_set(BTState::Connected);
-            bt_recovery_attempts = 0;  // 成功连接后重置恢复计数
+            bt_recovery_attempts.store(0);  // 成功连接后重置恢复计数
 #    if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
             paper_btn_arm_bt_suppress();
             paper_bt_on_spp_connected();
@@ -141,13 +141,15 @@ bool bt_tx_message_is_critical(const char* text) {
         return true;
     }
     if (strncmp(text, "[MSG:", 5) == 0) {
-        if (strncmp(text, "[BT-EOL", 7) == 0) {
+        // grbl_msg_sendf 把消息包装为 [MSG:...\r\n，所以诊断前缀在 [MSG: 之后
+        const char* inner = text + 5;
+        if (strncmp(inner, "[BT-EOL", 7) == 0) {
             return false;
         }
-        if (strncmp(text, "[PaperDiag]", 11) == 0) {
+        if (strncmp(inner, "[PaperDiag]", 11) == 0) {
             return false;
         }
-        if (strncmp(text, "[BTState]", 9) == 0) {
+        if (strncmp(inner, "[BTState]", 9) == 0) {
             return false;
         }
         return true;
@@ -274,7 +276,9 @@ static void bt_execute_recovery(uint32_t now_ms) {
 
     switch (bt_recovery_step) {
         case 0:  // 结束 SPP
+            vTaskEnterCritical(&bt_tx_mux);
             bt_tx_ring_reset();
+            vTaskExitCritical(&bt_tx_mux);
             WebUI::SerialBT.end();
             bt_recovery_step = 1;
             bt_recovery_ts   = now_ms;
@@ -290,27 +294,27 @@ static void bt_execute_recovery(uint32_t now_ms) {
             break;
 
         case 2: {  // 重新启动 SPP
-            bt_recovery_attempts++;
+            uint8_t attempts = bt_recovery_attempts.fetch_add(1) + 1;
             String bt_name = WebUI::bt_config.BTname();
             if (WebUI::SerialBT.begin(bt_name.c_str())) {
-                bt_recovery_attempts = 0;
+                bt_recovery_attempts.store(0);
                 bt_recovery_active   = false;
                 bt_state_set(BTState::Advertising);
                 grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[BTState] SPP restarted, advertising as %s", bt_name.c_str());
-            } else if (bt_recovery_attempts >= BT_RECOVERY_MAX_RETRIES) {
+            } else if (attempts >= BT_RECOVERY_MAX_RETRIES) {
                 bt_recovery_active = false;
                 bt_state_set(BTState::Idle);
                 grbl_msg_sendf(CLIENT_SERIAL,
                                MsgLevel::Info,
                                "[BTState] SPP restart failed %u times, giving up",
-                               bt_recovery_attempts);
+                               attempts);
             } else {
                 // 重试：回到 step 0 重新 end/begin
                 bt_recovery_step = 0;
                 grbl_msg_sendf(CLIENT_SERIAL,
                                MsgLevel::Info,
                                "[BTState] SPP restart failed (attempt %u/%u), retrying",
-                               bt_recovery_attempts,
+                               attempts,
                                BT_RECOVERY_MAX_RETRIES);
             }
         } break;
@@ -334,7 +338,7 @@ void bt_state_update(void) {
     // 2. 假连接检测
     if (s == BTState::Connected || s == BTState::Congested) {
         if (now_ms - bt_last_event_ms.load() > BT_LINK_SILENCE_TIMEOUT_MS) {
-            if (bt_recovery_attempts >= BT_RECOVERY_MAX_RETRIES) {
+            if (bt_recovery_attempts.load() >= BT_RECOVERY_MAX_RETRIES) {
                 bt_state_set(BTState::Idle);
                 grbl_msg_sendf(CLIENT_SERIAL,
                                MsgLevel::Info,

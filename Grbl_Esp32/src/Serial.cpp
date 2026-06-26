@@ -392,7 +392,7 @@ void client_write(uint8_t client, const char* text) {
     }
 #ifdef ENABLE_BLUETOOTH
     if (WebUI::SerialBT.hasClient() && (client == CLIENT_BT || client == CLIENT_ALL)) {
-        bool critical = (client == CLIENT_ALL) ? true : bt_tx_message_is_critical(text);
+        bool critical = bt_tx_message_is_critical(text);
         bt_tx_send(text, strlen(text), critical);
         // 让出 CPU 给蓝牙栈/RTOS，避免蓝牙回包阻塞导致上位机等待（进而造成 BT 画圆卡顿）
         yield();
