@@ -180,7 +180,6 @@ namespace WebUI {
     int Telnet_Server::get_rx_buffer_available() { return TELNETRXBUFFERSIZE - _RXbufferSize; }
 
     bool Telnet_Server::push(uint8_t data) {
-        log_i("[TELNET]push %c", data);
         if ((1 + _RXbufferSize) <= TELNETRXBUFFERSIZE) {
             int current = _RXbufferpos + _RXbufferSize;
             if (current > TELNETRXBUFFERSIZE) {
@@ -191,8 +190,7 @@ namespace WebUI {
             }
             _RXbuffer[current] = data;
             _RXbufferSize++;
-            log_i("[TELNET]buffer size %d", _RXbufferSize);
-            return true;
+                return true;
         }
         return false;
     }

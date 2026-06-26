@@ -1,3 +1,28 @@
+
+
+// Paper path safety helpers
+static bool paper_motion_allowed() {
+    if (sys.abort) {
+        return false;
+    }
+    switch (sys.state) {
+        case State::Alarm:
+        case State::Cycle:
+        case State::Hold:
+        case State::Homing:
+            return false;
+        default:
+            return true;
+    }
+}
+
+static bool paper_blocking_wait(uint32_t ms) {
+    if (!paper_motion_allowed()) {
+        return false;
+    }
+    return delay_msec(ms, DwellMode::Dwell);
+}
+
 // paper_system.cpp
 // Custom code for paper-handling system (paper sensor + paper-change motors)
 // Enabled via CUSTOM_CODE_FILENAME in custom_3axis_hr4988.h

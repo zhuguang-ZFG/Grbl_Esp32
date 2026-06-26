@@ -316,7 +316,7 @@ namespace WebUI {
             String currentline = currentfile.readStringUntil('\n');
             if (currentline.length() > 0) {
                 byte line[256];
-                currentline.getBytes(line, 255);
+                currentline.getBytes(line, LINE_BUFFER_SIZE - 1);
                 err = execute_line((char*)line, client, auth_level);
                 if (err != Error::Ok) {
                     accumErr = err;
