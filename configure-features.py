@@ -103,7 +103,7 @@ def resolveConflicts(high_priority, low_priority):
 def readConfig(path):
     # Read config.h to memory
     try:
-        f = open(path)
+        f = open(path, encoding='utf-8')
     except IOError:
         print("unable to open file for read: " + path)
         sys.exit(255)
@@ -120,7 +120,7 @@ def readConfig(path):
 
 def writeConfig(path, buf):
     try:
-        f = open(path, 'w')
+        f = open(path, 'w', encoding='utf-8')
     except IOError:
         print("unable to open file for write: " + path)
         sys.exit(255)
