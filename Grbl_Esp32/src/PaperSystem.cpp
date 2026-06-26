@@ -17,8 +17,8 @@
 #define PAPER_STATUS_JAM_TIMEOUT      4  // 传感器持续有纸超时（卡纸）
 #define PAPER_STATUS_OUT_OF_PAPER     5  // 进纸超时无纸（缺纸）
 
-// 传感器关键阶段超时时间：10s
-#define PAPER_SENSOR_TIMEOUT_MS 10000u
+// 传感器关键阶段超时时间：15s（覆盖老化/阻力变大后的最坏路径）
+#define PAPER_SENSOR_TIMEOUT_MS 15000u
 
 // 步进脉宽常量：若机器头文件未定义，则使用下列默认值（见 custom_3axis_hr4988.h）
 #ifndef PAPER_RAMP_STEPS
@@ -619,10 +619,17 @@ Error paper_auto_change(void) {
         return Error::GcodeUnsupportedCommand;
     }
 
+    // 互斥保护：防止 M30、[ESP910]、BT 重连预约同时触发导致嵌套执行
+    if (paper_auto_change_running) {
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Already running, ignored");
+        return Error::Ok;
+    }
+
     // 允许起始有纸：用于“开始队列前出旧纸”和“M30 后出本页再进下一页”。第 1 步会先弹旧纸，再进新纸。
     paper_btn_reset_press_state();
     paper_auto_change_running = true;
-    paper_ignore_host_reset_until_ms = millis() + 8000u;
+    // 保护窗口覆盖换纸最坏路径（估算约 10-11s），避免主机 0x18 软复位打断流程
+    paper_ignore_host_reset_until_ms = millis() + 15000u;
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Starting auto paper change...");
     // 先全部失能，再按步骤使能需要运动的电机，避免不运动时电机仍带电
     paper_disable_drivers();
@@ -886,6 +893,11 @@ Error paper_auto_change(void) {
 }
 
 void paper_on_soft_reset_restart(void) {
+    // 软复位/看门狗复位后必须重置 running 标志，否则主循环会永久把运动 G 代码当成“换纸中”丢弃
+    if (paper_auto_change_running) {
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Soft reset during paper change, clearing running flag");
+        paper_auto_change_running = false;
+    }
     // 仅取消已预约；保留 SPP 连上后的 after_ack_armed（连接后上位机常发 0x18）
     paper_bt_connect_auto_change_pending = false;
 }
@@ -899,6 +911,12 @@ void paper_bt_on_spp_connected(void) {
 }
 
 void paper_bt_on_spp_disconnected(void) {
+    // 蓝牙断开时不直接清零 paper_auto_change_running：
+    // 换纸是同步阻塞流程，电机可能仍在运动；直接清零会让主循环提前接受新的运动 G 代码，
+    // 造成状态不一致。让它自己完成并清零，或在需要时走 mc_reset() 软复位路径。
+    if (paper_auto_change_running) {
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] BT disconnect while paper change running (will complete or abort via reset)");
+    }
     paper_bt_connect_auto_change_pending = false;
     paper_bt_auto_change_after_ack_armed = false;
 }

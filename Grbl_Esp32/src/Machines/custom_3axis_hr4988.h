@@ -140,15 +140,17 @@
 // 面板电机：弹出旧纸（A4 长度 + 余量）
 #define PANEL_EJECT_STEPS       8000u
 // 面板电机：快速送纸阶段的最大步数上限（防止传感器异常时跑飞）
-#define PANEL_FAST_STEPS_MAX    16000u
+// 100+ 页后滚轮磨损/阻力变大，留更大余量避免误判卡纸
+#define PANEL_FAST_STEPS_MAX    20000u
 // 面板电机：反向找感应点的最大步数（需覆盖第6步快进的最远位置）
-// 快进约 8.5k 步时脱离传感器，这里给到 9000 步保证能退回到感应点
-#define PANEL_BACK_STEPS_MAX    9000u
+// 与 PANEL_FAST_STEPS_MAX 同步扩大，确保能退回到感应点
+#define PANEL_BACK_STEPS_MAX    12000u
 // 面板电机：最终微调到位的步数
 #define PANEL_FINAL_STEPS     320u
 
 // 进纸器电机：寻找新纸到感应器的最大步数（超时时间，可根据实际距离调大）
-#define FEEDER_FIND_STEPS_MAX   12000u
+// 100+ 页后进纸阻力增加，放宽上限配合 PAPER_SENSOR_TIMEOUT_MS 使用
+#define FEEDER_FIND_STEPS_MAX   16000u
 // 纸张进入传感器后：进纸达 PAPER_ADVANCE_CM_CLAMP_START(cm) 时开始拾落夹紧，送纸达 PAPER_ADVANCE_CM(cm) 后送纸器停止
 #ifndef PAPER_ADVANCE_CM_CLAMP_START
 #    define PAPER_ADVANCE_CM_CLAMP_START  7   // 进纸多少 cm 后开始夹紧
