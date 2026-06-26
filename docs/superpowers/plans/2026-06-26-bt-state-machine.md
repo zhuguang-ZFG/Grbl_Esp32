@@ -108,7 +108,7 @@ git commit -m "feat(bt): 新增 BTState 状态机接口头文件"
 #    include "../Serial.h"
 
 static volatile BTState bt_state         = BTState::Idle;
-static uint32_t         bt_last_event_ms = 0;
+static volatile uint32_t bt_last_event_ms = 0;
 
 void bt_state_init(void) {
     bt_state         = BTState::Idle;
