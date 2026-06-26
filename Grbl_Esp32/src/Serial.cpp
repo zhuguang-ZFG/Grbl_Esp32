@@ -229,11 +229,14 @@ void client_reset_read_buffer(uint8_t client) {
     vTaskExitCritical(&myMutex);
 }
 
-int client_buffer_free(uint8_t client) {
+int client_buffer_available_for_write(uint8_t client) {
     if (client >= CLIENT_COUNT) {
         return 0;
     }
-    return client_buffer[client].availableforwrite();
+    vTaskEnterCritical(&myMutex);
+    int free = client_buffer[client].availableforwrite();
+    vTaskExitCritical(&myMutex);
+    return free;
 }
 
 // Fetches the first byte in the client read buffer. Called by protocol loop.
