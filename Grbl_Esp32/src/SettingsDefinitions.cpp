@@ -65,6 +65,7 @@ EnumSetting* message_level;
 enum_opt_t spindleTypes = {
     // clang-format off
     { "NONE", int8_t(SpindleType::NONE) },
+#ifndef SPINDLE_TYPE_NONE_ONLY
     { "PWM", int8_t(SpindleType::PWM) },
     { "RELAY", int8_t(SpindleType::RELAY) },
     { "LASER", int8_t(SpindleType::LASER) },
@@ -74,6 +75,7 @@ enum_opt_t spindleTypes = {
     { "10V", int8_t(SpindleType::_10V) },
     { "H2A", int8_t(SpindleType::H2A) },
     { "YL620", int8_t(SpindleType::YL620) },
+#endif
     // clang-format on
 };
 

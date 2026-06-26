@@ -30,22 +30,25 @@
 #include "Spindle.h"
 
 #include "NullSpindle.h"
-#include "PWMSpindle.h"
-#include "RelaySpindle.h"
-#include "Laser.h"
-#include "DacSpindle.h"
-#include "HuanyangSpindle.h"
-#include "H2ASpindle.h"
-#include "BESCSpindle.h"
-#include "10vSpindle.h"
-#include "YL620Spindle.h"
-#include "TecoL510.h"
+#ifndef SPINDLE_TYPE_NONE_ONLY
+#    include "PWMSpindle.h"
+#    include "RelaySpindle.h"
+#    include "Laser.h"
+#    include "DacSpindle.h"
+#    include "HuanyangSpindle.h"
+#    include "H2ASpindle.h"
+#    include "BESCSpindle.h"
+#    include "10vSpindle.h"
+#    include "YL620Spindle.h"
+#    include "TecoL510.h"
+#endif
 
 namespace Spindles {
     // An instance of each type of spindle is created here.
     // This allows the spindle to be dynamicly switched
 
-    Null     null;
+    Null null;
+#ifndef SPINDLE_TYPE_NONE_ONLY
     PWM      pwm;
     Relay    relay;
     Laser    laser;
@@ -56,8 +59,10 @@ namespace Spindles {
     _10v     _10v;
     YL620    yl620;
     L510     l510;
+#endif
 
     void Spindle::select() {
+#ifndef SPINDLE_TYPE_NONE_ONLY
         switch (static_cast<SpindleType>(spindle_type->get())) {
             case SpindleType::PWM:
                 spindle = &pwm;
@@ -94,7 +99,9 @@ namespace Spindles {
                 spindle = &null;
                 break;
         }
-
+#else
+        spindle = &null;
+#endif
         spindle->init();
     }
 

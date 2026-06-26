@@ -309,6 +309,12 @@
 #define DEFAULT_SPINDLE_RPM_MIN             0.0
 #define DEFAULT_LASER_MODE                  0
 
+// 写字机不需要任何主轴/激光类型，仅保留 NullSpindle，减少 Flash 占用
+#ifndef SPINDLE_TYPE
+#    define SPINDLE_TYPE SpindleType::NONE
+#endif
+#define SPINDLE_TYPE_NONE_ONLY
+
 // 写字机/绘图机常用：步数、速度、加速度、行程
 #define DEFAULT_X_STEPS_PER_MM              200.0
 #define DEFAULT_Y_STEPS_PER_MM              200.0
