@@ -497,6 +497,10 @@ const int DWELL_TIME_STEP = 50;  // Integer (1-255) (milliseconds)
 // #define RX_BUFFER_SIZE 128 // (1-254) Uncomment to override defaults in serial.h
 // #define TX_BUFFER_SIZE 100 // (1-254)
 
+#ifndef BT_STATUS_REPORT_MIN_INTERVAL_MS
+#    define BT_STATUS_REPORT_MIN_INTERVAL_MS 50u  // 蓝牙 ? 最小间隔，避免高频抖动
+#endif
+
 // A simple software debouncing feature for hard limit switches. When enabled, the limit
 // switch interrupt unblock a waiting task which will recheck the limit switch pins after
 // a short delay. Default disabled

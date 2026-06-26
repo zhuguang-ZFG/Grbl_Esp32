@@ -271,9 +271,20 @@ void execute_realtime_command(Cmd command, uint8_t client) {
             grbl_msg_sendf(CLIENT_ALL, MsgLevel::Debug, "Cmd::Reset");
             mc_reset();  // Call motion control reset routine.
             break;
-        case Cmd::StatusReport:
+        case Cmd::StatusReport: {
+#ifdef ENABLE_BLUETOOTH
+            if (client == CLIENT_BT) {
+                static uint32_t last_bt_status_report_ms = 0;
+                uint32_t        now_ms                   = millis();
+                if (now_ms - last_bt_status_report_ms < BT_STATUS_REPORT_MIN_INTERVAL_MS) {
+                    break;
+                }
+                last_bt_status_report_ms = now_ms;
+            }
+#endif
             report_realtime_status(client);  // direct call instead of setting flag
             break;
+        }
         case Cmd::CycleStart:
             sys_rt_exec_state.bit.cycleStart = true;
             break;
