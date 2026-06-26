@@ -43,6 +43,10 @@ bool    bt_state_is_connected(void);
 bool    bt_state_can_tx(void);
 uint32_t bt_state_last_activity_ms(void);
 
+// TX flow control
+bool bt_tx_send(const char* text, size_t len, bool critical);
+void bt_tx_flush(void);
+
 #else
 
 // Forward declarations so stubs can match the real signatures without
@@ -58,5 +62,7 @@ static inline void bt_state_update(void) {}
 static inline bool bt_state_is_connected(void) { return false; }
 static inline bool bt_state_can_tx(void) { return false; }
 static inline uint32_t bt_state_last_activity_ms(void) { return 0; }
+static inline bool bt_tx_send(const char* /*text*/, size_t /*len*/, bool /*critical*/) { return false; }
+static inline void bt_tx_flush(void) {}
 
 #endif

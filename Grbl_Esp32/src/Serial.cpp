@@ -57,6 +57,10 @@
 
 #include "Grbl.h"
 
+#ifdef ENABLE_BLUETOOTH
+#    include "WebUI/BTState.h"
+#endif
+
 // Define this to use the Arduino serial (UART) driver instead
 // of the one in Uart.cpp, which uses the ESP-IDF UART driver.
 // This is for regression testing, and can be removed after
@@ -382,13 +386,46 @@ void execute_realtime_command(Cmd command, uint8_t client) {
     }
 }
 
+#ifdef ENABLE_BLUETOOTH
+// 判断 BT 消息是否关键：ok/error、状态报告、报警、普通 MSG 都是关键；
+// 调试/诊断类 MSG 在拥塞时可丢弃，避免阻塞控制面。
+static bool bt_message_is_critical(const char* text) {
+    if (text[0] == 'o' && text[1] == 'k') {
+        return true;
+    }
+    if (strncmp(text, "error:", 6) == 0 || strncmp(text, "error ", 6) == 0) {
+        return true;
+    }
+    if (text[0] == '<') {
+        return true;
+    }
+    if (strncmp(text, "[MSG:", 5) == 0) {
+        if (strncmp(text, "[BT-EOL", 7) == 0) {
+            return false;
+        }
+        if (strncmp(text, "[PaperDiag]", 11) == 0) {
+            return false;
+        }
+        if (strncmp(text, "[BTState]", 9) == 0) {
+            return false;
+        }
+        return true;
+    }
+    if (strncmp(text, "ALARM:", 6) == 0 || strncmp(text, "ALM:", 4) == 0) {
+        return true;
+    }
+    return false;
+}
+#endif
+
 void client_write(uint8_t client, const char* text) {
     if (client == CLIENT_INPUT) {
         return;
     }
 #ifdef ENABLE_BLUETOOTH
     if (WebUI::SerialBT.hasClient() && (client == CLIENT_BT || client == CLIENT_ALL)) {
-        WebUI::SerialBT.print(text);
+        bool critical = (client == CLIENT_ALL) ? true : bt_message_is_critical(text);
+        bt_tx_send(text, strlen(text), critical);
         // 让出 CPU 给蓝牙栈/RTOS，避免蓝牙回包阻塞导致上位机等待（进而造成 BT 画圆卡顿）
         yield();
     }

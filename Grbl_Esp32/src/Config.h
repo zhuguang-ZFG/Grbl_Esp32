@@ -501,6 +501,22 @@ const int DWELL_TIME_STEP = 50;  // Integer (1-255) (milliseconds)
 #    define BT_STATUS_REPORT_MIN_INTERVAL_MS 50u  // 蓝牙 ? 最小间隔，避免高频抖动
 #endif
 
+#ifndef BT_LINK_SILENCE_TIMEOUT_MS
+#    define BT_LINK_SILENCE_TIMEOUT_MS 5000u  // SPP 连接/拥塞状态下无事件，视为假连接超时
+#endif
+
+#ifndef BT_RECOVERY_COOLDOWN_MS
+#    define BT_RECOVERY_COOLDOWN_MS 3000u  // 结束 SPP 后冷却再重启
+#endif
+
+#ifndef BT_RECOVERY_MAX_RETRIES
+#    define BT_RECOVERY_MAX_RETRIES 3  // 连续自动恢复失败上限，超限后保持 Idle
+#endif
+
+#ifndef BT_TX_RING_SIZE
+#    define BT_TX_RING_SIZE 512u  // BT 拥塞时关键消息缓存字节数
+#endif
+
 // A simple software debouncing feature for hard limit switches. When enabled, the limit
 // switch interrupt unblock a waiting task which will recheck the limit switch pins after
 // a short delay. Default disabled
