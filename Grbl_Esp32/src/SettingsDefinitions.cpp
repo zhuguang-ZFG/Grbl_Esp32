@@ -229,7 +229,7 @@ static const char* makeGrblName(int axisNum, int base) {
     // if (axisNum > 2) return NULL;
     char buf[4];
     snprintf(buf, 4, "%d", axisNum + base);
-    char* retval = (char*)malloc(strlen(buf));
+    char* retval = (char*)malloc(strlen(buf) + 1);
     return strcpy(retval, buf);
 }
 
