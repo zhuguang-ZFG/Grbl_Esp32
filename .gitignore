@@ -21,3 +21,12 @@ __vm/
 *.suo
 Grbl_Esp32.ino.cpp
 /packages
+
+# Agent / tooling artifacts
+*.bak_*
+build_*.log
+compile_commands.json
+.cache/
+.lima-data/
+.serena/
+.omk/
