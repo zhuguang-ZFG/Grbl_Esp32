@@ -689,6 +689,11 @@ Error paper_auto_change(void) {
         return Error::Ok;
     }
 
+    // 换纸会直接软件打脉冲驱动纸路电机；先排空已排队的 XYZ 运动，
+    // 避免与主步进 ISR 并发出料（M721/[ESP910]/BT 重连入口原本均无 buffer 同步）。
+    // M30/回原点路径在调用前已各自 protocol_buffer_synchronize()，此处二次调用时 buffer 已空，立即返回，无副作用。
+    protocol_buffer_synchronize();
+
     // 允许起始有纸：用于“开始队列前出旧纸”和“M30 后出本页再进下一页”。第 1 步会先弹旧纸，再进新纸。
     paper_btn_reset_press_state();
     paper_auto_change_running = true;
@@ -1169,6 +1174,7 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
             uint8_t step_pin = (code == 711) ? CLAMP_MOTOR_STEP_PIN : (code == 712) ? PANEL_MOTOR_STEP_PIN : FEEDER_MOTOR_STEP_PIN;
             
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M%u (%s): jog start (%u steps)", (unsigned)code, motor_name, (unsigned)nsteps);
+            protocol_buffer_synchronize();  // 排空已排队 XYZ 运动，避免点动纸路电机与主步进 ISR 并发
             paper_enable_drivers();
             paper_step_pulses(step_pin, nsteps);
             paper_disable_drivers();
@@ -1192,6 +1198,7 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
                            do_clamp ? "CLAMP(Q0)" : "RELEASE(Q1)",
                            (unsigned)nsteps,
                            (int)clamp_dir);
+            protocol_buffer_synchronize();  // 排空已排队 XYZ 运动，避免纸路点动与主步进并发
             paper_enable_drivers();
 #ifdef PAPER_DRIVER_REF_PIN
             paper_set_ref_dac(PAPER_REF_DAC_CLAMP);  // 【Superpowers-主动控制】确保拾落电机使用优化后的电流
