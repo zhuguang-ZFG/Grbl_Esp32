@@ -1456,6 +1456,14 @@ namespace WebUI {
                     if (filename[0] != '/') {
                         filename = "/" + upload.filename;
                     }
+                    // 路径穿越防护：与 /SD/ 读取、ESP215 删除入口一致，拒绝含 ".." 段的上传路径，
+                    // 防止已认证用户用 ../ 越目录覆写预期目录之外的文件。
+                    if (path_is_traversal(filename)) {
+                        _upload_status = UploadStatusType::FAILED;
+                        grbl_send(CLIENT_ALL, "[MSG:Upload cancelled]\r\n");
+                        pushError(ESP_ERROR_UPLOAD_CANCELLED, "Upload rejected, invalid path");
+                        return;
+                    }
                     //check if SD Card is available
                     if (get_sd_state(true) != SDState::Idle) {
                         _upload_status = UploadStatusType::FAILED;

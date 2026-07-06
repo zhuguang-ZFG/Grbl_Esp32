@@ -76,7 +76,6 @@ namespace WebUI {
                 current = 0;
             }
             _RXbuffer[current] = c;
-            current++;
             _RXbufferSize += 1;
             portEXIT_CRITICAL(&_inputBufMux);
             return 1;
