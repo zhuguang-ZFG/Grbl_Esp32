@@ -261,50 +261,78 @@ void user_m30() {
 // 蓝牙栈启动/首次 SPP 连接时射频易干扰 GPIO35
 #define PAPER_BTN_BT_SUPPRESS_MS           1000u
 
-static bool     paper_btn_wait_second_press = false;
-static bool     paper_btn_saw_release       = true;  // 第二次按下前必须先检测到松开
-static uint32_t paper_btn_first_press_ms   = 0;
-static uint32_t paper_btn_post_change_ignore_until_ms = 0;
-static uint32_t paper_btn_bt_ignore_until_ms         = 0;
+// 这些状态被三个 FreeRTOS 任务交叉访问：
+//   - controlCheckTask（system_exec_control_pin → user_defined_macro / paper_btn_notify_macro_released）
+//   - protocol 主任务（user_m30 / paper_poll_bt_connect_auto_change → paper_btn_arm_post_change_cooldown）
+//   - BT SPP 回调任务（bt_state_on_event → paper_btn_arm_bt_suppress）
+// ESP32 双核、无内存屏障，必须用临界区保护，否则读-改-写会丢更新（双击状态被并发重置）。
+static portMUX_TYPE paper_btn_mux                              = portMUX_INITIALIZER_UNLOCKED;
+static volatile bool     paper_btn_wait_second_press           = false;
+static volatile bool     paper_btn_saw_release                 = true;  // 第二次按下前必须先检测到松开
+static volatile uint32_t paper_btn_first_press_ms              = 0;
+static volatile uint32_t paper_btn_post_change_ignore_until_ms = 0;
+static volatile uint32_t paper_btn_bt_ignore_until_ms          = 0;
 
 void paper_btn_reset_press_state(void) {
+    portENTER_CRITICAL(&paper_btn_mux);
     paper_btn_wait_second_press = false;
     paper_btn_saw_release       = true;
-    paper_btn_first_press_ms   = 0;
+    paper_btn_first_press_ms    = 0;
+    portEXIT_CRITICAL(&paper_btn_mux);
 }
 
 void paper_btn_arm_post_change_cooldown(void) {
-    paper_btn_reset_press_state();
-    paper_btn_post_change_ignore_until_ms = millis() + PAPER_BTN_POST_CHANGE_COOLDOWN_MS;
+    portENTER_CRITICAL(&paper_btn_mux);
+    paper_btn_wait_second_press               = false;
+    paper_btn_saw_release                     = true;
+    paper_btn_first_press_ms                  = 0;
+    paper_btn_post_change_ignore_until_ms     = millis() + PAPER_BTN_POST_CHANGE_COOLDOWN_MS;
+    portEXIT_CRITICAL(&paper_btn_mux);
 }
 
 void paper_btn_arm_bt_suppress(void) {
-    paper_btn_reset_press_state();
-    paper_btn_bt_ignore_until_ms = millis() + PAPER_BTN_BT_SUPPRESS_MS;
+    portENTER_CRITICAL(&paper_btn_mux);
+    paper_btn_wait_second_press       = false;
+    paper_btn_saw_release             = true;
+    paper_btn_first_press_ms          = 0;
+    paper_btn_bt_ignore_until_ms      = millis() + PAPER_BTN_BT_SUPPRESS_MS;
+    portEXIT_CRITICAL(&paper_btn_mux);
 }
 
 bool paper_btn_bt_suppress_active(void) {
-    return millis() < paper_btn_bt_ignore_until_ms;
+    portENTER_CRITICAL(&paper_btn_mux);
+    uint32_t until = paper_btn_bt_ignore_until_ms;
+    portEXIT_CRITICAL(&paper_btn_mux);
+    return millis() < until;
 }
 
 void paper_btn_notify_macro_released(void) {
+    portENTER_CRITICAL(&paper_btn_mux);
     if (paper_btn_wait_second_press) {
         paper_btn_saw_release = true;
     }
+    portEXIT_CRITICAL(&paper_btn_mux);
 }
 
 bool paper_btn_ignore_control_events(void) {
-    if (millis() < paper_btn_post_change_ignore_until_ms) {
+    portENTER_CRITICAL(&paper_btn_mux);
+    uint32_t post = paper_btn_post_change_ignore_until_ms;
+    uint32_t bt   = paper_btn_bt_ignore_until_ms;
+    portEXIT_CRITICAL(&paper_btn_mux);
+    if (millis() < post) {
         return true;
     }
-    if (millis() < paper_btn_bt_ignore_until_ms) {
+    if (millis() < bt) {
         return true;
     }
     return false;
 }
 
 bool paper_recent_auto_change_cooldown_active(void) {
-    return millis() < paper_btn_post_change_ignore_until_ms;
+    portENTER_CRITICAL(&paper_btn_mux);
+    uint32_t post = paper_btn_post_change_ignore_until_ms;
+    portEXIT_CRITICAL(&paper_btn_mux);
+    return millis() < post;
 }
 
 void user_defined_macro(uint8_t index) {
@@ -339,27 +367,39 @@ void user_defined_macro(uint8_t index) {
     // 连按两次才触发：第一次仅记录并提示，第二次在有效窗内按下才执行换纸
     uint32_t now_ms = millis();
 
-    if (!paper_btn_wait_second_press) {
+    portENTER_CRITICAL(&paper_btn_mux);
+    bool wait_second = paper_btn_wait_second_press;
+    bool saw_release = paper_btn_saw_release;
+    uint32_t first_ms = paper_btn_first_press_ms;
+    portEXIT_CRITICAL(&paper_btn_mux);
+
+    if (!wait_second) {
+        portENTER_CRITICAL(&paper_btn_mux);
         paper_btn_wait_second_press = true;
         paper_btn_saw_release       = false;
-        paper_btn_first_press_ms   = now_ms;
+        paper_btn_first_press_ms    = now_ms;
+        portEXIT_CRITICAL(&paper_btn_mux);
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Press again within %.1fs to change paper", PAPER_BTN_DOUBLE_PRESS_MS_MAX / 1000.0f);
         return;
     }
-    if (!paper_btn_saw_release) {
+    if (!saw_release) {
         return;  // 第一次按下后须先松开，避免 EMI 连续低电平当成连按
     }
-    uint32_t elapsed = now_ms - paper_btn_first_press_ms;
+    uint32_t elapsed = now_ms - first_ms;
     if (elapsed < PAPER_BTN_DOUBLE_PRESS_MS_MIN) {
         return;
     }
     if (elapsed > PAPER_BTN_DOUBLE_PRESS_MS_MAX) {
-        paper_btn_first_press_ms = now_ms;
+        portENTER_CRITICAL(&paper_btn_mux);
+        paper_btn_first_press_ms    = now_ms;
         paper_btn_saw_release       = false;
+        portEXIT_CRITICAL(&paper_btn_mux);
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Press again within %.1fs to change paper", PAPER_BTN_DOUBLE_PRESS_MS_MAX / 1000.0f);
         return;
     }
+    portENTER_CRITICAL(&paper_btn_mux);
     paper_btn_wait_second_press = false;
+    portEXIT_CRITICAL(&paper_btn_mux);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtn] Triggered (double press), queuing [ESP910]...");
 
     char line[16];

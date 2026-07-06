@@ -38,11 +38,15 @@
 static volatile bool paper_auto_change_running = false;
 
 // 换纸开始后短时忽略上位机 0x18（蓝牙连接常误发软复位，会打断弹纸）
-static uint32_t paper_ignore_host_reset_until_ms = 0;
+static volatile uint32_t paper_ignore_host_reset_until_ms = 0;
 
 // 蓝牙：SPP 连上后等上位机首条指令回完 ok/ack，再立刻预约并执行换纸
-static bool paper_bt_connect_auto_change_pending = false;
-static bool paper_bt_auto_change_after_ack_armed = false;
+// 这两个标志由 SPP 回调任务（paper_bt_on_spp_connected/disconnected）写，
+// 由 protocol 主任务读/清（paper_bt_on_first_host_ack / paper_poll_bt_connect_auto_change）。
+// 用 volatile + 临界区保证可见性与读-改-写原子性。
+static portMUX_TYPE paper_bt_auto_mux                      = portMUX_INITIALIZER_UNLOCKED;
+static volatile bool paper_bt_connect_auto_change_pending  = false;
+static volatile bool paper_bt_auto_change_after_ack_armed  = false;
 
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
 bool paper_auto_change_is_running(void) {
@@ -199,7 +203,9 @@ static void paper_step_pulses_panel_after_clamp(uint32_t steps) {
         i2s_out_delay();
         delayMicroseconds(lo_us);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            paper_refill_segment_buffer_during_blocking();
+            if (paper_refill_segment_buffer_during_blocking()) {
+                return;
+            }
             delay(1);
         }
     }
@@ -212,7 +218,9 @@ static void paper_step_pulses_panel_after_clamp(uint32_t steps) {
         digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
         delayMicroseconds(lo_us);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            paper_refill_segment_buffer_during_blocking();
+            if (paper_refill_segment_buffer_during_blocking()) {
+                return;
+            }
             delay(1);
         }
     }
@@ -287,7 +295,9 @@ static void paper_step_pulses_feeder_find(uint16_t steps) {
         i2s_out_delay();
         delayMicroseconds(lo_us);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            paper_refill_segment_buffer_during_blocking();
+            if (paper_refill_segment_buffer_during_blocking()) {
+                return;
+            }
             delay(1);
         }
     }
@@ -300,7 +310,9 @@ static void paper_step_pulses_feeder_find(uint16_t steps) {
         digitalWrite(FEEDER_MOTOR_STEP_PIN, LOW);
         delayMicroseconds(lo_us);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            paper_refill_segment_buffer_during_blocking();
+            if (paper_refill_segment_buffer_during_blocking()) {
+                return;
+            }
             delay(1);
         }
     }
@@ -512,7 +524,9 @@ static void paper_step_pulses_panel_feeder_sync(uint32_t steps) {
         i2s_out_delay();
         delayMicroseconds(lo_us);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            paper_refill_segment_buffer_during_blocking();
+            if (paper_refill_segment_buffer_during_blocking()) {
+                return;
+            }
             delay(1);
         }
     }
@@ -525,7 +539,9 @@ static void paper_step_pulses_panel_feeder_sync(uint32_t steps) {
         digitalWrite(FEEDER_MOTOR_STEP_PIN, LOW);
         delayMicroseconds(500);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            paper_refill_segment_buffer_during_blocking();
+            if (paper_refill_segment_buffer_during_blocking()) {
+                return;
+            }
             delay(1);
         }
     }
@@ -616,7 +632,9 @@ static void paper_step_pulses_panel_eject(uint32_t steps) {
         i2s_out_delay();
         delayMicroseconds(lo_us);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            paper_refill_segment_buffer_during_blocking();
+            if (paper_refill_segment_buffer_during_blocking()) {
+                return;
+            }
             delay(1);
         }
     }
@@ -629,7 +647,9 @@ static void paper_step_pulses_panel_eject(uint32_t steps) {
         digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
         delayMicroseconds(lo_us);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            paper_refill_segment_buffer_during_blocking();
+            if (paper_refill_segment_buffer_during_blocking()) {
+                return;
+            }
             delay(1);
         }
     }
@@ -648,8 +668,8 @@ static Error paper_auto_change_abort_cleanup(const char* reason) {
     plan_sync_position();
     gc_sync_position();
     sys.state                      = State::Idle;
-    sys_rt_exec_state.value        = 0;
-    sys_rt_exec_state.bit.cycleStart = false;
+    __atomic_store_n(&sys_rt_exec_state.value, 0, __ATOMIC_RELAXED);
+    system_rt_exec_clear(EXEC_CYCLE_START);
     cycle_stop                     = false;
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Aborted: %s", reason);
     return Error::MessageFailed;
@@ -672,8 +692,9 @@ Error paper_auto_change(void) {
     // 允许起始有纸：用于“开始队列前出旧纸”和“M30 后出本页再进下一页”。第 1 步会先弹旧纸，再进新纸。
     paper_btn_reset_press_state();
     paper_auto_change_running = true;
-    // 保护窗口覆盖换纸最坏路径（估算约 10-11s），避免主机 0x18 软复位打断流程
-    paper_ignore_host_reset_until_ms = millis() + 15000u;
+    // 保护窗口覆盖换纸最坏路径：Step2/Step6 传感器找纸单次 15s + 重试，
+    // 实测可达 ~30-40s；取 60s 上限，期间忽略上位机 0x18 软复位，避免打断弹纸。
+    paper_ignore_host_reset_until_ms = millis() + 60000u;
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Starting auto paper change...");
     // 先全部失能，再按步骤使能需要运动的电机，避免不运动时电机仍带电
     paper_disable_drivers();
@@ -990,15 +1011,19 @@ void paper_on_soft_reset_restart(void) {
         paper_auto_change_running = false;
     }
     // 仅取消已预约；保留 SPP 连上后的 after_ack_armed（连接后上位机常发 0x18）
+    portENTER_CRITICAL(&paper_bt_auto_mux);
     paper_bt_connect_auto_change_pending = false;
+    portEXIT_CRITICAL(&paper_bt_auto_mux);
 }
 
 void paper_bt_on_spp_connected(void) {
 #if !defined(PAPER_AUTO_CHANGE_ON_BT_CONNECT) || !PAPER_AUTO_CHANGE_ON_BT_CONNECT
     return;
 #endif
+    portENTER_CRITICAL(&paper_bt_auto_mux);
     paper_bt_connect_auto_change_pending = false;
     paper_bt_auto_change_after_ack_armed  = true;
+    portEXIT_CRITICAL(&paper_bt_auto_mux);
 }
 
 void paper_bt_on_spp_disconnected(void) {
@@ -1008,8 +1033,10 @@ void paper_bt_on_spp_disconnected(void) {
     if (paper_auto_change_running) {
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] BT disconnect while paper change running (will complete or abort via reset)");
     }
+    portENTER_CRITICAL(&paper_bt_auto_mux);
     paper_bt_connect_auto_change_pending = false;
     paper_bt_auto_change_after_ack_armed = false;
+    portEXIT_CRITICAL(&paper_bt_auto_mux);
 }
 
 static bool paper_bt_schedule_auto_change_after_checks(void) {
@@ -1019,10 +1046,13 @@ static bool paper_bt_schedule_auto_change_after_checks(void) {
     if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
         return false;
     }
+    portENTER_CRITICAL(&paper_bt_auto_mux);
     if (paper_auto_change_is_running() || paper_bt_connect_auto_change_pending) {
+        portEXIT_CRITICAL(&paper_bt_auto_mux);
         return false;
     }
     paper_bt_connect_auto_change_pending = true;
+    portEXIT_CRITICAL(&paper_bt_auto_mux);
     grbl_msg_sendf(CLIENT_SERIAL,
                    MsgLevel::Info,
                    "[PaperBtConnect] Host ack done, auto-change scheduled (wait Idle)");
@@ -1033,10 +1063,13 @@ void paper_bt_on_first_host_ack(void) {
 #if !defined(PAPER_AUTO_CHANGE_ON_BT_CONNECT) || !PAPER_AUTO_CHANGE_ON_BT_CONNECT
     return;
 #endif
-    if (!paper_bt_auto_change_after_ack_armed) {
+    portENTER_CRITICAL(&paper_bt_auto_mux);
+    bool armed = paper_bt_auto_change_after_ack_armed;
+    paper_bt_auto_change_after_ack_armed = false;
+    portEXIT_CRITICAL(&paper_bt_auto_mux);
+    if (!armed) {
         return;
     }
-    paper_bt_auto_change_after_ack_armed = false;
     if (!paper_bt_schedule_auto_change_after_checks()) {
         return;
     }
@@ -1048,17 +1081,21 @@ void paper_poll_bt_connect_auto_change(void) {
 #if !defined(PAPER_AUTO_CHANGE_ON_BT_CONNECT) || !PAPER_AUTO_CHANGE_ON_BT_CONNECT
     return;
 #endif
+    portENTER_CRITICAL(&paper_bt_auto_mux);
     if (!paper_bt_connect_auto_change_pending) {
+        portEXIT_CRITICAL(&paper_bt_auto_mux);
         return;
     }
     if (sys.state != State::Idle) {
+        portEXIT_CRITICAL(&paper_bt_auto_mux);
         return;
     }
     if (paper_auto_change_is_running()) {
+        portEXIT_CRITICAL(&paper_bt_auto_mux);
         return;
     }
-
     paper_bt_connect_auto_change_pending = false;
+    portEXIT_CRITICAL(&paper_bt_auto_mux);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtConnect] Running auto paper change...");
     Error e = paper_auto_change();
     if (e == Error::Ok) {
