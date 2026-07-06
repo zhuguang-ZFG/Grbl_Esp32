@@ -711,6 +711,10 @@ Error paper_auto_change(void) {
 
     // 允许起始有纸：用于“开始队列前出旧纸”和“M30 后出本页再进下一页”。第 1 步会先弹旧纸，再进新纸。
     paper_btn_reset_press_state();
+    // 入口清急停标志：两个超时失败退出路径（feeder/fast-feed timeout）直接置 running=false 返回、
+    // 不走 abort_cleanup，若上轮换纸在 timeout 退出前恰好收到 feed hold，标志会残留并误中止本轮。
+    // 在此统一清除，保证每轮换纸开始时标志干净，与 running=true 同步。
+    paper_user_stop_requested = false;
     paper_auto_change_running = true;
     // 保护窗口覆盖换纸最坏路径：Step2/Step6 传感器找纸单次 15s + 重试，
     // 实测可达 ~30-40s；取 60s 上限，期间忽略上位机 0x18 软复位，避免打断弹纸。
