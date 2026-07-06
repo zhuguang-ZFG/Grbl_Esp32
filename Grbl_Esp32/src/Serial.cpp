@@ -293,6 +293,13 @@ void execute_realtime_command(Cmd command, uint8_t client) {
             system_rt_exec_set(EXEC_CYCLE_START);
             break;
         case Cmd::FeedHold:
+            // 换纸期间：映射为"纸路急停 + 换纸中止"，而不是让 sys.state 变 Hold（误导性停止指示）
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+            if (paper_auto_change_is_running()) {
+                paper_request_user_stop();
+                break;
+            }
+#endif
             system_rt_exec_set(EXEC_FEED_HOLD);
             break;
         case Cmd::SafetyDoor:

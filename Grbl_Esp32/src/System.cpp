@@ -306,8 +306,20 @@ void system_exec_control_pin(ControlPins pins) {
     } else if (pins.bit.cycleStart) {
         system_rt_exec_set(EXEC_CYCLE_START);
     } else if (pins.bit.feedHold) {
+        // 换纸期间：物理 feed hold 映射为纸路急停，不让 sys.state 误变 Hold
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+        if (paper_auto_change_is_running()) {
+            paper_request_user_stop();
+        } else
+#endif
         system_rt_exec_set(EXEC_FEED_HOLD);
     } else if (pins.bit.safetyDoor) {
+        // 安全门比 feed hold 更应硬停；换纸期间同样映射为纸路急停
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+        if (paper_auto_change_is_running()) {
+            paper_request_user_stop();
+        } else
+#endif
         system_rt_exec_set(EXEC_SAFETY_DOOR);
     } else if (pins.bit.macro0) {
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM

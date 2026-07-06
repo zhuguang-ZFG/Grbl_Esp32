@@ -49,8 +49,22 @@ static volatile bool paper_bt_connect_auto_change_pending  = false;
 static volatile bool paper_bt_auto_change_after_ack_armed  = false;
 
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+// 换纸期间用户触发 feed hold / safety door：映射为"纸路急停 + 换纸中止"，
+// 而不是让 sys.state 先变 Hold 再检测（那会导致用户看到 Hold 却纸路仍在转的误导性停止指示）。
+// 该标志由 Serial.cpp / System.cpp 的 feed hold / safety door 入口在 paper_auto_change_is_running() 时设置，
+// 由 paper_blocking_abort_requested() 在每个 yield 点检测，命中后走 paper_auto_change_abort_cleanup()。
+static volatile bool paper_user_stop_requested = false;
+
 bool paper_auto_change_is_running(void) {
     return paper_auto_change_running;
+}
+
+void paper_request_user_stop(void) {
+    paper_user_stop_requested = true;
+}
+
+bool paper_user_stop_pending(void) {
+    return paper_user_stop_requested;
 }
 
 bool paper_should_ignore_host_reset(void) {
@@ -171,7 +185,7 @@ static inline bool paper_refill_segment_buffer_during_blocking() {
 }
 
 static inline bool paper_blocking_abort_requested(void) {
-    return paper_refill_segment_buffer_during_blocking();
+    return paper_refill_segment_buffer_during_blocking() || paper_user_stop_requested;
 }
 
 // 拾落夹紧后面板进纸：单步，前 PAPER_PANEL_FAST_RAMP_STEPS 缓起步，之后用 PAPER_PANEL_FAST_*（加速更早）
@@ -659,6 +673,7 @@ static void paper_step_pulses_panel_eject(uint32_t steps) {
 
 static Error paper_auto_change_abort_cleanup(const char* reason) {
     paper_auto_change_running      = false;
+    paper_user_stop_requested      = false;  // 清 feed hold / safety door 急停请求
     paper_ignore_host_reset_until_ms = 0;
     paper_btn_arm_post_change_cooldown();
     st_go_idle();
@@ -1002,6 +1017,7 @@ Error paper_auto_change(void) {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Paper drivers disabled (no panel hold)");
 
     paper_auto_change_running        = false;
+    paper_user_stop_requested        = false;  // 成功结束也清急停请求（幂等）
     paper_ignore_host_reset_until_ms = 0;
     paper_btn_arm_post_change_cooldown();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] All steps completed successfully!");
@@ -1230,5 +1246,12 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
 void paper_system_init(void) {}
 Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
     return Error::GcodeUnsupportedCommand;
+}
+bool paper_auto_change_is_running(void) {
+    return false;
+}
+void paper_request_user_stop(void) {}
+bool paper_user_stop_pending(void) {
+    return false;
 }
 #endif

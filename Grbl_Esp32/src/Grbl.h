@@ -138,6 +138,8 @@ Error paper_auto_change(void);  // 一键自动换纸流程
 void  paper_led_update(void);   // 按键彩灯 Q0 状态刷新（常亮/慢闪/快闪）
 void  paper_diagnostic_update(void);  // 运行时诊断：每 30s 打印堆/状态/换纸标志
 bool  paper_auto_change_is_running(void);  // 换纸流程是否正在执行（按键/上位机可据此避免重复触发）
+void  paper_request_user_stop(void);  // 换纸期间 feed hold / safety door → 映射为纸路急停（避免误导性 Hold）
+bool  paper_user_stop_pending(void);  // 急停请求是否待处理（paper_blocking_abort_requested 用）
 bool  paper_should_ignore_host_reset(void);  // 换纸初期忽略上位机 0x18，避免 BT 连接触发软复位打断流程
 void  paper_btn_reset_press_state(void);   // 清除连按状态（蓝牙连接等 EMI 场景防误触发）
 void  paper_btn_arm_post_change_cooldown(void);  // 换纸结束/失败后冷却，防 M30 后误连按触发 [ESP910]
