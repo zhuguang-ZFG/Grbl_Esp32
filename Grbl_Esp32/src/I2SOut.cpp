@@ -541,8 +541,16 @@ static void IRAM_ATTR i2sOutTask(void* parameter) {
 //
 void IRAM_ATTR i2s_out_delay() {
 #ifdef USE_I2S_OUT_STREAM_IMPL
+    // 先在临界区里取出状态，再在锁外做阻塞延时。
+    // 旧的实现在 portENTER_CRITICAL 保护段内调 delay(I2S_OUT_DELAY_MS)（=12ms），
+    // 临界区持自旋锁 + 屏蔽本核中断，vTaskDelay 无法被唤醒 → Task/Interrupt WDT
+    // 触发 panic 重启（见 PaperSystem.cpp 换纸路径在首页之后的调用）。
+    i2s_out_pulser_status_t s;
     I2S_OUT_PULSER_ENTER_CRITICAL();
-    if (i2s_out_pulser_status == PASSTHROUGH) {
+    s = i2s_out_pulser_status;
+    I2S_OUT_PULSER_EXIT_CRITICAL();
+
+    if (s == PASSTHROUGH) {
         // Depending on the timing, it may not be reflected immediately,
         // so wait twice as long just in case.
         ets_delay_us(I2S_OUT_USEC_PER_PULSE * 2);
@@ -551,7 +559,6 @@ void IRAM_ATTR i2s_out_delay() {
         // is reflected in the I2S TX module via FIFO.
         delay(I2S_OUT_DELAY_MS);
     }
-    I2S_OUT_PULSER_EXIT_CRITICAL();
 #else
     ets_delay_us(I2S_OUT_USEC_PER_PULSE * 2);
 #endif
@@ -753,11 +760,22 @@ int IRAM_ATTR i2s_out_init(i2s_out_init_t& init_param) {
     if (o_dma.buffers == nullptr) {
         return -1;
     }
+    // 初始化指针数组，失败路径才能安全 free 已分配项
+    for (int i = 0; i < I2S_OUT_DMABUF_COUNT; i++) {
+        o_dma.buffers[i] = nullptr;
+    }
 
     // Allocate each buffer that can be used by the DMA controller
     for (int buf_idx = 0; buf_idx < I2S_OUT_DMABUF_COUNT; buf_idx++) {
         o_dma.buffers[buf_idx] = (uint32_t*)heap_caps_calloc(1, I2S_OUT_DMABUF_LEN, MALLOC_CAP_DMA);
         if (o_dma.buffers[buf_idx] == nullptr) {
+            // 清理已分配的 buffers 数组
+            for (int j = 0; j < buf_idx; j++) {
+                free(o_dma.buffers[j]);
+                o_dma.buffers[j] = nullptr;
+            }
+            free(o_dma.buffers);
+            o_dma.buffers = nullptr;
             return -1;
         }
     }
@@ -765,13 +783,35 @@ int IRAM_ATTR i2s_out_init(i2s_out_init_t& init_param) {
     // Allocate the array of DMA descriptors
     o_dma.desc = (lldesc_t**)malloc(sizeof(lldesc_t*) * I2S_OUT_DMABUF_COUNT);
     if (o_dma.desc == nullptr) {
+        for (int j = 0; j < I2S_OUT_DMABUF_COUNT; j++) {
+            free(o_dma.buffers[j]);
+            o_dma.buffers[j] = nullptr;
+        }
+        free(o_dma.buffers);
+        o_dma.buffers = nullptr;
         return -1;
+    }
+    for (int i = 0; i < I2S_OUT_DMABUF_COUNT; i++) {
+        o_dma.desc[i] = nullptr;
     }
 
     // Allocate each DMA descriptor that will be used by the DMA controller
     for (int buf_idx = 0; buf_idx < I2S_OUT_DMABUF_COUNT; buf_idx++) {
         o_dma.desc[buf_idx] = (lldesc_t*)heap_caps_malloc(sizeof(lldesc_t), MALLOC_CAP_DMA);
         if (o_dma.desc[buf_idx] == nullptr) {
+            // 清理已分配的 desc 和全部 buffers
+            for (int j = 0; j < buf_idx; j++) {
+                free(o_dma.desc[j]);
+                o_dma.desc[j] = nullptr;
+            }
+            free(o_dma.desc);
+            o_dma.desc = nullptr;
+            for (int j = 0; j < I2S_OUT_DMABUF_COUNT; j++) {
+                free(o_dma.buffers[j]);
+                o_dma.buffers[j] = nullptr;
+            }
+            free(o_dma.buffers);
+            o_dma.buffers = nullptr;
             return -1;
         }
     }
