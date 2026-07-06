@@ -53,6 +53,11 @@ static uint8_t      bt_tx_ring[BT_TX_RING_SIZE];
 static size_t       bt_tx_ring_head = 0;
 static size_t       bt_tx_ring_tail = 0;
 static size_t       bt_tx_ring_used = 0;
+// Generation counter: bumped on every reset. bt_tx_flush captures it before
+// releasing the lock to call SerialBT.write(); if a SPP CLOSE/reset happens
+// concurrently and resets the ring, the generation mismatch tells flush to
+// drop its stale advance instead of underflowing bt_tx_ring_used (size_t).
+static uint32_t     bt_tx_ring_gen  = 0;
 static portMUX_TYPE bt_tx_mux       = portMUX_INITIALIZER_UNLOCKED;
 
 // Forward declaration — bt_state_on_event (SPP callback) needs to reset
@@ -69,6 +74,7 @@ void bt_state_init(void) {
     bt_tx_ring_head      = 0;
     bt_tx_ring_tail      = 0;
     bt_tx_ring_used      = 0;
+    bt_tx_ring_gen       = 0;
 }
 
 BTState bt_state_get(void) {
@@ -197,6 +203,7 @@ static void bt_tx_ring_reset(void) {
     bt_tx_ring_head = 0;
     bt_tx_ring_tail = 0;
     bt_tx_ring_used = 0;
+    bt_tx_ring_gen++;
 }
 
 bool bt_tx_send(const char* text, size_t len, bool critical) {
@@ -302,6 +309,10 @@ void bt_tx_flush(void) {
 
         char    chunk[64];
         size_t  local_tail = bt_tx_ring_tail;  // avoid touching shared state while writing
+        // 捕获 reset 代际：释放锁调 SerialBT.write() 期间，SPP CLOSE 回调可能
+        // 并发 bt_tx_ring_reset() 把 used 清 0。重进锁后若代际已变，说明本次
+        // 推进所依赖的 tail/used 已失效，必须放弃 advance，否则 size_t 减法下溢。
+        uint32_t gen_before = bt_tx_ring_gen;
         vTaskExitCritical(&bt_tx_mux);
 
         // 将连续段复制到本地后再写，避免持锁期间调用 SerialBT.write()
@@ -312,6 +323,12 @@ void bt_tx_flush(void) {
         }
 
         vTaskEnterCritical(&bt_tx_mux);
+        if (bt_tx_ring_gen != gen_before) {
+            // 期间 ring 被 reset（链路断开/重连）——本次 write 的字节已被新
+            // 连接的 SRV_OPEN 流程接管或丢弃，绝不能动 tail/used，否则 used 下溢。
+            vTaskExitCritical(&bt_tx_mux);
+            break;
+        }
         size_t advance = (written < contiguous) ? written : contiguous;
         bt_tx_ring_tail = (bt_tx_ring_tail + advance) % BT_TX_RING_SIZE;
         bt_tx_ring_used -= advance;

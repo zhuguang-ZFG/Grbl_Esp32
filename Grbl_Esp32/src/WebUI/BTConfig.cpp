@@ -130,10 +130,13 @@ namespace WebUI {
         bt_state_init();
         _btname = bt_name->get();
         if (wifi_radio_mode->get() == ESP_BT) {
+            // 先注册回调再 begin()：begin() 内部启动 SPP 栈后，INIT/START 及首个
+            // SRV_OPEN 事件由 BT 回调任务异步派发；若回调注册晚于事件到达，
+            // bt_state 会停在 Advertising，表现为"BT 连上但不通"。
+            SerialBT.register_callback(&my_spp_cb);
             if (!SerialBT.begin(_btname)) {
                 report_status_message(Error::BtFailBegin, CLIENT_ALL);
             } else {
-                SerialBT.register_callback(&my_spp_cb);
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
                 // Arm button suppression during startup/advertising phase; SRV_OPEN will re-arm it on connection.
                 paper_btn_arm_bt_suppress();
