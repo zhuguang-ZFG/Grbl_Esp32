@@ -406,8 +406,24 @@ void           init_motors() {
     }
 
     // certain motors need features to be turned on. Check them here
+    // ESP32 PlatformIO 默认 -fno-exceptions，new 失败返回 nullptr。若上电期堆紧张导致
+    // 上面某次 new 返回 null，这里降级为 Nullmotor，避免下面 ->init() 解引用 null 崩溃。
     for (uint8_t axis = X_AXIS; axis < n_axis; axis++) {
         for (uint8_t gang_index = 0; gang_index < 2; gang_index++) {
+            if (myMotor[axis][gang_index] == nullptr) {
+                myMotor[axis][gang_index] = new Motors::Nullmotor(axis);
+                if (myMotor[axis][gang_index] != nullptr) {
+                    grbl_msg_sendf(CLIENT_SERIAL,
+                                   MsgLevel::Error,
+                                   "Motor axis %d gang %d allocation failed, using NullMotor",
+                                   (int)axis,
+                                   (int)gang_index);
+                } else {
+                    // 连 Nullmotor 都分配失败——堆已耗尽，无法继续
+                    grbl_send(CLIENT_SERIAL, "[MSG:CRITICAL] Motor allocation failed; heap exhausted\r\n");
+                    return;
+                }
+            }
             myMotor[axis][gang_index]->init();
         }
     }
