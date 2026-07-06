@@ -181,11 +181,22 @@ static inline bool paper_refill_segment_buffer_during_blocking() {
         st_prep_buffer();
     }
     protocol_service_during_blocking();
-    return sys.abort;
+    // sys.abort（0x18 软复位）或换纸期间的 feed hold / safety door 急停，都视为"应中止换纸"。
+    // 所有 yield 点（含 if(refill())return 形式的批量脉冲 helper）据此统一感知急停请求。
+    return sys.abort || paper_user_stop_requested;
 }
 
 static inline bool paper_blocking_abort_requested(void) {
-    return paper_refill_segment_buffer_during_blocking() || paper_user_stop_requested;
+    // 与 paper_refill_segment_buffer_during_blocking() 现在等价（后者已纳入 user_stop）；
+    // 保留此名以维持 Step2/6/7 传感器搜索循环处的调用可读性。
+    return paper_refill_segment_buffer_during_blocking();
+}
+
+// 步间中止判定：sys.abort（0x18 软复位）或换纸期间 feed hold / safety door 急停。
+// 各步之间的检查点据此统一决定是否走 abort_cleanup，避免脉冲 helper 因 user_stop
+// 提前 return 后主流程仍空跑剩余步骤、最终误报“成功”。
+static inline bool paper_should_abort_change(void) {
+    return sys.abort || paper_user_stop_requested;
 }
 
 // 拾落夹紧后面板进纸：单步，前 PAPER_PANEL_FAST_RAMP_STEPS 缓起步，之后用 PAPER_PANEL_FAST_*（加速更早）
@@ -672,6 +683,9 @@ static void paper_step_pulses_panel_eject(uint32_t steps) {
 #endif
 
 static Error paper_auto_change_abort_cleanup(const char* reason) {
+    // 先捕获中止来源再清标志：user stop（feed hold / safety door）与 host reset（0x18）
+    // 走同一清理流程，但日志要区分，否则排障时 feed hold 会被误显示成 host reset。
+    bool by_user_stop = paper_user_stop_requested && !sys.abort;
     paper_auto_change_running      = false;
     paper_user_stop_requested      = false;  // 清 feed hold / safety door 急停请求
     paper_ignore_host_reset_until_ms = 0;
@@ -686,7 +700,11 @@ static Error paper_auto_change_abort_cleanup(const char* reason) {
     __atomic_store_n(&sys_rt_exec_state.value, 0, __ATOMIC_RELAXED);
     system_rt_exec_clear(EXEC_CYCLE_START);
     cycle_stop                     = false;
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Aborted: %s", reason);
+    grbl_msg_sendf(CLIENT_SERIAL,
+                   MsgLevel::Info,
+                   "[PaperAuto] Aborted (%s): %s",
+                   by_user_stop ? "user feed-hold/safety-door" : "host reset",
+                   reason);
     return Error::MessageFailed;
 }
 
@@ -739,7 +757,7 @@ Error paper_auto_change(void) {
 #else
     paper_dir_steps(PANEL_MOTOR_DIR_PIN, PANEL_DIR_EJECT, PANEL_MOTOR_STEP_PIN, PANEL_EJECT_STEPS);
 #endif
-    if (sys.abort) {
+    if (paper_should_abort_change()) {
         return paper_auto_change_abort_cleanup("host reset after eject");
     }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-1] Done");
@@ -762,7 +780,7 @@ Error paper_auto_change(void) {
                 delay(2);
 #endif
                 paper_step_pulses_feeder_find(FEEDER_RETRY_BACKOFF_STEPS);
-                if (sys.abort) {
+                if (paper_should_abort_change()) {
                     return paper_auto_change_abort_cleanup("host reset during feeder search retry backoff");
                 }
             }
@@ -793,7 +811,7 @@ Error paper_auto_change(void) {
                     }
                 }
             }
-            if (sys.abort) {
+            if (paper_should_abort_change()) {
                 return paper_auto_change_abort_cleanup("host reset during feeder search");
             }
             if (found) {
@@ -837,7 +855,7 @@ Error paper_auto_change(void) {
                    (unsigned)PAPER_REF_DAC_CLAMP);
 #endif
     paper_dir_steps(CLAMP_MOTOR_DIR_PIN, CLAMP_DIR_RELEASE, CLAMP_MOTOR_STEP_PIN, CLAMP_TOGGLE_STEPS);
-    if (sys.abort) {
+    if (paper_should_abort_change()) {
         return paper_auto_change_abort_cleanup("host reset after clamp release");
     }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-3] Done");
@@ -864,7 +882,7 @@ Error paper_auto_change(void) {
 #endif
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-4] Panel+Feeder sync %.1fcm...", (float)PAPER_ADVANCE_CM_CLAMP_START);
     paper_step_pulses_panel_feeder_sync(steps_before_clamp);
-    if (sys.abort) {
+    if (paper_should_abort_change()) {
         return paper_auto_change_abort_cleanup("host reset during panel+feeder sync");
     }
 
@@ -879,7 +897,7 @@ Error paper_auto_change(void) {
                    (unsigned)PAPER_REF_DAC_CLAMP);
 #endif
     paper_dir_steps(CLAMP_MOTOR_DIR_PIN, CLAMP_DIR_CLAMP, CLAMP_MOTOR_STEP_PIN, CLAMP_TOGGLE_STEPS);
-    if (sys.abort) {
+    if (paper_should_abort_change()) {
         return paper_auto_change_abort_cleanup("host reset after clamp");
     }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-5] Done");
@@ -889,7 +907,7 @@ Error paper_auto_change(void) {
     paper_set_ref_dac((PAPER_REF_DAC_PANEL) > (PAPER_REF_DAC_FEEDER) ? (PAPER_REF_DAC_PANEL) : (PAPER_REF_DAC_FEEDER));
 #endif
     paper_step_pulses_panel_feeder_sync(steps_after_clamp);
-    if (sys.abort) {
+    if (paper_should_abort_change()) {
         return paper_auto_change_abort_cleanup("host reset during panel+feeder sync (2)");
     }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-4/5] Done (feeder stops at %.1fcm)", (float)PAPER_ADVANCE_CM);
@@ -912,7 +930,7 @@ Error paper_auto_change(void) {
                 delay(2);
 #endif
                 paper_step_pulses(PANEL_MOTOR_STEP_PIN, PANEL_RETRY_BACKOFF_STEPS);
-                if (sys.abort) {
+                if (paper_should_abort_change()) {
                     return paper_auto_change_abort_cleanup("host reset during panel fast feed retry backoff");
                 }
             }
@@ -939,7 +957,7 @@ Error paper_auto_change(void) {
                     }
                 }
             }
-            if (sys.abort) {
+            if (paper_should_abort_change()) {
                 return paper_auto_change_abort_cleanup("host reset during fast feed");
             }
             sensor_lost = !paper_sensor_stable();
@@ -991,7 +1009,7 @@ Error paper_auto_change(void) {
                 }
             }
         }
-        if (sys.abort) {
+        if (paper_should_abort_change()) {
             return paper_auto_change_abort_cleanup("host reset during panel re-search");
         }
         step7_sensor_ok = paper_sensor_stable();
@@ -1011,7 +1029,7 @@ Error paper_auto_change(void) {
     delay(2);
 #endif
     paper_step_pulses_panel_after_clamp(PANEL_FINAL_STEPS);
-    if (sys.abort) {
+    if (paper_should_abort_change()) {
         return paper_auto_change_abort_cleanup("host reset during final alignment");
     }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Done");

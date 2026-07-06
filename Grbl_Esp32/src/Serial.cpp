@@ -303,6 +303,13 @@ void execute_realtime_command(Cmd command, uint8_t client) {
             system_rt_exec_set(EXEC_FEED_HOLD);
             break;
         case Cmd::SafetyDoor:
+            // 换纸期间：安全门同样映射为纸路急停 + 换纸中止，与 System.cpp 物理引脚路径一致
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+            if (paper_auto_change_is_running()) {
+                paper_request_user_stop();
+                break;
+            }
+#endif
             system_rt_exec_set(EXEC_SAFETY_DOOR);
             break;
         case Cmd::JogCancel:
