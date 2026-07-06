@@ -176,6 +176,21 @@ Error WebCommand::action(char* value, WebUI::AuthenticationLevel auth_level, Web
 
 namespace WebUI {
     static int webColumn = 0;
+
+    // 路径穿越防护：拒绝含 ".." 段的 SD 路径，防止越目录删除/访问
+    static bool webpath_is_traversal(const String& path) {
+        int start = 0;
+        while (start < path.length()) {
+            int slash = path.indexOf('/', start);
+            int seg_end = (slash < 0) ? (int)path.length() : slash;
+            int seg_len = seg_end - start;
+            if (seg_len == 2 && path[start] == '.' && path[start + 1] == '.') {
+                return true;
+            }
+            start = (slash < 0) ? (int)path.length() : slash + 1;
+        }
+        return false;
+    }
     // We create a variety of print functions to make the rest
     // of the code more compact and readable.
     static void webPrint(const char* s) {
@@ -760,6 +775,10 @@ namespace WebUI {
         String path = parameter;
         if (parameter[0] != '/') {
             path = "/" + path;
+        }
+        if (webpath_is_traversal(path)) {
+            webPrintln("Forbidden: path traversal not allowed");
+            return Error::InvalidValue;
         }
         File file2del = SD.open(path);
         if (!file2del) {

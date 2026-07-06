@@ -61,6 +61,22 @@ namespace WebUI {
 #    include "NoFile.h"
 
 namespace WebUI {
+    // 拒绝包含路径穿越段（".."）的 URL/参数，防止已登录用户越目录访问 SD 卡上
+    // 预期目录之外的文件。检查 urlDecode 之后的路径。
+    static bool path_is_traversal(const String& path) {
+        int start = 0;
+        while (start < path.length()) {
+            int slash = path.indexOf('/', start);
+            int seg_end = (slash < 0) ? path.length() : slash;
+            int seg_len = seg_end - start;
+            if (seg_len == 2 && path[start] == '.' && path[start + 1] == '.') {
+                return true;
+            }
+            start = (slash < 0) ? path.length() : slash + 1;
+        }
+        return false;
+    }
+
     //Default 404
     const char PAGE_404[] =
         "<HTML>\n<HEAD>\n<title>Redirecting...</title> \n</HEAD>\n<BODY>\n<CENTER>Unknown page : $QUERY$- you will be "
@@ -278,6 +294,11 @@ namespace WebUI {
 
 #    ifdef ENABLE_SD_CARD
         if ((path.substring(0, 4) == "/SD/")) {
+            // 路径穿越防护：已认证用户也可能用 /SD/../SECRET 越目录读/写
+            if (path_is_traversal(path)) {
+                _webserver->send(403, "text/plain", "Forbidden");
+                return;
+            }
             //remove /SD
             path = path.substring(3);
             if (SDState::Idle != get_sd_state(true)) {
@@ -285,6 +306,7 @@ namespace WebUI {
                 content += path + ", SD is not available.";
 
                 _webserver->send(500, "text/plain", content);
+                return;  // SD 不可用时必须返回，否则下面继续 SD.exists() 会破坏 HTTP 响应
             }
             if (SD.exists(pathWithGz) || SD.exists(path)) {
                 set_sd_state(SDState::BusyUploading);
@@ -1694,30 +1716,23 @@ namespace WebUI {
         return true;
     }
 
-    //Session ID based on IP and time using 16 char
+    //Session ID based on a cryptographically strong random source.
+    //旧实现用 hex(remoteIP)+hex(millis())，局域网内 IP 已知、millis 粒度粗可推断，
+    //攻击者可枚举近期 millis() 伪造 cookie 冒充管理员会话。改用 esp_fill_random
+    //生成 16 字节高熵随机 ID。
     char* Web_Server::create_session_ID() {
         static char sessionID[17];
         //reset SESSIONID
         for (int i = 0; i < 17; i++) {
             sessionID[i] = '\0';
         }
-        //get time
-        uint32_t now = millis();
-        //get remote IP
-        IPAddress remoteIP = _webserver->client().remoteIP();
-        //generate SESSIONID
-        if (0 > sprintf(sessionID,
-                        "%02X%02X%02X%02X%02X%02X%02X%02X",
-                        remoteIP[0],
-                        remoteIP[1],
-                        remoteIP[2],
-                        remoteIP[3],
-                        (uint8_t)((now >> 0) & 0xff),
-                        (uint8_t)((now >> 8) & 0xff),
-                        (uint8_t)((now >> 16) & 0xff),
-                        (uint8_t)((now >> 24) & 0xff))) {
-            strcpy(sessionID, "NONE");
-        }
+        //generate 8 random bytes -> 16 hex chars
+        uint8_t rnd[8];
+        esp_fill_random(rnd, sizeof(rnd));
+        sprintf(sessionID,
+                "%02X%02X%02X%02X%02X%02X%02X%02X",
+                rnd[0], rnd[1], rnd[2], rnd[3],
+                rnd[4], rnd[5], rnd[6], rnd[7]);
         return sessionID;
     }
 
