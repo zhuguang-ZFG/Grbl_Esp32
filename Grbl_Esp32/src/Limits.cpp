@@ -176,7 +176,7 @@ void limits_go_home(uint8_t cycle_mask) {
             // Exit routines: No time to run protocol_execute_realtime() in this loop.
             if (sys_rt_exec_state.bit.safetyDoor || sys_rt_exec_state.bit.reset || cycle_stop) {
                 ExecState rt_exec_state;
-                rt_exec_state.value = sys_rt_exec_state.value;
+                rt_exec_state.value = __atomic_load_n(&sys_rt_exec_state.value, __ATOMIC_RELAXED);
                 // Homing failure condition: Reset issued during cycle.
                 if (rt_exec_state.bit.reset) {
                     sys_rt_exec_alarm = ExecAlarm::HomingFailReset;
@@ -345,7 +345,7 @@ void limits_soft_check(float* target) {
         // workspace volume so just come to a controlled stop so position is not lost. When complete
         // enter alarm mode.
         if (sys.state == State::Cycle) {
-            sys_rt_exec_state.bit.feedHold = true;
+            system_rt_exec_set(EXEC_FEED_HOLD);
             do {
                 protocol_execute_realtime();
                 if (sys.abort) {

@@ -88,7 +88,7 @@ static void reset_variables() {
     memset(sys_probe_position, 0, sizeof(sys_probe_position));  // Clear probe position.
 
     sys_probe_state                      = Probe::Off;
-    sys_rt_exec_state.value              = 0;
+    __atomic_store_n(&sys_rt_exec_state.value, 0, __ATOMIC_RELAXED);
     sys_rt_exec_accessory_override.value = 0;
     sys_rt_exec_alarm                    = ExecAlarm::None;
     cycle_stop                           = false;

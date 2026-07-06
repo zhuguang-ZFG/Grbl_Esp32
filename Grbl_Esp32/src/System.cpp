@@ -304,11 +304,11 @@ void system_exec_control_pin(ControlPins pins) {
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "Reset via control pin");
         mc_reset();
     } else if (pins.bit.cycleStart) {
-        sys_rt_exec_state.bit.cycleStart = true;
+        system_rt_exec_set(EXEC_CYCLE_START);
     } else if (pins.bit.feedHold) {
-        sys_rt_exec_state.bit.feedHold = true;
+        system_rt_exec_set(EXEC_FEED_HOLD);
     } else if (pins.bit.safetyDoor) {
-        sys_rt_exec_state.bit.safetyDoor = true;
+        system_rt_exec_set(EXEC_SAFETY_DOOR);
     } else if (pins.bit.macro0) {
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
         if (paper_auto_change_is_running() || paper_btn_ignore_control_events()) {

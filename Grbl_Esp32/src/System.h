@@ -146,6 +146,19 @@ extern volatile bool sys_rt_exec_debug;
 void system_ini();  // Renamed from system_init() due to conflict with esp32 files
 void system_detach_control_interrupts();
 
+// 原子化的 sys_rt_exec_state 位操作 helper。
+// sys_rt_exec_state 是 volatile 的「uint8 value + 位域」union，被限位/控制脚 ISR、
+// controlCheckTask 去抖任务、protocol 主循环等多处并发读写。每个 `bit.x=` 编译成
+// read-modify-write 三指令，非原子；ISR 写 cycleStart/feedHold 时恰好主循环在清除
+// 其它位会丢边沿。用 __atomic_fetch_or/fetch_and 对整个 1 字节 value 做位操作即可
+// 消除竞争（ESP32 上是单条原子指令）。
+static inline void system_rt_exec_set(uint8_t mask) {
+    __atomic_fetch_or(&sys_rt_exec_state.value, mask, __ATOMIC_RELAXED);
+}
+static inline void system_rt_exec_clear(uint8_t mask) {
+    __atomic_fetch_and(&sys_rt_exec_state.value, (uint8_t)~mask, __ATOMIC_RELAXED);
+}
+
 // Returns bitfield of control pin states, organized by CONTROL_PIN_INDEX. (1=triggered, 0=not triggered).
 ControlPins system_control_get_state();
 

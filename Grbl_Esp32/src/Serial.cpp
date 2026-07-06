@@ -290,17 +290,17 @@ void execute_realtime_command(Cmd command, uint8_t client) {
             break;
         }
         case Cmd::CycleStart:
-            sys_rt_exec_state.bit.cycleStart = true;
+            system_rt_exec_set(EXEC_CYCLE_START);
             break;
         case Cmd::FeedHold:
-            sys_rt_exec_state.bit.feedHold = true;
+            system_rt_exec_set(EXEC_FEED_HOLD);
             break;
         case Cmd::SafetyDoor:
-            sys_rt_exec_state.bit.safetyDoor = true;
+            system_rt_exec_set(EXEC_SAFETY_DOOR);
             break;
         case Cmd::JogCancel:
             if (sys.state == State::Jog) {  // Block all other states from invoking motion cancel.
-                sys_rt_exec_state.bit.motionCancel = true;
+                system_rt_exec_set(EXEC_MOTION_CANCEL);
             }
             break;
         case Cmd::DebugReport:

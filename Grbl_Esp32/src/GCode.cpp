@@ -1315,7 +1315,28 @@ Error gc_execute_line(char* line, uint8_t client) {
         if (bit_istrue(value_words, bit(GCodeWord::Q))) {
             p_val = (uint32_t)(gc_block.values.p + 0.5f) * 1000u + (uint32_t)(gc_block.values.q + 0.5f);
         } else {
-            p_val = (uint32_t)(gc_block.values.p + 0.5f);
+            // 单 P 形式：授权码可达 9-10 位十进制（如 121261484），而 read_float 的
+            // MAX_INT_DIGITS=8 会截断整数位、float24 精度也不够，导致 ≥1e8 的码被解析成错误值。
+            // 这里直接从原始 line 用 strtoul 重新解析 P，绕过 float。
+            uint32_t parsed = 0;
+            bool    parsed_ok = false;
+            for (const char* p = line; *p; ++p) {
+                if (*p == 'P' || *p == 'p') {
+                    const char* start = p + 1;
+                    char* end = nullptr;
+                    unsigned long v = strtoul(start, &end, 10);
+                    if (end != start) {
+                        parsed = (uint32_t)v;
+                        parsed_ok = true;
+                    }
+                    break;
+                }
+            }
+            if (parsed_ok) {
+                p_val = parsed;
+            } else {
+                p_val = (uint32_t)(gc_block.values.p + 0.5f);
+            }
         }
         bool ok = license_set_from_p_param(p_val);
         pending_m_code = 0;
@@ -1717,7 +1738,7 @@ Error gc_execute_line(char* line, uint8_t client) {
         case ProgramFlow::Paused:
             protocol_buffer_synchronize();  // Sync and finish all remaining buffered motions before moving on.
             if (sys.state != State::CheckMode) {
-                sys_rt_exec_state.bit.feedHold = true;  // Use feed hold for program pause.
+                system_rt_exec_set(EXEC_FEED_HOLD);  // Use feed hold for program pause.
                 protocol_execute_realtime();            // Execute suspend.
             }
             break;

@@ -25,6 +25,17 @@ union ExecState {
 
 static_assert(sizeof(ExecStateBits) == sizeof(uint8_t), "ExecStateBits is not an uint8");
 
+// sys_rt_exec_state 原子位操作的 mask，与 ExecStateBits 位序一一对应。
+// 用于 system_rt_exec_set()/system_rt_exec_clear()。
+constexpr uint8_t EXEC_STATUS_REPORT = 0x01;  // bit.statusReport
+constexpr uint8_t EXEC_CYCLE_START   = 0x02;  // bit.cycleStart
+constexpr uint8_t EXEC_CYCLE_STOP    = 0x04;  // bit.cycleStop (unused, per cycle_stop var)
+constexpr uint8_t EXEC_FEED_HOLD     = 0x08;  // bit.feedHold
+constexpr uint8_t EXEC_RESET         = 0x10;  // bit.reset
+constexpr uint8_t EXEC_SAFETY_DOOR   = 0x20;  // bit.safetyDoor
+constexpr uint8_t EXEC_MOTION_CANCEL = 0x40;  // bit.motionCancel
+constexpr uint8_t EXEC_SLEEP         = 0x80;  // bit.sleep
+
 // Override bit maps. Realtime bitflags to control feed, rapid, spindle, and coolant overrides.
 // Spindle/coolant and feed/rapids are separated into two controlling flag variables.
 
