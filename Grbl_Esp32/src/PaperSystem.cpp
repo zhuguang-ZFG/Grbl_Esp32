@@ -686,12 +686,10 @@ static void paper_step_pulses_panel_eject(uint32_t steps) {
 }
 #endif
 
-static Error paper_auto_change_abort_cleanup(const char* reason) {
-    // 先捕获中止来源再清标志：user stop（feed hold / safety door）与 host reset（0x18）
-    // 走同一清理流程，但日志要区分，否则排障时 feed hold 会被误显示成 host reset。
-    bool by_user_stop = paper_user_stop_requested && !sys.abort;
-    paper_auto_change_running      = false;
-    paper_user_stop_requested      = false;  // 清 feed hold / safety door 急停请求
+// ponytail: 公共清理逻辑，abort / timeout / jam 统一走此路径，防止状态清理分叉
+static void paper_change_cleanup_common(void) {
+    paper_auto_change_running = false;
+    paper_user_stop_requested = false;
     paper_ignore_host_reset_until_ms = 0;
     paper_btn_arm_post_change_cooldown();
     st_go_idle();
@@ -700,10 +698,17 @@ static Error paper_auto_change_abort_cleanup(const char* reason) {
     plan_reset();
     plan_sync_position();
     gc_sync_position();
-    sys.state                      = State::Idle;
-    __atomic_store_n(&sys_rt_exec_state.value, 0, __ATOMIC_RELAXED);
-    system_rt_exec_clear(EXEC_CYCLE_START);
-    cycle_stop                     = false;
+    sys.state = State::Idle;
+    // ponytail: 按 mask 清，刻意保留 EXEC_RESET——让 host 0x18 的 protocol_reset() 跑完软复位序列
+// （Protocol.cpp 内自清 EXEC_RESET）；只清 feed-hold/safety-door/cycle-start。旧全清零吞 EXEC_RESET 属 bug，勿改回。
+    system_rt_exec_clear(EXEC_FEED_HOLD | EXEC_SAFETY_DOOR | EXEC_CYCLE_START);
+    cycle_stop = false;
+}
+
+static Error paper_auto_change_abort_cleanup(const char* reason) {
+    // ponytail: capture source before cleanup clears the flag
+    bool by_user_stop = paper_user_stop_requested && !sys.abort;
+    paper_change_cleanup_common();
     grbl_msg_sendf(CLIENT_SERIAL,
                    MsgLevel::Info,
                    "[PaperAuto] Aborted (%s): %s",
@@ -736,8 +741,12 @@ Error paper_auto_change(void) {
     // 入口清急停标志：两个超时失败退出路径（feeder/fast-feed timeout）直接置 running=false 返回、
     // 不走 abort_cleanup，若上轮换纸在 timeout 退出前恰好收到 feed hold，标志会残留并误中止本轮。
     // 在此统一清除，保证每轮换纸开始时标志干净，与 running=true 同步。
-    paper_user_stop_requested = false;
+    // ponytail: critical section 仅窄序防"先清 stop 再设 running"的 TOCTOU（ISR 进不了已持自旋锁）；
+// 非对 stop 标志的完整互斥——bool volatile 读写各自原子，读取方不加锁即可。
+    portENTER_CRITICAL(&paper_bt_auto_mux);
     paper_auto_change_running = true;
+    paper_user_stop_requested = false;
+    portEXIT_CRITICAL(&paper_bt_auto_mux);
     // 保护窗口覆盖换纸最坏路径：Step2/Step6 传感器找纸单次 15s + 重试，
     // 实测可达 ~30-40s；取 60s 上限，期间忽略上位机 0x18 软复位，避免打断弹纸。
     paper_ignore_host_reset_until_ms = millis() + 60000u;
@@ -824,25 +833,19 @@ Error paper_auto_change(void) {
             }
             // 记录最后一次失败原因，用于最终报错
             if (attempt == PAPER_MAX_RETRIES) {
-                paper_auto_change_running        = false;
-                paper_ignore_host_reset_until_ms = 0;
-                paper_btn_arm_post_change_cooldown();
-                // 缺纸/进纸异常：立即停机并关闭驱动，等待下次从 Step1 重新开始
-                st_go_idle();
-                motors_set_disable(true);
-                paper_disable_drivers();
-                if (timeout_10s) {
-                    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
-                                   "[PaperAuto-2] OUT_OF_PAPER: no paper detected within %u ms (steps=%u), stop and reset to Step1",
-                                   (unsigned)PAPER_SENSOR_TIMEOUT_MS, (unsigned)steps);
-                    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_OUT_OF_PAPER);
-                } else {
-                    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
-                                   "[PaperAuto-2] ERROR: Feeder timeout - sensor not triggered after %u steps",
-                                   (unsigned)steps);
-                    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_FEEDER_TIMEOUT);
-                }
-                return Error::MessageFailed;  // 返回非OK，避免上层误判“Auto paper change completed”
+                    paper_change_cleanup_common();
+                    if (timeout_10s) {
+                        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
+                            "[PaperAuto-2] OUT_OF_PAPER: no paper detected within %u ms (steps=%u), stop and reset to Step1",
+                            (unsigned)PAPER_SENSOR_TIMEOUT_MS, (unsigned)steps);
+                        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_OUT_OF_PAPER);
+                    } else {
+                        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
+                            "[PaperAuto-2] ERROR: Feeder timeout - sensor not triggered after %u steps",
+                            (unsigned)steps);
+                        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_FEEDER_TIMEOUT);
+                    }
+                    return Error::MessageFailed;
             }
         }
     }
@@ -971,24 +974,18 @@ Error paper_auto_change(void) {
             }
             // 最后一次尝试仍失败，走下面的错误处理
             if (attempt == PAPER_MAX_RETRIES) {
-                paper_auto_change_running        = false;
-                paper_ignore_host_reset_until_ms = 0;
-                paper_btn_arm_post_change_cooldown();
-                // 卡纸：立即停机并关闭驱动，等待下次从 Step1 重新开始
-                st_go_idle();
-                motors_set_disable(true);
-                paper_disable_drivers();
-                if (jam_timeout) {
-                    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
-                                   "[PaperAuto-6] JAM: sensor stayed active for %u ms (steps=%u), stop and reset to Step1",
-                                   (unsigned)PAPER_SENSOR_TIMEOUT_MS, (unsigned)steps);
-                } else {
-                    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
-                                   "[PaperAuto-6] JAM: sensor still active after max steps=%u (actual=%u), stop and reset to Step1",
-                                   (unsigned)PANEL_FAST_STEPS_MAX, (unsigned)steps);
-                }
-                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_JAM_TIMEOUT);
-                return Error::MessageFailed;
+                    paper_change_cleanup_common();
+                    if (jam_timeout) {
+                        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
+                            "[PaperAuto-6] JAM: sensor stayed active for %u ms (steps=%u), stop and reset to Step1",
+                            (unsigned)PAPER_SENSOR_TIMEOUT_MS, (unsigned)steps);
+                    } else {
+                        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
+                            "[PaperAuto-6] JAM: sensor still active after max steps=%u (actual=%u), stop and reset to Step1",
+                            (unsigned)PANEL_FAST_STEPS_MAX, (unsigned)steps);
+                    }
+                    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_JAM_TIMEOUT);
+                    return Error::MessageFailed;
             }
         }
     }
