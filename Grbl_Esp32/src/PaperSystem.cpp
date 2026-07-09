@@ -252,10 +252,10 @@ static void paper_step_pulses_panel_after_clamp(uint32_t steps) {
 #endif
 }
 
-static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
+static void paper_step_pulses(uint8_t step_pin, uint32_t steps) {
 #ifdef USE_I2S_OUT
     uint32_t hi_us, lo_us;
-    for (uint16_t i = 0; i < steps; i++) {
+    for (uint32_t i = 0; i < steps; i++) {
         if (step_pin == PANEL_MOTOR_STEP_PIN) {
             if (i < PAPER_RAMP_STEPS) {
                 hi_us = PAPER_RAMP_HI_US;
@@ -290,7 +290,7 @@ static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
         }
     }
 #else
-    for (uint16_t i = 0; i < steps; i++) {
+    for (uint32_t i = 0; i < steps; i++) {
         digitalWrite(step_pin, HIGH);
         delayMicroseconds(500);
         digitalWrite(step_pin, LOW);
@@ -309,7 +309,7 @@ static void paper_step_pulses(uint8_t step_pin, uint16_t steps) {
 static void paper_step_pulses_feeder_find(uint16_t steps) {
 #ifdef USE_I2S_OUT
     uint32_t hi_us, lo_us;
-    for (uint16_t i = 0; i < steps; i++) {
+    for (uint32_t i = 0; i < steps; i++) {
         if (i < PAPER_RAMP_STEPS) {
             hi_us = FEEDER_FIND_RAMP_HI_US;
             lo_us = FEEDER_FIND_RAMP_LO_US;
@@ -331,7 +331,7 @@ static void paper_step_pulses_feeder_find(uint16_t steps) {
         }
     }
 #else
-    for (uint16_t i = 0; i < steps; i++) {
+    for (uint32_t i = 0; i < steps; i++) {
         uint32_t hi_us = (i < PAPER_RAMP_STEPS) ? FEEDER_FIND_RAMP_HI_US : FEEDER_FIND_NORMAL_HI_US;
         uint32_t lo_us = (i < PAPER_RAMP_STEPS) ? FEEDER_FIND_RAMP_LO_US : FEEDER_FIND_NORMAL_LO_US;
         digitalWrite(FEEDER_MOTOR_STEP_PIN, HIGH);
@@ -995,13 +995,19 @@ Error paper_auto_change(void) {
     paper_enable_panel_only();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel reverse to find paper again (max %u steps)...", (unsigned)PANEL_BACK_STEPS_MAX);
     {
-        uint32_t steps = 0;
+        uint32_t steps  = 0;
+        bool     timeout_15s = false;
+        uint32_t t0_ms = millis();
         digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_REVERSE);
 #ifdef USE_I2S_OUT
         i2s_out_delay();
         delay(2);
 #endif
         while (!paper_sensor_stable() && steps < PANEL_BACK_STEPS_MAX) {
+            if ((millis() - t0_ms) >= PAPER_SENSOR_TIMEOUT_MS) {
+                timeout_15s = true;
+                break;
+            }
             paper_step_pulses(PANEL_MOTOR_STEP_PIN, 1);
             steps++;
             if (steps % PAPER_YIELD_STEPS == 0) {
@@ -1014,8 +1020,9 @@ Error paper_auto_change(void) {
             return paper_auto_change_abort_cleanup("during panel re-search");
         }
         step7_sensor_ok = paper_sensor_stable();
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel re-search completed (%u steps, sensor=%s)", 
-                       (unsigned)steps, step7_sensor_ok ? "found" : "NOT_found");
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel re-search completed (%u steps, sensor=%s%s)",
+                       (unsigned)steps, step7_sensor_ok ? "found" : "NOT_found",
+                       timeout_15s ? ", timeout" : "");
         if (!step7_sensor_ok) {
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning, 
                            "[PaperAuto-7-WARNING] Sensor NOT stable after reverse search - paper may not be in correct position!");
