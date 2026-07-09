@@ -699,8 +699,8 @@ static void paper_change_cleanup_common(void) {
     plan_sync_position();
     gc_sync_position();
     sys.state = State::Idle;
-    // ponytail: 按 mask 清，刻意保留 EXEC_RESET——让 host 0x18 的 protocol_reset() 跑完软复位序列
-// （Protocol.cpp 内自清 EXEC_RESET）；只清 feed-hold/safety-door/cycle-start。旧全清零吞 EXEC_RESET 属 bug，勿改回。
+    // ponytail: 按 mask 清，刻意保留 EXEC_RESET——让 host 0x18 的软复位序列跑完
+// （由 Grbl.cpp reset_variables() 在 run_once() 重入时整字节清零，非 Protocol.cpp）；只清 feed-hold/safety-door/cycle-start。旧全清零吞 EXEC_RESET 属 bug，勿改回。
     system_rt_exec_clear(EXEC_FEED_HOLD | EXEC_SAFETY_DOOR | EXEC_CYCLE_START);
     cycle_stop = false;
 }
