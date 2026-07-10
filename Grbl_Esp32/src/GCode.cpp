@@ -131,6 +131,9 @@ void collapseGCode(char* line) {
 Error gc_execute_line(char* line, uint8_t client) {
     // Step 0 - remove whitespace and comments and convert to upper case
     collapseGCode(line);
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+    paper_gcode_line_begin();
+#endif
 #ifdef REPORT_ECHO_LINE_RECEIVED
     report_echo_line_received(line, client);
 #endif

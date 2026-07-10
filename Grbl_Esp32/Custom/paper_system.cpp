@@ -155,6 +155,11 @@ bool paper_last_change_ok() {
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
 // GCode.cpp 换纸触发逻辑下沉至此，避免核心解析器散布纸路条件判断
 static bool paper_change_done_before_first_page = false;
+static bool paper_gcode_change_ran_this_line    = false;
+
+void paper_gcode_line_begin(void) {
+    paper_gcode_change_ran_this_line = false;
+}
 
 void paper_gcode_parser_reset(void) {
     paper_change_done_before_first_page = false;
@@ -162,6 +167,18 @@ void paper_gcode_parser_reset(void) {
 
 void paper_mark_first_page_change_done(void) {
     paper_change_done_before_first_page = true;
+}
+
+static Error paper_gcode_invoke_user_m30(void) {
+    if (paper_gcode_change_ran_this_line) {
+        return Error::Ok;
+    }
+    user_m30();
+    if (!paper_last_change_ok()) {
+        return Error::MessageFailed;
+    }
+    paper_gcode_change_ran_this_line = true;
+    return Error::Ok;
 }
 
 Error paper_gcode_on_before_motion_modes(AxisCommand axis_command, bool axis_words, uint8_t axis_words_mask,
@@ -183,9 +200,9 @@ Error paper_gcode_on_before_motion_modes(AxisCommand axis_command, bool axis_wor
     }
     paper_change_done_before_first_page = true;
     protocol_buffer_synchronize();
-    user_m30();
-    if (!paper_last_change_ok()) {
-        return Error::MessageFailed;
+    Error e = paper_gcode_invoke_user_m30();
+    if (e != Error::Ok) {
+        return e;
     }
     delay_ms(250);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] 1st page");
@@ -193,11 +210,7 @@ Error paper_gcode_on_before_motion_modes(AxisCommand axis_command, bool axis_wor
 }
 
 Error paper_gcode_on_page_end_m30(void) {
-    user_m30();
-    if (!paper_last_change_ok()) {
-        return Error::MessageFailed;
-    }
-    return Error::Ok;
+    return paper_gcode_invoke_user_m30();
 }
 
 Error paper_gcode_on_after_origin(bool homing_command, bool block_executed_seek) {
@@ -214,9 +227,9 @@ Error paper_gcode_on_after_origin(bool homing_command, bool block_executed_seek)
     }
     protocol_buffer_synchronize();
     motors_set_disable(true);
-    user_m30();
-    if (!paper_last_change_ok()) {
-        return Error::MessageFailed;
+    Error e = paper_gcode_invoke_user_m30();
+    if (e != Error::Ok) {
+        return e;
     }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] page end");
     return Error::Ok;

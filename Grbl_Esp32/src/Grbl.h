@@ -129,6 +129,7 @@ void  paper_bt_on_spp_connected(void);   // SPP 连接：待命，等上位机�
 void  paper_bt_on_spp_disconnected(void);
 void  paper_bt_on_first_host_ack(void);  // 经 BT 回完 ok/error 后调用（Protocol）
 void  paper_poll_bt_connect_auto_change(void);
+void  paper_gcode_line_begin(void);  // gc_execute_line 入口：重置同块换纸去重标志
 void  paper_gcode_parser_reset(void);  // gc_init：重置首页换纸标志
 void  paper_mark_first_page_change_done(void);  // 已换纸则跳过 G0 X0 Y0 Z0 触发的首次换纸
 Error paper_gcode_on_before_motion_modes(AxisCommand axis_command, bool axis_words, uint8_t axis_words_mask,
