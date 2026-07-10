@@ -401,6 +401,8 @@ GCUpdatePos mc_probe_cycle(float* target, plan_line_data_t* pl_data, uint8_t par
         return GCUpdatePos::None;  // Return if system reset has been issued.
     }
 
+    probe_set_protection(false);
+
 #ifdef USE_I2S_STEPS
     stepper_id_t save_stepper = current_stepper; /* remember the stepper */
 #endif
@@ -418,7 +420,8 @@ GCUpdatePos mc_probe_cycle(float* target, plan_line_data_t* pl_data, uint8_t par
         sys_rt_exec_alarm = ExecAlarm::ProbeFailInitial;
         protocol_execute_realtime();
         RESTORE_STEPPER(save_stepper);  // Switch the stepper mode to the previous mode
-        return GCUpdatePos::None;       // Nothing else to do but bail.
+        probe_set_protection(true);
+        return GCUpdatePos::None;  // Nothing else to do but bail.
     }
     // Setup and queue probing motion. Auto cycle-start should not start the cycle.
     limitsCheckSoft(target);
@@ -431,7 +434,8 @@ GCUpdatePos mc_probe_cycle(float* target, plan_line_data_t* pl_data, uint8_t par
         protocol_execute_realtime();
         if (sys.abort) {
             RESTORE_STEPPER(save_stepper);  // Switch the stepper mode to the previous mode
-            return GCUpdatePos::None;       // Check for system abort
+            probe_set_protection(true);
+            return GCUpdatePos::None;  // Check for system abort
         }
     } while (sys.state != State::Idle);
 
@@ -456,6 +460,7 @@ GCUpdatePos mc_probe_cycle(float* target, plan_line_data_t* pl_data, uint8_t par
     st_reset();            // Reset step segment buffer.
     plan_reset();          // Reset planner buffer. Zero planner positions. Ensure probing motion is cleared.
     plan_sync_position();  // Sync planner position to current machine position.
+    probe_set_protection(true);
 #ifdef MESSAGE_PROBE_COORDINATES
     // All done! Output the probe position as message.
     report_probe_parameters(CLIENT_ALL);

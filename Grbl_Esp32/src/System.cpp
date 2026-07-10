@@ -299,7 +299,7 @@ ControlPins system_control_get_state() {
 }
 
 // execute the function of the control pin
-void system_exec_control_pin(ControlPins pins) {
+void IRAM_ATTR system_exec_control_pin(ControlPins pins) {
     if (pins.bit.reset) {
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "Reset via control pin");
         mc_reset();
