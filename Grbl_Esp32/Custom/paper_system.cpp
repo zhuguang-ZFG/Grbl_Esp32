@@ -152,6 +152,77 @@ bool paper_last_change_ok() {
     return paper_change_last_ok;
 }
 
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+// GCode.cpp 换纸触发逻辑下沉至此，避免核心解析器散布纸路条件判断
+static bool paper_change_done_before_first_page = false;
+
+void paper_gcode_parser_reset(void) {
+    paper_change_done_before_first_page = false;
+}
+
+void paper_mark_first_page_change_done(void) {
+    paper_change_done_before_first_page = true;
+}
+
+Error paper_gcode_on_before_motion_modes(AxisCommand axis_command, bool axis_words, uint8_t axis_words_mask,
+                                       Motion motion, float x, float y, float z) {
+    if (paper_change_done_before_first_page) {
+        return Error::Ok;
+    }
+    if (axis_command != AxisCommand::MotionMode || !axis_words) {
+        return Error::Ok;
+    }
+    if (!(axis_words_mask & bit(X_AXIS)) || !(axis_words_mask & bit(Y_AXIS)) || !(axis_words_mask & bit(Z_AXIS))) {
+        return Error::Ok;
+    }
+    if (motion != Motion::Seek) {
+        return Error::Ok;
+    }
+    if (fabsf(x) >= 0.01f || fabsf(y) >= 0.01f || fabsf(z) >= 0.01f) {
+        return Error::Ok;
+    }
+    paper_change_done_before_first_page = true;
+    protocol_buffer_synchronize();
+    user_m30();
+    if (!paper_last_change_ok()) {
+        return Error::MessageFailed;
+    }
+    delay_ms(250);
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] 1st page");
+    return Error::Ok;
+}
+
+Error paper_gcode_on_page_end_m30(void) {
+    user_m30();
+    if (!paper_last_change_ok()) {
+        return Error::MessageFailed;
+    }
+    return Error::Ok;
+}
+
+Error paper_gcode_on_after_origin(bool homing_command, bool block_executed_seek) {
+    bool do_paper = homing_command;
+    if (!do_paper && block_executed_seek) {
+        float wx = gc_state.position[X_AXIS] - gc_state.coord_system[X_AXIS] - gc_state.coord_offset[X_AXIS];
+        float wy = gc_state.position[Y_AXIS] - gc_state.coord_system[Y_AXIS] - gc_state.coord_offset[Y_AXIS];
+        if (fabsf(wx) < 0.01f && fabsf(wy) < 0.01f) {
+            do_paper = true;
+        }
+    }
+    if (!do_paper) {
+        return Error::Ok;
+    }
+    protocol_buffer_synchronize();
+    motors_set_disable(true);
+    user_m30();
+    if (!paper_last_change_ok()) {
+        return Error::MessageFailed;
+    }
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] page end");
+    return Error::Ok;
+}
+#endif
+
 // M800 P<十进制授权码>：GCode 解析层在 STEP 3 取 P 后调用，比较通过则授权并写入 NVS
 bool license_set_from_p_param(uint32_t p_value)
 {

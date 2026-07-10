@@ -44,9 +44,6 @@ parser_block_t gc_block;
 static uint16_t pending_m_code = 0;
 static uint16_t pending_m_steps = 0;
 static int8_t pending_m_clamp_dir = -1;
-// 开始写字前自动换纸：上电后第一次遇到“有轴字的 G0/G1”之前执行一次换纸，之后由每页末尾 G0 X0 Y0 触发
-static bool paper_change_done_before_first_page = false;
-
 #define FAIL(status) return (status);
 
 void gc_init() {
@@ -55,14 +52,10 @@ void gc_init() {
     // Load default G54 coordinate system.
     gc_state.modal.coord_select = CoordIndex::G54;
     coords[gc_state.modal.coord_select]->get(gc_state.coord_system);
-    paper_change_done_before_first_page = false;  // 下次运行“开始写字”前会再自动换纸一次
-}
-
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-void paper_mark_first_page_change_done(void) {
-    paper_change_done_before_first_page = true;
-}
+    paper_gcode_parser_reset();
 #endif
+}
 
 // Sets g-code parser position in mm. Input in steps. Called by the system abort and hard
 // limit pull-off routines.
@@ -1664,20 +1657,20 @@ Error gc_execute_line(char* line, uint8_t client) {
             break;
     }
     // [20. Motion modes ]:
-    // 开始写字前自动换纸：仅当 G0 X0 Y0 Z0（回原点）时触发第一页换纸
-    if (!paper_change_done_before_first_page && axis_command == AxisCommand::MotionMode && axis_words &&
-        (axis_words & bit(X_AXIS)) && (axis_words & bit(Y_AXIS)) && (axis_words & bit(Z_AXIS)) &&
-        gc_block.modal.motion == Motion::Seek &&
-        fabsf(gc_block.values.xyz[X_AXIS]) < 0.01f && fabsf(gc_block.values.xyz[Y_AXIS]) < 0.01f && fabsf(gc_block.values.xyz[Z_AXIS]) < 0.01f) {
-        paper_change_done_before_first_page = true;
-        protocol_buffer_synchronize();
-        user_m30();
-        if (!paper_last_change_ok()) {
-            return Error::MessageFailed;  // 缺纸/卡纸时阻断后续写字，避免“看起来未停止”
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+    {
+        Error paper_e = paper_gcode_on_before_motion_modes(axis_command,
+                                                           axis_words != 0,
+                                                           axis_words,
+                                                           gc_block.modal.motion,
+                                                           gc_block.values.xyz[X_AXIS],
+                                                           gc_block.values.xyz[Y_AXIS],
+                                                           gc_block.values.xyz[Z_AXIS]);
+        if (paper_e != Error::Ok) {
+            return paper_e;
         }
-        delay_ms(250);  // 换纸电机停后稍等再动，减轻卡顿感
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] 1st page");
     }
+#endif
     // NOTE: Commands G10,G28,G30,G92 lock out and prevent axis words from use in motion modes.
     // Enter motion modes only if there are axis words or a motion mode command word in the block.
     gc_state.modal.motion = gc_block.modal.motion;
@@ -1784,34 +1777,29 @@ Error gc_execute_line(char* line, uint8_t client) {
                 coolant_off();
             }
             report_feedback_message(Message::ProgramEnd);
-            user_m30();
-            if (!paper_last_change_ok()) {
-                return Error::MessageFailed;  // M30 自动换纸失败时向上位机返回失败，停止后续流程
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+            {
+                Error paper_e = paper_gcode_on_page_end_m30();
+                if (paper_e != Error::Ok) {
+                    return paper_e;
+                }
             }
+#else
+            user_m30();
+#endif
             break;
     }
     gc_state.modal.program_flow = ProgramFlow::Running;  // Reset program flow.
 
-    // 回原点后换纸：仅当本行实际执行了 G28/G30 或 G0 X0 Y0 时触发，避免下一行（如 G21）因 modal 仍为 Seek、position 仍为 (0,0) 而误触发
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
     {
-        bool do_paper_after_origin = (gc_block.non_modal_command == NonModal::GoHome0 || gc_block.non_modal_command == NonModal::GoHome1);
-        if (!do_paper_after_origin && block_executed_seek) {
-            float wx = gc_state.position[X_AXIS] - gc_state.coord_system[X_AXIS] - gc_state.coord_offset[X_AXIS];
-            float wy = gc_state.position[Y_AXIS] - gc_state.coord_system[Y_AXIS] - gc_state.coord_offset[Y_AXIS];
-            // 容差 0.01mm，避免浮点误差导致漏判
-            if (fabsf(wx) < 0.01f && fabsf(wy) < 0.01f)
-                do_paper_after_origin = true;
-        }
-        if (do_paper_after_origin) {
-            protocol_buffer_synchronize();
-            motors_set_disable(true);  // 回原点写完一页后立即失能 XYZ，换纸期间主循环被阻塞无法执行延时失能
-            user_m30();
-            if (!paper_last_change_ok()) {
-                return Error::MessageFailed;  // 换纸失败时不再上报 page end，避免上位机误继续
-            }
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] page end");  // 换纸后再发，避免串口与主机发送交错
+        bool homing_cmd = (gc_block.non_modal_command == NonModal::GoHome0 || gc_block.non_modal_command == NonModal::GoHome1);
+        Error paper_e   = paper_gcode_on_after_origin(homing_cmd, block_executed_seek);
+        if (paper_e != Error::Ok) {
+            return paper_e;
         }
     }
+#endif
 
     // TODO: % to denote start of program.
     return Error::Ok;

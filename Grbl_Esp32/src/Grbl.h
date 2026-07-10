@@ -129,7 +129,12 @@ void  paper_bt_on_spp_connected(void);   // SPP 连接：待命，等上位机�
 void  paper_bt_on_spp_disconnected(void);
 void  paper_bt_on_first_host_ack(void);  // 经 BT 回完 ok/error 后调用（Protocol）
 void  paper_poll_bt_connect_auto_change(void);
+void  paper_gcode_parser_reset(void);  // gc_init：重置首页换纸标志
 void  paper_mark_first_page_change_done(void);  // 已换纸则跳过 G0 X0 Y0 Z0 触发的首次换纸
+Error paper_gcode_on_before_motion_modes(AxisCommand axis_command, bool axis_words, uint8_t axis_words_mask,
+                                       Motion motion, float x, float y, float z);
+Error paper_gcode_on_page_end_m30(void);  // M30/M02 程序结束换纸
+Error paper_gcode_on_after_origin(bool homing_command, bool block_executed_seek);
 void  paper_get_status_str(char* buf, size_t len);
 Error paper_run_motor(uint8_t motor_ix, uint16_t steps = 0);
 void  paper_enable_drivers(void);  // 仅使能驱动，不动作，便于 M64/M65 后点动调试

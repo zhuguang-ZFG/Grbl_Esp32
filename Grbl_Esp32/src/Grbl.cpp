@@ -155,6 +155,35 @@ bool __attribute__((weak)) license_set_from_p_param(uint32_t p_value) {
 }
 
 void __attribute__((weak)) license_notify_motion_blocked(void) {}
+
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+void __attribute__((weak)) paper_gcode_parser_reset(void) {}
+
+void __attribute__((weak)) paper_mark_first_page_change_done(void) {}
+
+Error __attribute__((weak)) paper_gcode_on_before_motion_modes(AxisCommand axis_command, bool axis_words,
+                                                               uint8_t axis_words_mask, Motion motion, float x,
+                                                               float y, float z) {
+    (void)axis_command;
+    (void)axis_words;
+    (void)axis_words_mask;
+    (void)motion;
+    (void)x;
+    (void)y;
+    (void)z;
+    return Error::Ok;
+}
+
+Error __attribute__((weak)) paper_gcode_on_page_end_m30(void) {
+    return Error::Ok;
+}
+
+Error __attribute__((weak)) paper_gcode_on_after_origin(bool homing_command, bool block_executed_seek) {
+    (void)homing_command;
+    (void)block_executed_seek;
+    return Error::Ok;
+}
+#endif
 /*
   setup() and loop() in the Arduino .ino implements this control flow:
 
