@@ -224,6 +224,16 @@ Key conventions (from `CodingStyle.md` and `.clang-format`):
 - `配置.md` — Chinese hardware/firmware configuration notes for the default `custom_3axis_hr4988.h` plotter/writer setup.
 - `Grbl_Esp32/Custom/custom_code_template.cpp` — template for machine-specific code.
 
+## Fork vs upstream (this repository)
+
+This tree is a **product fork** of [bdring/Grbl_Esp32](https://github.com/bdring/Grbl_Esp32) (`upstream` remote), not a branch intended for upstream merge.
+
+- **Do not** wholesale-merge `upstream/main`; `Protocol.cpp`, `GCode.cpp`, `Serial.cpp`, and `Grbl.h` diverge heavily (paper system, BT state machine, license hooks).
+- **Do** cherry-pick isolated upstream fixes (limits, probe, settings, concurrency) into the fork when needed.
+- **Product-only code** lives in `Grbl_Esp32/Custom/paper_system.cpp`, `Grbl_Esp32/src/PaperSystem.cpp`, `Grbl_Esp32/src/WebUI/BTState.cpp`, and `Machines/custom_3axis_hr4988.h`.
+- **Successor firmware** for new platform features is [FluidNC](https://github.com/bdring/FluidNC); migrating this paper/BT stack would be a separate project.
+- **Repository hygiene:** do not commit root-level `*.pdf`, serial logs, IDE metadata, or `bootloader_*.bin`; keep datasheets/schematics local or in external storage.
+
 ## Quick Start for Agents
 
 1. Install PlatformIO Core and (optionally) the VS Code PlatformIO IDE.

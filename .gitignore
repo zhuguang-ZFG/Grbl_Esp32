@@ -31,6 +31,7 @@ COM28_Terminal.txt
 .*-review-result.md
 .review-diff.patch
 .mimo-review-diff.patch
+.atomcode-review-diff.patch
 .kimi-code/
 .pio-mcp-workspace/
 compile_commands.json
@@ -38,3 +39,7 @@ compile_commands.json
 .lima-data/
 .serena/
 .omk/
+
+# Large reference binaries (datasheets, schematics, bootloaders) — keep locally, not in git
+/*.pdf
+/bootloader_*.bin
