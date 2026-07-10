@@ -1055,7 +1055,7 @@ namespace WebUI {
         return paperMotorHandler(parameter, auth_level, 2);
     }
     static Error paperEnableOnlyHandler(char* parameter, AuthenticationLevel auth_level) {
-        paper_enable_drivers_only();
+        paper_enable_drivers();
         webPrintln("MotorEn=On (no motion). Use M64/M65 P1/P2/P3 then [ESP911/912/913] to jog.");
         return Error::Ok;
     }

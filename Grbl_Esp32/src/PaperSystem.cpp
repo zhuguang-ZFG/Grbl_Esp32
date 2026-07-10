@@ -52,7 +52,7 @@ static volatile bool paper_bt_auto_change_after_ack_armed  = false;
 // 换纸期间用户触发 feed hold / safety door：映射为"纸路急停 + 换纸中止"，
 // 而不是让 sys.state 先变 Hold 再检测（那会导致用户看到 Hold 却纸路仍在转的误导性停止指示）。
 // 该标志由 Serial.cpp / System.cpp 的 feed hold / safety door 入口在 paper_auto_change_is_running() 时设置，
-// 由 paper_blocking_abort_requested() 在每个 yield 点检测，命中后走 paper_auto_change_abort_cleanup()。
+// 由 paper_refill_segment_buffer_during_blocking() 在每个 yield 点检测，命中后走 paper_auto_change_abort_cleanup()。
 static volatile bool paper_user_stop_requested = false;
 
 bool paper_auto_change_is_running(void) {
@@ -61,10 +61,6 @@ bool paper_auto_change_is_running(void) {
 
 void paper_request_user_stop(void) {
     paper_user_stop_requested = true;
-}
-
-bool paper_user_stop_pending(void) {
-    return paper_user_stop_requested;
 }
 
 bool paper_should_ignore_host_reset(void) {
@@ -186,47 +182,137 @@ static inline bool paper_refill_segment_buffer_during_blocking() {
     return sys.abort || paper_user_stop_requested;
 }
 
-static inline bool paper_blocking_abort_requested(void) {
-    // 与 paper_refill_segment_buffer_during_blocking() 现在等价（后者已纳入 user_stop）；
-    // 保留此名以维持 Step2/6/7 传感器搜索循环处的调用可读性。
-    return paper_refill_segment_buffer_during_blocking();
-}
-
-// 步间中止判定：sys.abort（0x18 软复位）或换纸期间 feed hold / safety door 急停。
-// 各步之间的检查点据此统一决定是否走 abort_cleanup，避免脉冲 helper 因 user_stop
-// 提前 return 后主流程仍空跑剩余步骤、最终误报“成功”。
+// 步间中止判定（不续料 segment buffer；yield 循环用 paper_refill_segment_buffer_during_blocking）
 static inline bool paper_should_abort_change(void) {
     return sys.abort || paper_user_stop_requested;
 }
 
-// 拾落夹紧后面板进纸：单步，前 PAPER_PANEL_FAST_RAMP_STEPS 缓起步，之后用 PAPER_PANEL_FAST_*（加速更早）
-static void paper_one_step_panel_after_clamp(uint32_t step_index) {
-    uint32_t hi_us = (step_index < PAPER_PANEL_FAST_RAMP_STEPS) ? PAPER_RAMP_HI_US : PAPER_PANEL_FAST_HI_US;
-    uint32_t lo_us = (step_index < PAPER_PANEL_FAST_RAMP_STEPS) ? PAPER_RAMP_LO_US : PAPER_PANEL_FAST_LO_US;
-    digitalWrite(PANEL_MOTOR_STEP_PIN, HIGH);
+// ponytail: 统一脉冲时序 + 单/双 STEP 输出；各场景只选 profile，不再复制 yield 循环
+enum PaperPulseProfile : uint8_t {
+    PaperPulsePanel,
+    PaperPulseFeederFeed,
+    PaperPulseFeederFind,
+    PaperPulseClamp,
+    PaperPulsePanelFast,
+#ifdef PAPER_EJECT_NORMAL_HI_US
+    PaperPulsePanelEject,
+#endif
+};
+
+static void paper_profile_timing(PaperPulseProfile profile, uint32_t step_index, uint32_t* hi_us, uint32_t* lo_us) {
+#ifndef USE_I2S_OUT
+    if (profile == PaperPulseFeederFind) {
+        if (step_index < PAPER_RAMP_STEPS) {
+            *hi_us = FEEDER_FIND_RAMP_HI_US;
+            *lo_us = FEEDER_FIND_RAMP_LO_US;
+        } else {
+            *hi_us = FEEDER_FIND_NORMAL_HI_US;
+            *lo_us = FEEDER_FIND_NORMAL_LO_US;
+        }
+#ifdef PAPER_EJECT_NORMAL_HI_US
+    } else if (profile == PaperPulsePanelEject) {
+        if (step_index < PAPER_RAMP_STEPS) {
+            *hi_us = PAPER_EJECT_RAMP_HI_US;
+            *lo_us = PAPER_EJECT_RAMP_LO_US;
+        } else {
+            *hi_us = PAPER_EJECT_NORMAL_HI_US;
+            *lo_us = PAPER_EJECT_NORMAL_LO_US;
+        }
+#endif
+    } else if (profile == PaperPulsePanelFast) {
+        if (step_index < PAPER_PANEL_FAST_RAMP_STEPS) {
+            *hi_us = 400u;
+            *lo_us = 400u;
+        } else {
+            *hi_us = PAPER_PANEL_FAST_HI_US;
+            *lo_us = PAPER_PANEL_FAST_LO_US;
+        }
+    } else {
+        *hi_us = 500u;
+        *lo_us = 500u;
+    }
+    return;
+#endif
+    switch (profile) {
+        case PaperPulseClamp:
+            *hi_us = PAPER_CLAMP_HI_US;
+            *lo_us = PAPER_CLAMP_LO_US;
+            break;
+        case PaperPulseFeederFind:
+            if (step_index < PAPER_RAMP_STEPS) {
+                *hi_us = FEEDER_FIND_RAMP_HI_US;
+                *lo_us = FEEDER_FIND_RAMP_LO_US;
+            } else {
+                *hi_us = FEEDER_FIND_NORMAL_HI_US;
+                *lo_us = FEEDER_FIND_NORMAL_LO_US;
+            }
+            break;
+        case PaperPulseFeederFeed:
+            if (step_index < PAPER_RAMP_STEPS) {
+                *hi_us = FEEDER_FEED_RAMP_HI_US;
+                *lo_us = FEEDER_FEED_RAMP_LO_US;
+            } else {
+                *hi_us = FEEDER_FEED_NORMAL_HI_US;
+                *lo_us = FEEDER_FEED_NORMAL_LO_US;
+            }
+            break;
+        case PaperPulsePanelFast:
+            if (step_index < PAPER_PANEL_FAST_RAMP_STEPS) {
+                *hi_us = PAPER_RAMP_HI_US;
+                *lo_us = PAPER_RAMP_LO_US;
+            } else {
+                *hi_us = PAPER_PANEL_FAST_HI_US;
+                *lo_us = PAPER_PANEL_FAST_LO_US;
+            }
+            break;
+#ifdef PAPER_EJECT_NORMAL_HI_US
+        case PaperPulsePanelEject:
+            if (step_index < PAPER_RAMP_STEPS) {
+                *hi_us = PAPER_EJECT_RAMP_HI_US;
+                *lo_us = PAPER_EJECT_RAMP_LO_US;
+            } else {
+                *hi_us = PAPER_EJECT_NORMAL_HI_US;
+                *lo_us = PAPER_EJECT_NORMAL_LO_US;
+            }
+            break;
+#endif
+        case PaperPulsePanel:
+        default:
+            if (step_index < PAPER_RAMP_STEPS) {
+                *hi_us = PAPER_RAMP_HI_US;
+                *lo_us = PAPER_RAMP_LO_US;
+            } else {
+                *hi_us = PAPER_NORMAL_HI_US;
+                *lo_us = PAPER_NORMAL_LO_US;
+            }
+            break;
+    }
+}
+
+static void paper_pulse_us(uint8_t step_a, uint8_t step_b, uint32_t hi_us, uint32_t lo_us) {
+    digitalWrite(step_a, HIGH);
+    if (step_b != PAPER_DISABLED) {
+        digitalWrite(step_b, HIGH);
+    }
 #ifdef USE_I2S_OUT
     i2s_out_delay();
 #endif
     delayMicroseconds(hi_us);
-    digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
+    digitalWrite(step_a, LOW);
+    if (step_b != PAPER_DISABLED) {
+        digitalWrite(step_b, LOW);
+    }
 #ifdef USE_I2S_OUT
     i2s_out_delay();
 #endif
     delayMicroseconds(lo_us);
 }
 
-// 拾落夹紧后面板进纸：连续 steps 步，前 PAPER_PANEL_FAST_RAMP_STEPS 缓起步，之后用快速脉宽（步骤8 用）
-static void paper_step_pulses_panel_after_clamp(uint32_t steps) {
-#ifdef USE_I2S_OUT
+static void paper_pulses(uint8_t step_a, uint8_t step_b, uint32_t steps, PaperPulseProfile profile) {
     for (uint32_t i = 0; i < steps; i++) {
-        uint32_t hi_us = (i < PAPER_PANEL_FAST_RAMP_STEPS) ? PAPER_RAMP_HI_US : PAPER_PANEL_FAST_HI_US;
-        uint32_t lo_us = (i < PAPER_PANEL_FAST_RAMP_STEPS) ? PAPER_RAMP_LO_US : PAPER_PANEL_FAST_LO_US;
-        digitalWrite(PANEL_MOTOR_STEP_PIN, HIGH);
-        i2s_out_delay();
-        delayMicroseconds(hi_us);
-        digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
-        i2s_out_delay();
-        delayMicroseconds(lo_us);
+        uint32_t hi_us, lo_us;
+        paper_profile_timing(profile, i, &hi_us, &lo_us);
+        paper_pulse_us(step_a, step_b, hi_us, lo_us);
         if ((i + 1) % PAPER_YIELD_STEPS == 0) {
             if (paper_refill_segment_buffer_during_blocking()) {
                 return;
@@ -234,118 +320,16 @@ static void paper_step_pulses_panel_after_clamp(uint32_t steps) {
             delay(1);
         }
     }
-#else
-    for (uint32_t i = 0; i < steps; i++) {
-        uint32_t hi_us = (i < PAPER_PANEL_FAST_RAMP_STEPS) ? 400u : PAPER_PANEL_FAST_HI_US;
-        uint32_t lo_us = (i < PAPER_PANEL_FAST_RAMP_STEPS) ? 400u : PAPER_PANEL_FAST_LO_US;
-        digitalWrite(PANEL_MOTOR_STEP_PIN, HIGH);
-        delayMicroseconds(hi_us);
-        digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
-        delayMicroseconds(lo_us);
-        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            if (paper_refill_segment_buffer_during_blocking()) {
-                return;
-            }
-            delay(1);
-        }
-    }
-#endif
 }
 
 static void paper_step_pulses(uint8_t step_pin, uint32_t steps) {
-#ifdef USE_I2S_OUT
-    uint32_t hi_us, lo_us;
-    for (uint32_t i = 0; i < steps; i++) {
-        if (step_pin == PANEL_MOTOR_STEP_PIN) {
-            if (i < PAPER_RAMP_STEPS) {
-                hi_us = PAPER_RAMP_HI_US;
-                lo_us = PAPER_RAMP_LO_US;
-            } else {
-                hi_us = PAPER_NORMAL_HI_US;
-                lo_us = PAPER_NORMAL_LO_US;
-            }
-        } else if (step_pin == FEEDER_MOTOR_STEP_PIN) {
-            if (i < PAPER_RAMP_STEPS) {
-                hi_us = FEEDER_FEED_RAMP_HI_US;
-                lo_us = FEEDER_FEED_RAMP_LO_US;
-            } else {
-                hi_us = FEEDER_FEED_NORMAL_HI_US;
-                lo_us = FEEDER_FEED_NORMAL_LO_US;
-            }
-        } else {
-            hi_us = PAPER_CLAMP_HI_US;
-            lo_us = PAPER_CLAMP_LO_US;
-        }
-        digitalWrite(step_pin, HIGH);
-        i2s_out_delay();
-        delayMicroseconds(hi_us);
-        digitalWrite(step_pin, LOW);
-        i2s_out_delay();
-        delayMicroseconds(lo_us);
-        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            if (paper_refill_segment_buffer_during_blocking()) {
-                return;  // 急停（sys.abort / feed hold / safety door）：≤25 步内退出，步间检查走 cleanup
-            }
-            delay(1);  // yield to RTOS, feed interrupt watchdog
-        }
+    PaperPulseProfile profile = PaperPulseClamp;
+    if (step_pin == PANEL_MOTOR_STEP_PIN) {
+        profile = PaperPulsePanel;
+    } else if (step_pin == FEEDER_MOTOR_STEP_PIN) {
+        profile = PaperPulseFeederFeed;
     }
-#else
-    for (uint32_t i = 0; i < steps; i++) {
-        digitalWrite(step_pin, HIGH);
-        delayMicroseconds(500);
-        digitalWrite(step_pin, LOW);
-        delayMicroseconds(500);
-        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            if (paper_refill_segment_buffer_during_blocking()) {
-                return;  // 急停（sys.abort / feed hold / safety door）：≤25 步内退出，步间检查走 cleanup
-            }
-            delay(1);  // yield to RTOS, feed interrupt watchdog
-        }
-    }
-#endif
-}
-
-// 进纸器“找传感器”阶段专用步进：比默认快一倍（FEEDER_FIND_*）
-static void paper_step_pulses_feeder_find(uint16_t steps) {
-#ifdef USE_I2S_OUT
-    uint32_t hi_us, lo_us;
-    for (uint32_t i = 0; i < steps; i++) {
-        if (i < PAPER_RAMP_STEPS) {
-            hi_us = FEEDER_FIND_RAMP_HI_US;
-            lo_us = FEEDER_FIND_RAMP_LO_US;
-        } else {
-            hi_us = FEEDER_FIND_NORMAL_HI_US;
-            lo_us = FEEDER_FIND_NORMAL_LO_US;
-        }
-        digitalWrite(FEEDER_MOTOR_STEP_PIN, HIGH);
-        i2s_out_delay();
-        delayMicroseconds(hi_us);
-        digitalWrite(FEEDER_MOTOR_STEP_PIN, LOW);
-        i2s_out_delay();
-        delayMicroseconds(lo_us);
-        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            if (paper_refill_segment_buffer_during_blocking()) {
-                return;
-            }
-            delay(1);
-        }
-    }
-#else
-    for (uint32_t i = 0; i < steps; i++) {
-        uint32_t hi_us = (i < PAPER_RAMP_STEPS) ? FEEDER_FIND_RAMP_HI_US : FEEDER_FIND_NORMAL_HI_US;
-        uint32_t lo_us = (i < PAPER_RAMP_STEPS) ? FEEDER_FIND_RAMP_LO_US : FEEDER_FIND_NORMAL_LO_US;
-        digitalWrite(FEEDER_MOTOR_STEP_PIN, HIGH);
-        delayMicroseconds(hi_us);
-        digitalWrite(FEEDER_MOTOR_STEP_PIN, LOW);
-        delayMicroseconds(lo_us);
-        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            if (paper_refill_segment_buffer_during_blocking()) {
-                return;
-            }
-            delay(1);
-        }
-    }
-#endif
+    paper_pulses(step_pin, PAPER_DISABLED, steps, profile);
 }
 
 // 换纸重试参数：Step 2 / Step 6 失败时回退再试一次，覆盖老化/偶发卡纸
@@ -435,7 +419,7 @@ static void paper_ensure_i2s_passthrough(void) {
 }
 
 // 内部辅助函数：启用所有纸路驱动（面板 + 拾落 + 进纸器）
-static void paper_enable_drivers(void) {
+void paper_enable_drivers(void) {
     paper_ensure_i2s_passthrough();
     digitalWrite(PAPER_ENABLE_PIN, LOW);
 #ifdef PAPER_DRIVER_ENABLE_PIN
@@ -532,51 +516,6 @@ static void paper_enable_panel_and_feeder(void) {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperEn] panel_and_feeder: Q1=LOW, DRV_EN=LOW");
 }
 
-// 面板与进纸器同速同步步进（每步两个电机各发一个脉冲，相同脉宽）
-static void paper_step_pulses_panel_feeder_sync(uint32_t steps) {
-#ifdef USE_I2S_OUT
-    uint32_t hi_us, lo_us;
-    for (uint32_t i = 0; i < steps; i++) {
-        if (i < PAPER_RAMP_STEPS) {
-            hi_us = PAPER_RAMP_HI_US;
-            lo_us = PAPER_RAMP_LO_US;
-        } else {
-            hi_us = PAPER_NORMAL_HI_US;
-            lo_us = PAPER_NORMAL_LO_US;
-        }
-        digitalWrite(PANEL_MOTOR_STEP_PIN, HIGH);
-        digitalWrite(FEEDER_MOTOR_STEP_PIN, HIGH);
-        i2s_out_delay();
-        delayMicroseconds(hi_us);
-        digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
-        digitalWrite(FEEDER_MOTOR_STEP_PIN, LOW);
-        i2s_out_delay();
-        delayMicroseconds(lo_us);
-        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            if (paper_refill_segment_buffer_during_blocking()) {
-                return;
-            }
-            delay(1);
-        }
-    }
-#else
-    for (uint32_t i = 0; i < steps; i++) {
-        digitalWrite(PANEL_MOTOR_STEP_PIN, HIGH);
-        digitalWrite(FEEDER_MOTOR_STEP_PIN, HIGH);
-        delayMicroseconds(500);
-        digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
-        digitalWrite(FEEDER_MOTOR_STEP_PIN, LOW);
-        delayMicroseconds(500);
-        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            if (paper_refill_segment_buffer_during_blocking()) {
-                return;
-            }
-            delay(1);
-        }
-    }
-#endif
-}
-
 Error paper_run_motor(uint8_t motor_ix, uint16_t steps) {
     if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
         return Error::GcodeUnsupportedCommand;
@@ -614,11 +553,6 @@ Error paper_run_motor(uint8_t motor_ix, uint16_t steps) {
     return Error::Ok;
 }
 
-// 仅使能换纸驱动（I2S passthrough + 拉低 EN），不动作；便于用 M64/M65 设方向后单独点动调试
-void paper_enable_drivers_only(void) {
-    paper_enable_drivers();
-}
-
 // 纸张传感器读取（true=感应到纸，false=未感应到）
 // GPIO34: LOW(0)=有纸, HIGH(1)=无纸
 static inline bool paper_sensor_active() {
@@ -644,47 +578,8 @@ static void paper_dir_steps(uint8_t dir_pin, bool dir_level, uint8_t step_pin, u
     i2s_out_delay();
     delay(2);
 #endif
-    paper_step_pulses(step_pin, (uint16_t)steps);
+    paper_step_pulses(step_pin, steps);
 }
-
-#ifdef PAPER_EJECT_NORMAL_HI_US
-// 出旧纸专用：使用更短脉宽（约 2 倍速），仅用于 Step1 面板弹出旧纸
-static void paper_step_pulses_panel_eject(uint32_t steps) {
-#ifdef USE_I2S_OUT
-    for (uint32_t i = 0; i < steps; i++) {
-        uint32_t hi_us = (i < PAPER_RAMP_STEPS) ? PAPER_EJECT_RAMP_HI_US : PAPER_EJECT_NORMAL_HI_US;
-        uint32_t lo_us = (i < PAPER_RAMP_STEPS) ? PAPER_EJECT_RAMP_LO_US : PAPER_EJECT_NORMAL_LO_US;
-        digitalWrite(PANEL_MOTOR_STEP_PIN, HIGH);
-        i2s_out_delay();
-        delayMicroseconds(hi_us);
-        digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
-        i2s_out_delay();
-        delayMicroseconds(lo_us);
-        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            if (paper_refill_segment_buffer_during_blocking()) {
-                return;
-            }
-            delay(1);
-        }
-    }
-#else
-    for (uint32_t i = 0; i < steps; i++) {
-        uint32_t hi_us = (i < PAPER_RAMP_STEPS) ? PAPER_EJECT_RAMP_HI_US : PAPER_EJECT_NORMAL_HI_US;
-        uint32_t lo_us = (i < PAPER_RAMP_STEPS) ? PAPER_EJECT_RAMP_LO_US : PAPER_EJECT_NORMAL_LO_US;
-        digitalWrite(PANEL_MOTOR_STEP_PIN, HIGH);
-        delayMicroseconds(hi_us);
-        digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
-        delayMicroseconds(lo_us);
-        if ((i + 1) % PAPER_YIELD_STEPS == 0) {
-            if (paper_refill_segment_buffer_during_blocking()) {
-                return;
-            }
-            delay(1);
-        }
-    }
-#endif
-}
-#endif
 
 // ponytail: 公共清理逻辑，abort / timeout / jam 统一走此路径，防止状态清理分叉
 static void paper_change_cleanup_common(void) {
@@ -766,7 +661,7 @@ Error paper_auto_change(void) {
     i2s_out_delay();
     delay(2);
 #endif
-    paper_step_pulses_panel_eject(PANEL_EJECT_STEPS);
+    paper_pulses(PANEL_MOTOR_STEP_PIN, PAPER_DISABLED, PANEL_EJECT_STEPS, PaperPulsePanelEject);
 #else
     paper_dir_steps(PANEL_MOTOR_DIR_PIN, PANEL_DIR_EJECT, PANEL_MOTOR_STEP_PIN, PANEL_EJECT_STEPS);
 #endif
@@ -792,7 +687,7 @@ Error paper_auto_change(void) {
                 i2s_out_delay();
                 delay(2);
 #endif
-                paper_step_pulses_feeder_find(FEEDER_RETRY_BACKOFF_STEPS);
+                paper_pulses(FEEDER_MOTOR_STEP_PIN, PAPER_DISABLED, FEEDER_RETRY_BACKOFF_STEPS, PaperPulseFeederFind);
                 if (paper_should_abort_change()) {
                     return paper_auto_change_abort_cleanup("during feeder search retry backoff");
                 }
@@ -816,10 +711,10 @@ Error paper_auto_change(void) {
                     timeout_10s = true;
                     break;
                 }
-                paper_step_pulses_feeder_find(1);  // 找传感器阶段：加速一倍
+                paper_pulses(FEEDER_MOTOR_STEP_PIN, PAPER_DISABLED, 1, PaperPulseFeederFind);  // 找传感器阶段：加速一倍
                 steps++;
                 if (steps % PAPER_YIELD_STEPS == 0) {
-                    if (paper_blocking_abort_requested()) {
+                    if (paper_refill_segment_buffer_during_blocking()) {
                         return paper_auto_change_abort_cleanup("during feeder search");
                     }
                 }
@@ -854,7 +749,7 @@ Error paper_auto_change(void) {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-3] Releasing clamp (%u steps)...", (unsigned)CLAMP_TOGGLE_STEPS);
     paper_enable_panel_and_feeder();  // 面板与进纸器先使能（含软启动，会清零DAC）
 #ifdef PAPER_DRIVER_REF_PIN
-    paper_set_ref_dac(PAPER_REF_DAC_CLAMP);  // 【Superpowers-主动控制】软启动后设置拾落电流
+    paper_set_ref_dac(PAPER_REF_DAC_CLAMP);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info,
                    "[PaperMotor] Clamp: freq=%uHz, ref_voltage_mV=%u (DAC=%u)",
                    (unsigned)(1000000 / (PAPER_CLAMP_HI_US + PAPER_CLAMP_LO_US)),
@@ -880,7 +775,6 @@ Error paper_auto_change(void) {
 #endif
 #ifdef PAPER_DRIVER_REF_PIN
     paper_set_ref_dac((PAPER_REF_DAC_PANEL) > (PAPER_REF_DAC_FEEDER) ? (PAPER_REF_DAC_PANEL) : (PAPER_REF_DAC_FEEDER));
-    // 【Superpowers-状态可见】上报面板+进纸器同步参数
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info,
                    "[PaperMotor] Panel+Feeder sync: panel_dac=%u, feeder_dac=%u, freq=%uHz",
                    (unsigned)PAPER_REF_DAC_PANEL,
@@ -888,7 +782,7 @@ Error paper_auto_change(void) {
                    (unsigned)(1000000 / (PAPER_NORMAL_HI_US + PAPER_NORMAL_LO_US)));
 #endif
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-4] Panel+Feeder sync %.1fcm...", (float)PAPER_ADVANCE_CM_CLAMP_START);
-    paper_step_pulses_panel_feeder_sync(steps_before_clamp);
+    paper_pulses(PANEL_MOTOR_STEP_PIN, FEEDER_MOTOR_STEP_PIN, steps_before_clamp, PaperPulsePanel);
     if (paper_should_abort_change()) {
         return paper_auto_change_abort_cleanup("during panel+feeder sync");
     }
@@ -896,7 +790,6 @@ Error paper_auto_change(void) {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-5] Clamping (%u steps, panel+feeder stopped)...", (unsigned)CLAMP_TOGGLE_STEPS);
 #ifdef PAPER_DRIVER_REF_PIN
     paper_set_ref_dac(PAPER_REF_DAC_CLAMP);
-    // 【Superpowers-预通知】夹紧操作前上报
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info,
                    "[PaperMotor] Clamp: freq=%uHz, ref_voltage_mV=%u (DAC=%u)",
                    (unsigned)(1000000 / (PAPER_CLAMP_HI_US + PAPER_CLAMP_LO_US)),
@@ -913,7 +806,7 @@ Error paper_auto_change(void) {
 #ifdef PAPER_DRIVER_REF_PIN
     paper_set_ref_dac((PAPER_REF_DAC_PANEL) > (PAPER_REF_DAC_FEEDER) ? (PAPER_REF_DAC_PANEL) : (PAPER_REF_DAC_FEEDER));
 #endif
-    paper_step_pulses_panel_feeder_sync(steps_after_clamp);
+    paper_pulses(PANEL_MOTOR_STEP_PIN, FEEDER_MOTOR_STEP_PIN, steps_after_clamp, PaperPulsePanel);
     if (paper_should_abort_change()) {
         return paper_auto_change_abort_cleanup("during panel+feeder sync (2)");
     }
@@ -956,10 +849,14 @@ Error paper_auto_change(void) {
                     jam_timeout = true;
                     break;
                 }
-                paper_one_step_panel_after_clamp(steps);  // 夹紧后面板进纸速度加倍
+                {
+                    uint32_t hi_us, lo_us;
+                    paper_profile_timing(PaperPulsePanelFast, steps, &hi_us, &lo_us);
+                    paper_pulse_us(PANEL_MOTOR_STEP_PIN, PAPER_DISABLED, hi_us, lo_us);
+                }  // 夹紧后面板进纸速度加倍
                 steps++;
                 if (steps % PAPER_YIELD_STEPS == 0) {
-                    if (paper_blocking_abort_requested()) {
+                    if (paper_refill_segment_buffer_during_blocking()) {
                         return paper_auto_change_abort_cleanup("during fast feed");
                     }
                 }
@@ -1011,7 +908,7 @@ Error paper_auto_change(void) {
             paper_step_pulses(PANEL_MOTOR_STEP_PIN, 1);
             steps++;
             if (steps % PAPER_YIELD_STEPS == 0) {
-                if (paper_blocking_abort_requested()) {
+                if (paper_refill_segment_buffer_during_blocking()) {
                     return paper_auto_change_abort_cleanup("during panel re-search");
                 }
             }
@@ -1036,7 +933,7 @@ Error paper_auto_change(void) {
     i2s_out_delay();
     delay(2);
 #endif
-    paper_step_pulses_panel_after_clamp(PANEL_FINAL_STEPS);
+    paper_pulses(PANEL_MOTOR_STEP_PIN, PAPER_DISABLED, PANEL_FINAL_STEPS, PaperPulsePanelFast);
     if (paper_should_abort_change()) {
         return paper_auto_change_abort_cleanup("during final alignment");
     }
@@ -1046,6 +943,8 @@ Error paper_auto_change(void) {
     paper_disable_drivers();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Paper drivers disabled (no panel hold)");
 
+    // 成功路径故意不调用 paper_change_cleanup_common()：不做 plan_reset / 失能 XYZ，
+    // 纸路已在上面 paper_disable_drivers()，sys.state 保持 Idle 供后续 M 指令使用。
     paper_auto_change_running        = false;
     paper_user_stop_requested        = false;  // 成功结束也清急停请求（幂等）
     paper_ignore_host_reset_until_ms = 0;
@@ -1166,15 +1065,6 @@ void paper_poll_bt_connect_auto_change(void) {
 }
 
 Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
-    if (code == 189) {
-        code = 701;
-    } else if (code == 199) {
-        code = 711;
-    } else if (code == 209) {
-        code = 712;
-    } else if (code == 219) {
-        code = 713;
-    }
     switch (code) {
         case 701: {
             if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
@@ -1247,7 +1137,7 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
             protocol_buffer_synchronize();  // 排空已排队 XYZ 运动，避免纸路点动与主步进并发
             paper_enable_drivers();
 #ifdef PAPER_DRIVER_REF_PIN
-            paper_set_ref_dac(PAPER_REF_DAC_CLAMP);  // 【Superpowers-主动控制】确保拾落电机使用优化后的电流
+            paper_set_ref_dac(PAPER_REF_DAC_CLAMP);
 #endif
             paper_dir_steps(CLAMP_MOTOR_DIR_PIN, dir_level, CLAMP_MOTOR_STEP_PIN, nsteps);
             paper_disable_drivers();
@@ -1281,7 +1171,7 @@ bool paper_auto_change_is_running(void) {
     return false;
 }
 void paper_request_user_stop(void) {}
-bool paper_user_stop_pending(void) {
+bool paper_should_ignore_host_reset(void) {
     return false;
 }
 #endif
