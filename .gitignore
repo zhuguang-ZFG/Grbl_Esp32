@@ -25,6 +25,14 @@ Grbl_Esp32.ino.cpp
 # Agent / tooling artifacts
 *.bak_*
 build_*.log
+.idea/
+COM28_Terminal.txt
+.a2a_*.py
+.*-review-result.md
+.review-diff.patch
+.mimo-review-diff.patch
+.kimi-code/
+.pio-mcp-workspace/
 compile_commands.json
 .cache/
 .lima-data/
