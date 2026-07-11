@@ -156,8 +156,12 @@ bool paper_last_change_ok() {
 // GCode.cpp 换纸触发逻辑下沉至此，避免核心解析器散布纸路条件判断
 static bool paper_change_done_before_first_page = false;
 static bool paper_gcode_change_ran_this_line    = false;
+static bool paper_m30_just_completed            = false;
 
 void paper_gcode_line_begin(void) {
+    if (paper_m30_just_completed && !paper_gcode_change_ran_this_line) {
+        paper_m30_just_completed = false;
+    }
     paper_gcode_change_ran_this_line = false;
 }
 
@@ -169,7 +173,7 @@ void paper_mark_first_page_change_done(void) {
     paper_change_done_before_first_page = true;
 }
 
-static Error paper_gcode_invoke_user_m30(void) {
+static Error paper_gcode_invoke_user_m30(bool from_m30 = false) {
     if (paper_gcode_change_ran_this_line) {
         return Error::Ok;
     }
@@ -178,6 +182,7 @@ static Error paper_gcode_invoke_user_m30(void) {
         return Error::MessageFailed;
     }
     paper_gcode_change_ran_this_line = true;
+    paper_m30_just_completed         = from_m30;
     return Error::Ok;
 }
 
@@ -210,7 +215,7 @@ Error paper_gcode_on_before_motion_modes(AxisCommand axis_command, bool axis_wor
 }
 
 Error paper_gcode_on_page_end_m30(void) {
-    return paper_gcode_invoke_user_m30();
+    return paper_gcode_invoke_user_m30(true);
 }
 
 Error paper_gcode_on_after_origin(bool homing_command, bool block_executed_seek) {
@@ -223,6 +228,10 @@ Error paper_gcode_on_after_origin(bool homing_command, bool block_executed_seek)
         }
     }
     if (!do_paper) {
+        return Error::Ok;
+    }
+    if (paper_m30_just_completed) {
+        paper_m30_just_completed = false;  // M30 already changed paper; skip only the following origin move.
         return Error::Ok;
     }
     protocol_buffer_synchronize();

@@ -452,7 +452,9 @@ void check_buffer_watermark() {
     last_low_buffer_msg_ms  = now;
 
     // 奎享等上位机无法根据 B= 降速，发 BT 只会占带宽；仅 COM 监视口低频记录便于排查
+#ifdef DEBUG
     grbl_sendf(CLIENT_SERIAL, "[MSG:LOW_BUFFER B=%u]\r\n", planner_free);
+#endif
 }
 
 // This function is the general interface to Grbl's real-time command execution system. It is called
