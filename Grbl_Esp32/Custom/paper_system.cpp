@@ -156,6 +156,8 @@ bool paper_last_change_ok() {
 // GCode.cpp 换纸触发逻辑下沉至此，避免核心解析器散布纸路条件判断
 static bool paper_change_done_before_first_page = false;
 static bool paper_gcode_change_ran_this_line    = false;
+// Set only on successful M30-path invoke; consume in after_origin or clear on line_begin if unused next line.
+// Clear on parser_reset so soft reset cannot leak M30 suppression state.
 static bool paper_m30_just_completed            = false;
 
 void paper_gcode_line_begin(void) {
@@ -167,6 +169,8 @@ void paper_gcode_line_begin(void) {
 
 void paper_gcode_parser_reset(void) {
     paper_change_done_before_first_page = false;
+    paper_m30_just_completed            = false;
+    paper_gcode_change_ran_this_line    = false;
 }
 
 void paper_mark_first_page_change_done(void) {
