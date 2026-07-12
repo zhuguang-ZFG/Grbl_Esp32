@@ -1740,9 +1740,9 @@ Error gc_execute_line(char* line, uint8_t client) {
             break;
         case ProgramFlow::CompletedM2:
         case ProgramFlow::CompletedM30:
-            // 【新增】预通知上位机即将换页，让上位机有时间准备
-            // 上位机收到此消息后可以：暂停发送、发送心跳、准备换纸
-            grbl_sendf(CLIENT_SERIAL, "[MSG:PAGE_END_IMMINENT]\r\n");
+            // 预通知上位机即将换页（CLIENT_ALL：蓝牙/串口/Telnet 均需收到，否则 BT 流控无效）
+            // 上位机收到后可暂停发送、准备换纸；对齐 FluidNC/Grbl 主机侧 Bf 流控习惯
+            grbl_sendf(CLIENT_ALL, "[MSG:PAGE_END_IMMINENT]\r\n");
             
             protocol_buffer_synchronize();  // Sync and finish all remaining buffered motions before moving on.
             motors_set_disable(true);       // 写完一页/程序结束立即失能 XYZ，避免依赖主循环 250ms 后才失能（换纸期间主循环被阻塞）

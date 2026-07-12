@@ -17,6 +17,8 @@ FluidNC 状态位说明见：[Serial Protocol — Bf 缓冲](https://wiki.fluidn
 |---|------|------|
 | 1.1 | 蓝牙流式写满一页，发 **M30** | 换纸一次；串口可见 `[PaperM30] Auto paper change completed` 或等价日志 |
 | 1.2 | M30 后上位机再发 **G0 X0 Y0 Z0**（或回原点） | **不再二次换纸** |
+| 1.2b | M30 与原点之间夹 **G90/G21/注释** 等非运动行 | 仍只换纸一次（跳过标志跨中间行保留） |
+| 1.2c | 页末 M30 | 蓝牙侧可见 `[MSG:PAGE_END_IMMINENT]`（`CLIENT_ALL`） |
 | 1.3 | 软复位（Ctrl-X / 0x18）后再回原点 | 不因残留 `paper_m30_just_completed` 误跳过合法换纸 |
 | 1.4 | 同一行内重复触发路径 | 同线去重仍有效（不连换两次） |
 

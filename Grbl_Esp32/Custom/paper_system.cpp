@@ -156,14 +156,13 @@ bool paper_last_change_ok() {
 // GCode.cpp 换纸触发逻辑下沉至此，避免核心解析器散布纸路条件判断
 static bool paper_change_done_before_first_page = false;
 static bool paper_gcode_change_ran_this_line    = false;
-// Set only on successful M30-path invoke; consume in after_origin or clear on line_begin if unused next line.
-// Clear on parser_reset so soft reset cannot leak M30 suppression state.
+// Set only on successful M30-path invoke; consume once in after_origin (skip that origin paper-change).
+// Hosts often send G90/G21/comments between M30 and G0 X0 Y0 — do NOT clear on line_begin or the
+// skip is lost before the origin line (double paper-change). Clear on parser_reset, after consume,
+// or when a non-origin motion runs (stale skip must not suppress a later G28 page change).
 static bool paper_m30_just_completed            = false;
 
 void paper_gcode_line_begin(void) {
-    if (paper_m30_just_completed && !paper_gcode_change_ran_this_line) {
-        paper_m30_just_completed = false;
-    }
     paper_gcode_change_ran_this_line = false;
 }
 
@@ -232,10 +231,16 @@ Error paper_gcode_on_after_origin(bool homing_command, bool block_executed_seek)
         }
     }
     if (!do_paper) {
+        // Non-origin seek after M30 means page content (or reposition) started without origin
+        // paper-change; drop the one-shot skip so a later G28 still changes paper.
+        if (paper_m30_just_completed && block_executed_seek) {
+            paper_m30_just_completed = false;
+        }
         return Error::Ok;
     }
     if (paper_m30_just_completed) {
-        paper_m30_just_completed = false;  // M30 already changed paper; skip only the following origin move.
+        paper_m30_just_completed = false;  // M30 already changed paper; skip this origin move only.
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] skip origin change after M30");
         return Error::Ok;
     }
     protocol_buffer_synchronize();
