@@ -32,6 +32,13 @@ COM28_Terminal.txt
 .review-diff.patch
 .mimo-review-diff.patch
 .atomcode-review-diff.patch
+.codex-*
+.mimo-*
+.claude-review-*
+.atomcode-*
+.kimi-code*
+.mimocode/
+_patch_*.py
 .kimi-code/
 .pio-mcp-workspace/
 compile_commands.json

@@ -329,8 +329,8 @@ void user_m30() {
 #define PAPER_BTN_STABLE_MS       8
 #define PAPER_BTN_DOUBLE_PRESS_MS_MIN  500u   // 两次按下最小间隔
 #define PAPER_BTN_DOUBLE_PRESS_MS_MAX  5000u  // 第二次有效窗：首次后 0.5～5s 内再按才触发
-// 换纸结束后物理键冷却：0=立刻可再按（仍须双击触发）；>0 则该毫秒内忽略 Macro0
-#define PAPER_BTN_POST_CHANGE_COOLDOWN_MS  0u
+// 换纸结束后物理键冷却：500ms 内忽略 Macro0，防 M30/换纸刚结束误连按
+#define PAPER_BTN_POST_CHANGE_COOLDOWN_MS  500u
 // 蓝牙栈启动/首次 SPP 连接时射频易干扰 GPIO35
 #define PAPER_BTN_BT_SUPPRESS_MS           1000u
 

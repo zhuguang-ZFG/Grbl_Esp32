@@ -747,19 +747,27 @@ void protocol_exec_rt_system() {
     // 调用点打印一次（包含 mc_line 等待循环中的调用），用于定位卡顿来源。
     if (segment_buffer_underflow) {
         segment_buffer_underflow = false;
-        
+
         uint8_t planner_free = plan_get_block_buffer_available();
-        
-        // 【优化】区分换页场景和真正的 underflow
-        // 换页场景：planner 有大量数据（B > 70），但 segment buffer 被耗尽
-        // 这是正常现象，因为上位机已停止发送，等待换纸完成
-        if (planner_free > 70) {
-            // 换页场景：静默处理，不打印警告
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, 
-                           "[BT] Page end detected, waiting for next page...");
+        const bool paper_running = paper_auto_change_is_running();
+        const bool paper_ignore_reset = paper_should_ignore_host_reset();
+        const bool prog_page_end =
+            gc_state.modal.program_flow == ProgramFlow::CompletedM30 ||
+            gc_state.modal.program_flow == ProgramFlow::CompletedM2;
+        // 页间/换纸/程序结束：段缓冲空是预期现象，勿刷 [SEG underflow]
+        // 启发式兜底：planner 大量空闲 + Idle + 非系统运动（上位机已停发）
+        const bool page_end_context =
+            paper_running || paper_ignore_reset || prog_page_end ||
+            (planner_free > 70 && sys.state == State::Idle && !sys.step_control.executeSysMotion);
+
+        if (page_end_context) {
+            grbl_sendf(CLIENT_SERIAL,
+                       "[BT] Page-gap/seg empty B=%u paper=%u progflow=%u st=%u\r\n",
+                       (unsigned)planner_free,
+                       (unsigned)(paper_running || paper_ignore_reset),
+                       (unsigned)gc_state.modal.program_flow,
+                       (unsigned)sys.state);
         } else {
-            // 真正的 underflow：打印警告
-            // 附带 program_flow，便于判断是否是 M30/程序流切换导致的段缓冲耗尽。
             grbl_sendf(CLIENT_SERIAL,
                        "[SEG underflow] B=%u st=%u progflow=%u execSys=%u\r\n",
                        (unsigned)planner_free,
