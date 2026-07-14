@@ -6,7 +6,10 @@
 
 本地：`D:/Users/zhugu/fz`（或环境变量 `FZ_ROOT`）
 
-## Agent 主动门禁（vibe coding，优先于烧录）
+## Agent 必须主动门禁（HARD RULE，优先于烧录）
+
+**禁止**改完 GCode/Protocol/Planner/步进/限位/纸路相关后不跑 gate 就声称修好或去烧录排 parser/运动问题。  
+Agent **自己调用**，不要等用户说「测一下」。
 
 ```powershell
 $env:FZ_ROOT='D:\Users\zhugu\fz'
@@ -15,9 +18,10 @@ python $env:FZ_ROOT\scripts\agent_gate.py
 # 或本仓转发：
 .\tools\agent_gate.ps1
 # 失败读： $env:FZ_ROOT\results\agent_gate_last.json
+# overall_status 必须为 pass 才可声称 host SIL 绿
 ```
 
-手册：`fz/docs/AGENT_VIBE_CODING.md`
+手册：`fz/docs/AGENT_VIBE_CODING.md` · 本仓 `AGENTS.md` Testing Strategy
 
 ## 仅协议
 
