@@ -1,4 +1,6 @@
 (MSG, Starting User I/O tests)
+; R42: M62/M63/M67 are product I/O — grblHAL host SIL reports error:20 (expected).
+; Validate on product firmware + HIL only. See fz/docs/PRODUCT_SOFT_DIVERGENCE.md
 M62 P0
 G4 P0.5
 M62 P1
