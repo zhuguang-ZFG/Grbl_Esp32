@@ -160,6 +160,17 @@ The gzipped `index.html.gz` is placed in `Grbl_Esp32/data/` and uploaded to SPIF
 
 ## Testing Strategy
 
+- **Simulation + release gate home:** https://github.com/zhuguang-ZFG/fz — local `D:/Users/zhugu/fz` or `$env:FZ_ROOT`.
+- **Agent vibe coding (MUST, proactive):** After editing GCode/Protocol/Planner/Stepper/Limits/Serial/Settings/Custom paper-BT, agents **must** run the PC host SIL gate **before** claiming fixed or flashing for parser/motion debug:
+  ```powershell
+  $env:FZ_ROOT='D:\Users\zhugu\fz'; $env:GRBL_ROOT='D:\Users\Grbl_Esp32'
+  python $env:FZ_ROOT\scripts\agent_gate.py
+  # or: .\tools\agent_gate.ps1
+  # report: $env:FZ_ROOT\results\agent_gate_last.json  → failures + agent_hints
+  ```
+  Profiles: `quick` (protocol), `standard` (protocol+hardware, default vibe), `deep` / `firmware` (slower). Host SIL ≠ paper/BT/OTA — those need HIL + `docs/ACCEPTANCE_CHECKLIST.md`. Full playbook: `fz/docs/AGENT_VIBE_CODING.md`.
+- Daily protocol only: `python $env:FZ_ROOT/protocol_sim/run_regression.py --start-sim`. **Ship only with** pre-release defect gate design (`fz/docs/specs/2026-07-14-pre-release-firmware-defect-gate-design.md`) + this repo `docs/ACCEPTANCE_CHECKLIST.md` (G3b). **A2A:** follow `fz/docs/specs/2026-07-14-a2a-sim-release-workflow-design.md` (risk 路由；实现后 Kimi 重跑 `agent_gate`/gate；不代签上线). See `tools/SIMULATION.md`. Do **not** grow new sim code under this firmware tree.
+- **Espressif official chip emu:** [ESP-IDF QEMU](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/tools/qemu.html) — not the product sim path; see fz hardware-sim design.
 - **Compile-all regression:** `build-all.py` (or `.sh`/`.ps1`) compiles every machine definition. This is the primary automated smoke test.
 - **Feature-matrix regression:** The legacy `.travis.yml` shows the project historically tested:
   1. Wi-Fi enabled, Bluetooth disabled → build `test_drive.h`
