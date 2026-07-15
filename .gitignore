@@ -51,11 +51,12 @@ compile_commands.json
 /*.pdf
 /bootloader_*.bin
 
-# PC sim regression runtime reports
-tools/sim_regression/results/*.json
+# PC sim lives in https://github.com/zhuguang-ZFG/fz — local legacy copies only
+tools/sim_regression/
+tools/grblhal_sim/
+EEPROM.DAT
+.EEPROM*.DAT
 
-# grblHAL Simulator local build tree (keep bin/ if you want checked-in exes; default ignore bulky sources)
-tools/grblhal_sim/src_repo/
-tools/grblhal_sim/build/
-tools/grblhal_sim/*.log
-tools/grblhal_sim/EEPROM.DAT
+# Design specs for sim: canonical under fz/docs/specs/ (do not re-commit copies here)
+docs/superpowers/specs/2026-07-14-hardware-sim-optimization-design.md
+docs/superpowers/specs/2026-07-14-software-fullchain-sim-design.md
