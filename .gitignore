@@ -50,3 +50,12 @@ compile_commands.json
 # Large reference binaries (datasheets, schematics, bootloaders) — keep locally, not in git
 /*.pdf
 /bootloader_*.bin
+
+# PC sim regression runtime reports
+tools/sim_regression/results/*.json
+
+# grblHAL Simulator local build tree (keep bin/ if you want checked-in exes; default ignore bulky sources)
+tools/grblhal_sim/src_repo/
+tools/grblhal_sim/build/
+tools/grblhal_sim/*.log
+tools/grblhal_sim/EEPROM.DAT
