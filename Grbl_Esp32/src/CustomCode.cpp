@@ -6,12 +6,6 @@
 
 #ifdef CUSTOM_CODE_FILENAME
 #    include CUSTOM_CODE_FILENAME
-#else
-// 无自定义机器时提供占位，避免 GCode 里调用 user_m_code 未定义
-__attribute__((weak)) Error user_m_code(uint16_t code) {
-    (void)code;
-    return Error::GcodeUnsupportedCommand;
-}
 #endif
 
 #ifdef DISPLAY_CODE_FILENAME

@@ -580,7 +580,6 @@ Error gc_execute_line(char* line, uint8_t client) {
                             }
                         }
                         {
-                            extern Error user_m_code(uint16_t code);
                             Error e = user_m_code(m_code);
                             if (e == Error::Ok) {
                                 mg_word_bit = ModalGroup::MM10;

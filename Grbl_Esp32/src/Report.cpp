@@ -69,15 +69,21 @@ void grbl_sendf(uint8_t client, const char* format, ...) {
     va_list copy;
     va_start(arg, format);
     va_copy(copy, arg);
-    size_t len = vsnprintf(NULL, 0, format, arg);
+    int formatted_len = vsnprintf(NULL, 0, format, copy);
     va_end(copy);
+    if (formatted_len < 0) {
+        va_end(arg);
+        return;
+    }
+    size_t len = static_cast<size_t>(formatted_len);
     if (len >= sizeof(loc_buf)) {
         temp = new char[len + 1];
         if (temp == NULL) {
+            va_end(arg);
             return;
         }
     }
-    len = vsnprintf(temp, len + 1, format, arg);
+    vsnprintf(temp, len + 1, format, arg);
     grbl_send(client, temp);
     va_end(arg);
     if (temp != loc_buf) {
@@ -102,15 +108,21 @@ void grbl_msg_sendf(uint8_t client, MsgLevel level, const char* format, ...) {
     va_list copy;
     va_start(arg, format);
     va_copy(copy, arg);
-    size_t len = vsnprintf(NULL, 0, format, arg);
+    int formatted_len = vsnprintf(NULL, 0, format, copy);
     va_end(copy);
+    if (formatted_len < 0) {
+        va_end(arg);
+        return;
+    }
+    size_t len = static_cast<size_t>(formatted_len);
     if (len >= sizeof(loc_buf)) {
         temp = new char[len + 1];
         if (temp == NULL) {
+            va_end(arg);
             return;
         }
     }
-    len = vsnprintf(temp, len + 1, format, arg);
+    vsnprintf(temp, len + 1, format, arg);
     grbl_sendf(client, "[MSG:%s]\r\n", temp);
     va_end(arg);
     if (temp != loc_buf) {
@@ -132,15 +144,21 @@ void grbl_notifyf(const char* title, const char* format, ...) {
     va_list copy;
     va_start(arg, format);
     va_copy(copy, arg);
-    size_t len = vsnprintf(NULL, 0, format, arg);
+    int formatted_len = vsnprintf(NULL, 0, format, copy);
     va_end(copy);
+    if (formatted_len < 0) {
+        va_end(arg);
+        return;
+    }
+    size_t len = static_cast<size_t>(formatted_len);
     if (len >= sizeof(loc_buf)) {
         temp = new char[len + 1];
         if (temp == NULL) {
+            va_end(arg);
             return;
         }
     }
-    len = vsnprintf(temp, len + 1, format, arg);
+    vsnprintf(temp, len + 1, format, arg);
     grbl_notify(title, temp);
     va_end(arg);
     if (temp != loc_buf) {
@@ -343,7 +361,7 @@ void report_ngc_parameters(uint8_t client) {
 // Print current gcode parser mode state
 void report_gcode_modes(uint8_t client) {
     char        temp[20];
-    char        modes_rpt[75];
+    char        modes_rpt[128];
     const char* mode = "";
     strcpy(modes_rpt, "[GC:");
 
@@ -378,7 +396,7 @@ void report_gcode_modes(uint8_t client) {
     }
     strcat(modes_rpt, mode);
 
-    sprintf(temp, " G%d", gc_state.modal.coord_select + 54);
+    snprintf(temp, sizeof(temp), " G%d", gc_state.modal.coord_select + 54);
     strcat(modes_rpt, temp);
 
     switch (gc_state.modal.plane_select) {
@@ -487,11 +505,11 @@ void report_gcode_modes(uint8_t client) {
     }
 #endif
 
-    sprintf(temp, " T%d", gc_state.tool);
+    snprintf(temp, sizeof(temp), " T%d", gc_state.tool);
     strcat(modes_rpt, temp);
-    sprintf(temp, report_inches->get() ? " F%.1f" : " F%.0f", gc_state.feed_rate);
+    snprintf(temp, sizeof(temp), report_inches->get() ? " F%.1f" : " F%.0f", gc_state.feed_rate);
     strcat(modes_rpt, temp);
-    sprintf(temp, " S%d", uint32_t(gc_state.spindle_speed));
+    snprintf(temp, sizeof(temp), " S%d", uint32_t(gc_state.spindle_speed));
     strcat(modes_rpt, temp);
     strcat(modes_rpt, "]\r\n");
     grbl_send(client, modes_rpt);
@@ -581,22 +599,29 @@ void report_echo_line_received(char* line, uint8_t client) {
 // requires as it minimizes the computational overhead and allows grbl to keep running smoothly,
 // especially during g-code programs with fast, short line segments and high frequency reports (5-20Hz).
 void report_realtime_status(uint8_t client) {
-    char status[200];
-    char temp[MAX_N_AXIS * 20];
+    char status[(axesStringLen * 2) + 280];
+    char temp[axesStringLen];
+
+    auto append = [&status](const char* text) {
+        size_t used = strlen(status);
+        if (used < sizeof(status) - 1) {
+            strncat(status, text, sizeof(status) - used - 1);
+        }
+    };
 
     strcpy(status, "<");
-    strcat(status, report_state_text());
+    append(report_state_text());
 
     // Report position
     float* print_position = system_get_mpos();
     if (bit_istrue(status_mask->get(), RtStatus::Position)) {
-        strcat(status, "|MPos:");
+        append("|MPos:");
     } else {
-        strcat(status, "|WPos:");
+        append("|WPos:");
         mpos_to_wpos(print_position);
     }
     report_util_axis_values(print_position, temp);
-    strcat(status, temp);
+    append(temp);
     // Returns planner and serial read buffer states.
 #ifdef REPORT_FIELD_BUFFER_STATE
     if (bit_istrue(status_mask->get(), RtStatus::Buffer)) {
@@ -614,8 +639,8 @@ void report_realtime_status(uint8_t client) {
         if (client == CLIENT_SERIAL) {
             bufsize = client_get_rx_buffer_available(CLIENT_SERIAL);
         }
-        sprintf(temp, "|Bf:%d,%d", plan_get_block_buffer_available(), bufsize);
-        strcat(status, temp);
+        snprintf(temp, sizeof(temp), "|Bf:%d,%d", plan_get_block_buffer_available(), bufsize);
+        append(temp);
     }
 #endif
 #ifdef USE_LINE_NUMBERS
@@ -625,8 +650,8 @@ void report_realtime_status(uint8_t client) {
     if (cur_block != NULL) {
         uint32_t ln = cur_block->line_number;
         if (ln > 0) {
-            sprintf(temp, "|Ln:%d", ln);
-            strcat(status, temp);
+            snprintf(temp, sizeof(temp), "|Ln:%d", ln);
+            append(temp);
         }
     }
 #    endif
@@ -634,66 +659,66 @@ void report_realtime_status(uint8_t client) {
     // Report realtime feed speed
 #ifdef REPORT_FIELD_CURRENT_FEED_SPEED
     if (report_inches->get()) {
-        sprintf(temp, "|FS:%.1f,%d", st_get_realtime_rate() / MM_PER_INCH, sys.spindle_speed);
+        snprintf(temp, sizeof(temp), "|FS:%.1f,%d", st_get_realtime_rate() / MM_PER_INCH, sys.spindle_speed);
     } else {
-        sprintf(temp, "|FS:%.0f,%d", st_get_realtime_rate(), sys.spindle_speed);
+        snprintf(temp, sizeof(temp), "|FS:%.0f,%d", st_get_realtime_rate(), sys.spindle_speed);
     }
-    strcat(status, temp);
+    append(temp);
 #endif
 #ifdef REPORT_FIELD_PIN_STATE
     AxisMask    lim_pin_state  = limits_get_state();
     ControlPins ctrl_pin_state = system_control_get_state();
     bool        prb_pin_state  = probe_get_state();
     if (lim_pin_state || ctrl_pin_state.value || prb_pin_state) {
-        strcat(status, "|Pn:");
+        append("|Pn:");
         if (prb_pin_state) {
-            strcat(status, "P");
+            append("P");
         }
         if (lim_pin_state) {
             auto n_axis = number_axis->get();
             if (n_axis >= 1 && bit_istrue(lim_pin_state, bit(X_AXIS))) {
-                strcat(status, "X");
+                append("X");
             }
             if (n_axis >= 2 && bit_istrue(lim_pin_state, bit(Y_AXIS))) {
-                strcat(status, "Y");
+                append("Y");
             }
             if (n_axis >= 3 && bit_istrue(lim_pin_state, bit(Z_AXIS))) {
-                strcat(status, "Z");
+                append("Z");
             }
             if (n_axis >= 4 && bit_istrue(lim_pin_state, bit(A_AXIS))) {
-                strcat(status, "A");
+                append("A");
             }
             if (n_axis >= 5 && bit_istrue(lim_pin_state, bit(B_AXIS))) {
-                strcat(status, "B");
+                append("B");
             }
             if (n_axis >= 6 && bit_istrue(lim_pin_state, bit(C_AXIS))) {
-                strcat(status, "C");
+                append("C");
             }
         }
         if (ctrl_pin_state.value) {
             if (ctrl_pin_state.bit.safetyDoor) {
-                strcat(status, "D");
+                append("D");
             }
             if (ctrl_pin_state.bit.reset) {
-                strcat(status, "R");
+                append("R");
             }
             if (ctrl_pin_state.bit.feedHold) {
-                strcat(status, "H");
+                append("H");
             }
             if (ctrl_pin_state.bit.cycleStart) {
-                strcat(status, "S");
+                append("S");
             }
             if (ctrl_pin_state.bit.macro0) {
-                strcat(status, "0");
+                append("0");
             }
             if (ctrl_pin_state.bit.macro1) {
-                strcat(status, "1");
+                append("1");
             }
             if (ctrl_pin_state.bit.macro2) {
-                strcat(status, "2");
+                append("2");
             }
             if (ctrl_pin_state.bit.macro3) {
-                strcat(status, "3");
+                append("3");
             }
         }
     }
@@ -716,9 +741,9 @@ void report_realtime_status(uint8_t client) {
         if (sys.report_ovr_counter == 0) {
             sys.report_ovr_counter = 1;  // Set override on next report.
         }
-        strcat(status, "|WCO:");
+        append("|WCO:");
         report_util_axis_values(get_wco(), temp);
-        strcat(status, temp);
+        append(temp);
     }
 #endif
 #ifdef REPORT_FIELD_OVERRIDES
@@ -737,30 +762,30 @@ void report_realtime_status(uint8_t client) {
                 break;
         }
 
-        sprintf(temp, "|Ov:%d,%d,%d", sys.f_override, sys.r_override, sys.spindle_speed_ovr);
-        strcat(status, temp);
+        snprintf(temp, sizeof(temp), "|Ov:%d,%d,%d", sys.f_override, sys.r_override, sys.spindle_speed_ovr);
+        append(temp);
         SpindleState sp_state      = spindle->get_state();
         CoolantState coolant_state = coolant_get_state();
         if (sp_state != SpindleState::Disable || coolant_state.Mist || coolant_state.Flood) {
-            strcat(status, "|A:");
+            append("|A:");
             switch (sp_state) {
                 case SpindleState::Disable:
                     break;
                 case SpindleState::Cw:
-                    strcat(status, "S");
+                    append("S");
                     break;
                 case SpindleState::Ccw:
-                    strcat(status, "C");
+                    append("C");
                     break;
             }
 
             auto coolant = coolant_state;
             if (coolant.Flood) {
-                strcat(status, "F");
+                append("F");
             }
 #    ifdef COOLANT_MIST_PIN  // TODO Deal with M8 - Flood
             if (coolant.Mist) {
-                strcat(status, "M");
+                append("M");
             }
 #    endif
         }
@@ -768,17 +793,17 @@ void report_realtime_status(uint8_t client) {
 #endif
 #ifdef ENABLE_SD_CARD
     if (get_sd_state(false) == SDState::BusyPrinting) {
-        sprintf(temp, "|SD:%4.2f,", sd_report_perc_complete());
-        strcat(status, temp);
-        sd_get_current_filename(temp);
-        strcat(status, temp);
+        snprintf(temp, sizeof(temp), "|SD:%4.2f,", sd_report_perc_complete());
+        append(temp);
+        sd_get_current_filename(temp, sizeof(temp));
+        append(temp);
     }
 #endif
 #ifdef REPORT_HEAP
-    sprintf(temp, "|Heap:%d", esp.getHeapSize());
-    strcat(status, temp);
+    snprintf(temp, sizeof(temp), "|Heap:%d", esp.getHeapSize());
+    append(temp);
 #endif
-    strcat(status, ">\r\n");
+    append(">\r\n");
     grbl_send(client, status);
 }
 

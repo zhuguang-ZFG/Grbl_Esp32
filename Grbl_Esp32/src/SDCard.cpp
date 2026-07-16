@@ -164,9 +164,13 @@ SDState set_sd_state(SDState state) {
     return sd_state;
 }
 
-void sd_get_current_filename(char* name) {
+void sd_get_current_filename(char* name, size_t capacity) {
+    if (capacity == 0) {
+        return;
+    }
     if (myFile) {
-        strcpy(name, myFile.name());
+        strncpy(name, myFile.name(), capacity - 1);
+        name[capacity - 1] = '\0';
     } else {
         name[0] = 0;
     }

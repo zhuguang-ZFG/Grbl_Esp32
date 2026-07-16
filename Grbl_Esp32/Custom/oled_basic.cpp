@@ -199,7 +199,9 @@ void displayUpdate(void* pvParameters) {
     xLastWakeTime                      = xTaskGetTickCount();  // Initialise the xLastWakeTime variable with the current time.
 
     vTaskDelay(2500);
+#ifdef ENABLE_SD_CARD
     uint16_t sd_file_ticker = 0;
+#endif
 
     display.init();
     display.flipScreenVertically();
@@ -213,6 +215,7 @@ void displayUpdate(void* pvParameters) {
         display.setFont(ArialMT_Plain_16);
         display.drawString(0, 0, report_state_text());
 
+#ifdef ENABLE_SD_CARD
         if (get_sd_state(false) == SDState::BusyPrinting) {
             display.clear();
             display.setTextAlignment(TEXT_ALIGN_CENTER);
@@ -225,7 +228,7 @@ void displayUpdate(void* pvParameters) {
             display.drawString(63, 0, state_string);
 
             char path[50];
-            sd_get_current_filename(path);
+            sd_get_current_filename(path, sizeof(path));
             display.drawString(63, 12, path);
 
             int progress = sd_report_perc_complete();
@@ -237,11 +240,15 @@ void displayUpdate(void* pvParameters) {
             display.setTextAlignment(TEXT_ALIGN_CENTER);
             display.drawString(64, 25, String(progress) + "%");
 
-        } else if (sys.state == State::Alarm) {
-            displayRadioInfo();
-        } else {
-            displayDRO();
-            displayRadioInfo();
+        } else
+#endif
+        {
+            if (sys.state == State::Alarm) {
+                displayRadioInfo();
+            } else {
+                displayDRO();
+                displayRadioInfo();
+            }
         }
 
         display.display();

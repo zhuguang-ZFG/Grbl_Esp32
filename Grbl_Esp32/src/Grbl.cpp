@@ -137,6 +137,11 @@ void __attribute__((weak)) display_init() {}
 
 void __attribute__((weak)) user_m30() {}
 
+Error __attribute__((weak)) user_m_code(uint16_t code) {
+    (void)code;
+    return Error::GcodeUnsupportedCommand;
+}
+
 bool __attribute__((weak)) paper_last_change_ok() {
     return true;
 }

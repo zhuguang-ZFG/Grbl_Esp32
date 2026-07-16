@@ -327,8 +327,10 @@ Error doJog(const char* value, WebUI::AuthenticationLevel auth_level, WebUI::ESP
         return Error::InvalidStatement;
     }
     char jogLine[LINE_BUFFER_SIZE];
-    strcpy(jogLine, "$J=");
-    strcat(jogLine, value);
+    if (strlen(value) > sizeof(jogLine) - sizeof("$J=")) {
+        return Error::LineLengthExceeded;
+    }
+    snprintf(jogLine, sizeof(jogLine), "$J=%s", value);
     return gc_execute_line(jogLine, out->client());
 }
 
@@ -616,12 +618,14 @@ Error system_execute_line(char* line, uint8_t client, WebUI::AuthenticationLevel
 void system_execute_startup(char* line) {
     Error status_code;
     char  gcline[256];
-    strncpy(gcline, startup_line_0->get(), 255);
+    strncpy(gcline, startup_line_0->get(), sizeof(gcline) - 1);
+    gcline[sizeof(gcline) - 1] = '\0';
     if (*gcline) {
         status_code = gc_execute_line(gcline, CLIENT_SERIAL);
         report_execute_startup_message(gcline, status_code, CLIENT_SERIAL);
     }
-    strncpy(gcline, startup_line_1->get(), 255);
+    strncpy(gcline, startup_line_1->get(), sizeof(gcline) - 1);
+    gcline[sizeof(gcline) - 1] = '\0';
     if (*gcline) {
         status_code = gc_execute_line(gcline, CLIENT_SERIAL);
         report_execute_startup_message(gcline, status_code, CLIENT_SERIAL);

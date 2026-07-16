@@ -323,7 +323,7 @@ void protocol_main_loop() {
                 report_status_message(execute_line(fileLine, SD_client, SD_auth_level), SD_client);
             } else {
                 char temp[50];
-                sd_get_current_filename(temp);
+                sd_get_current_filename(temp, sizeof(temp));
                 grbl_notifyf("SD print done", "%s print is successful", temp);
                 closeFile();  // close file and clear SD ready/running flags
             }

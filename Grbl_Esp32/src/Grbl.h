@@ -117,6 +117,7 @@ void motors_to_cartesian(float* cartestian, float* motors, int n_axis);  // weak
 
 // Called if MACRO_BUTTON_0_PIN or MACRO_BUTTON_1_PIN or MACRO_BUTTON_2_PIN is defined
 void user_defined_macro(uint8_t index);
+Error user_m_code(uint16_t code);
 
 // Paper system M701/M711/M712/M713/M716 and [ESP901/911/912/913] (PaperSystem.cpp)
 // steps:  用于 711/712/713/716 的可选步数 (0=使用默认)

@@ -85,9 +85,27 @@ namespace WebUI {
     }
 
     size_t InputBuffer::write(const uint8_t* buffer, size_t size) {
-        //No need currently
-        //keep for compatibility
-        return size;
+        if (buffer == NULL || size == 0) {
+            return 0;
+        }
+
+        portENTER_CRITICAL(&_inputBufMux);
+        size_t writable = RXBUFFERSIZE - _RXbufferSize;
+        if (size < writable) {
+            writable = size;
+        }
+        size_t current = (_RXbufferpos + _RXbufferSize) % RXBUFFERSIZE;
+        size_t first   = RXBUFFERSIZE - current;
+        if (writable < first) {
+            first = writable;
+        }
+        memcpy(&_RXbuffer[current], buffer, first);
+        if (writable > first) {
+            memcpy(_RXbuffer, buffer + first, writable - first);
+        }
+        _RXbufferSize += writable;
+        portEXIT_CRITICAL(&_inputBufMux);
+        return writable;
     }
 
     int InputBuffer::peek(void) {
