@@ -49,15 +49,9 @@ static bool bt_planner_is_starving(void) {
 }
 
 // TX ring buffer for congested-but-critical messages. Protected by bt_tx_mux.
-static uint8_t      bt_tx_ring[BT_TX_RING_SIZE];
-static size_t       bt_tx_ring_head = 0;
-static size_t       bt_tx_ring_tail = 0;
-static size_t       bt_tx_ring_used = 0;
-// Generation counter: bumped on every reset. bt_tx_flush captures it before
-// releasing the lock to call SerialBT.write(); if a SPP CLOSE/reset happens
-// concurrently and resets the ring, the generation mismatch tells flush to
-// drop its stale advance instead of underflowing bt_tx_ring_used (size_t).
-static uint32_t     bt_tx_ring_gen  = 0;
+static uint8_t      bt_tx_ring_storage[BT_TX_RING_SIZE];
+static BTTxRing     bt_tx_ring(bt_tx_ring_storage, BT_TX_RING_SIZE);
+// BTTxRing owns the reset generation used to reject stale flush advances.
 static portMUX_TYPE bt_tx_mux       = portMUX_INITIALIZER_UNLOCKED;
 
 // Forward declaration — bt_state_on_event (SPP callback) needs to reset
@@ -71,10 +65,7 @@ void bt_state_init(void) {
     bt_recovery_step     = 0;
     bt_recovery_ts       = 0;
     bt_recovery_attempts.store(0);
-    bt_tx_ring_head      = 0;
-    bt_tx_ring_tail      = 0;
-    bt_tx_ring_used      = 0;
-    bt_tx_ring_gen       = 0;
+    bt_tx_ring.initialize();
 }
 
 BTState bt_state_get(void) {
@@ -90,7 +81,7 @@ void bt_state_on_event(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
     switch (event) {
         case ESP_SPP_INIT_EVT:
         case ESP_SPP_START_EVT:
-            bt_state_set(BTState::Advertising);
+            bt_state_set(bt_state_reduce(bt_state_get(), BTLinkEvent::Started));
             break;
 
 #    ifdef ESP_SPP_UNINIT_EVT
@@ -100,14 +91,14 @@ void bt_state_on_event(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
         case ESP_SPP_SRV_STOP_EVT:
 #    endif
 #    if defined(ESP_SPP_UNINIT_EVT) || defined(ESP_SPP_SRV_STOP_EVT)
-            bt_state_set(BTState::Idle);
+            bt_state_set(bt_state_reduce(bt_state_get(), BTLinkEvent::Stopped));
             break;
 #    endif
 
         case ESP_SPP_SRV_OPEN_EVT: {
             // 连接建立：清空旧缓冲，避免重连后执行半条旧指令
             client_reset_read_buffer(CLIENT_BT);
-            bt_state_set(BTState::Connected);
+            bt_state_set(bt_state_reduce(bt_state_get(), BTLinkEvent::Opened));
             bt_recovery_attempts.store(0);  // 成功连接后重置恢复计数
 #    if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
             paper_btn_arm_bt_suppress();
@@ -124,23 +115,19 @@ void bt_state_on_event(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
             vTaskEnterCritical(&bt_tx_mux);
             bt_tx_ring_reset();
             vTaskExitCritical(&bt_tx_mux);
-            bt_state_set(BTState::Advertising);
+            bt_state_set(bt_state_reduce(bt_state_get(), BTLinkEvent::Closed));
             break;
 
         case ESP_SPP_CONG_EVT:
-            bt_state_set(param->cong.cong ? BTState::Congested : BTState::Connected);
+            bt_state_set(bt_state_reduce(bt_state_get(), BTLinkEvent::CongestionChanged, param->cong.cong));
             break;
 
         case ESP_SPP_WRITE_EVT:
-            bt_state_set(param->write.cong ? BTState::Congested : BTState::Connected);
+            bt_state_set(bt_state_reduce(bt_state_get(), BTLinkEvent::WriteCompleted, param->write.cong));
             break;
 
         case ESP_SPP_DATA_IND_EVT: {
-            BTState s = bt_state_get();
-            if (s == BTState::Advertising) {
-                // 在 DATA_IND 之前已收到 SRV_OPEN，保险起见切到 Connected
-                bt_state_set(BTState::Connected);
-            }
+            bt_state_set(bt_state_reduce(bt_state_get(), BTLinkEvent::DataReceived));
         } break;
 
         default:
@@ -151,59 +138,15 @@ void bt_state_on_event(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
 // 判断 BT 消息是否关键：ok/error、状态报告、报警、普通 MSG 都是关键；
 // 调试/诊断类 MSG 在拥塞时可丢弃，避免阻塞控制面。
 bool bt_tx_message_is_critical(const char* text) {
-    if (text == nullptr || text[0] == '\0') {
-        return false;
-    }
-    if (text[0] == 'o' && text[1] == 'k') {
-        return true;
-    }
-    if (strncmp(text, "error:", 6) == 0 || strncmp(text, "error ", 6) == 0) {
-        return true;
-    }
-    if (text[0] == '<') {
-        return true;
-    }
-    if (strncmp(text, "[MSG:", 5) == 0) {
-        // grbl_msg_sendf 把消息包装为 [MSG:...\r\n，所以诊断前缀在 [MSG: 之后
-        const char* inner = text + 5;
-        if (strncmp(inner, "[BT-EOL", 7) == 0) {
-            return false;
-        }
-        if (strncmp(inner, "[PaperDiag]", 11) == 0) {
-            return false;
-        }
-        if (strncmp(inner, "[BTState]", 9) == 0) {
-            return false;
-        }
-        return true;
-    }
-    if (strncmp(text, "ALARM:", 6) == 0 || strncmp(text, "ALM:", 4) == 0) {
-        return true;
-    }
-    return false;
-}
-
-static size_t bt_tx_ring_free(void) {
-    return BT_TX_RING_SIZE - bt_tx_ring_used;
+    return bt_tx_message_is_critical_core(text);
 }
 
 static bool bt_tx_ring_push(const char* data, size_t len) {
-    if (len > bt_tx_ring_free()) {
-        return false;
-    }
-    for (size_t i = 0; i < len; i++) {
-        bt_tx_ring[bt_tx_ring_head] = data[i];
-        bt_tx_ring_head             = (bt_tx_ring_head + 1) % BT_TX_RING_SIZE;
-    }
-    bt_tx_ring_used += len;
-    return true;
+    return bt_tx_ring.push(data, len);
 }
 
 static void bt_tx_ring_reset(void) {
-    bt_tx_ring_head = 0;
-    bt_tx_ring_tail = 0;
-    bt_tx_ring_used = 0;
-    bt_tx_ring_gen++;
+    bt_tx_ring.reset();
 }
 
 bool bt_tx_send(const char* text, size_t len, bool critical) {
@@ -228,7 +171,7 @@ bool bt_tx_send(const char* text, size_t len, bool critical) {
         // 的字节先于积压数据到达对端，导致消息交错（例如 "ok" 插入到
         // 一条被截断的 error 报文中间）。
         vTaskEnterCritical(&bt_tx_mux);
-        bool ring_has_data = (bt_tx_ring_used > 0);
+        bool ring_has_data = (bt_tx_ring.used() > 0);
         vTaskExitCritical(&bt_tx_mux);
 
         if (ring_has_data) {
@@ -291,47 +234,28 @@ void bt_tx_flush(void) {
 
     while (true) {
         vTaskEnterCritical(&bt_tx_mux);
-        if (bt_tx_ring_used == 0) {
+        if (bt_tx_ring.used() == 0) {
             vTaskExitCritical(&bt_tx_mux);
             break;
         }
 
-        // 取出从 tail 开始的一段连续字节（不跨越环尾或 head）
-        size_t contiguous;
-        if (bt_tx_ring_head > bt_tx_ring_tail) {
-            contiguous = bt_tx_ring_head - bt_tx_ring_tail;
-        } else {
-            contiguous = BT_TX_RING_SIZE - bt_tx_ring_tail;
-        }
-        if (contiguous > 64) {
-            contiguous = 64;
-        }
-
         char    chunk[64];
-        size_t  local_tail = bt_tx_ring_tail;  // avoid touching shared state while writing
-        // 捕获 reset 代际：释放锁调 SerialBT.write() 期间，SPP CLOSE 回调可能
-        // 并发 bt_tx_ring_reset() 把 used 清 0。重进锁后若代际已变，说明本次
-        // 推进所依赖的 tail/used 已失效，必须放弃 advance，否则 size_t 减法下溢。
-        uint32_t gen_before = bt_tx_ring_gen;
+        uint32_t gen_before = 0;
+        size_t   contiguous = bt_tx_ring.copy_contiguous((uint8_t*)chunk, sizeof(chunk), &gen_before);
         vTaskExitCritical(&bt_tx_mux);
 
-        // 将连续段复制到本地后再写，避免持锁期间调用 SerialBT.write()
-        memcpy(chunk, &bt_tx_ring[local_tail], contiguous);
         size_t written = WebUI::SerialBT.write((const uint8_t*)chunk, contiguous);
         if (written == 0) {
             break;
         }
 
         vTaskEnterCritical(&bt_tx_mux);
-        if (bt_tx_ring_gen != gen_before) {
+        if (!bt_tx_ring.advance(written, gen_before)) {
             // 期间 ring 被 reset（链路断开/重连）——本次 write 的字节已被新
             // 连接的 SRV_OPEN 流程接管或丢弃，绝不能动 tail/used，否则 used 下溢。
             vTaskExitCritical(&bt_tx_mux);
             break;
         }
-        size_t advance = (written < contiguous) ? written : contiguous;
-        bt_tx_ring_tail = (bt_tx_ring_tail + advance) % BT_TX_RING_SIZE;
-        bt_tx_ring_used -= advance;
         vTaskExitCritical(&bt_tx_mux);
 
         if (written < contiguous) {
@@ -435,7 +359,7 @@ void bt_state_update(void) {
     // 3. 拥塞解除后刷出缓存的关键消息
     if (bt_state_get() == BTState::Connected) {
         vTaskEnterCritical(&bt_tx_mux);
-        bool need_flush = (bt_tx_ring_used > 0);
+        bool need_flush = (bt_tx_ring.used() > 0);
         vTaskExitCritical(&bt_tx_mux);
         if (need_flush) {
             bt_tx_flush();

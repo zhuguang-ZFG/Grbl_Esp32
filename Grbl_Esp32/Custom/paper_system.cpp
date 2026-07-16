@@ -2,6 +2,7 @@
 // paper_system.cpp
 // Custom code for paper-handling system (paper sensor + paper-change motors)
 // Enabled via CUSTOM_CODE_FILENAME in custom_3axis_hr4988.h
+#include "../src/PaperSystemCore.h"
 //
 // 注意：本文件通过 CustomCode.cpp 间接包含，那里已包含 Grbl.h，
 // 这里不需要再次 include。
@@ -381,7 +382,7 @@ bool paper_btn_bt_suppress_active(void) {
     portENTER_CRITICAL(&paper_btn_mux);
     uint32_t until = paper_btn_bt_ignore_until_ms;
     portEXIT_CRITICAL(&paper_btn_mux);
-    return millis() < until;
+    return paper_deadline_active(millis(), until);
 }
 
 void paper_btn_notify_macro_released(void) {
@@ -397,10 +398,11 @@ bool paper_btn_ignore_control_events(void) {
     uint32_t post = paper_btn_post_change_ignore_until_ms;
     uint32_t bt   = paper_btn_bt_ignore_until_ms;
     portEXIT_CRITICAL(&paper_btn_mux);
-    if (millis() < post) {
+    uint32_t now = millis();
+    if (paper_deadline_active(now, post)) {
         return true;
     }
-    if (millis() < bt) {
+    if (paper_deadline_active(now, bt)) {
         return true;
     }
     return false;

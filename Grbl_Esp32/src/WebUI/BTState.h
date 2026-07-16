@@ -21,15 +21,7 @@
 #pragma once
 
 #include <cstdint>
-
-// BT connection state machine states
-enum class BTState : uint8_t {
-    Idle,         // Bluetooth not started
-    Advertising,  // SPP started, waiting for connection
-    Connected,    // SPP connected, data flowing normally
-    Congested,    // SPP congested, TX should pause
-    Recovering,   // Recovering from link failure (phase 3)
-};
+#include "BTStateCore.h"
 
 #ifdef ENABLE_BLUETOOTH
 

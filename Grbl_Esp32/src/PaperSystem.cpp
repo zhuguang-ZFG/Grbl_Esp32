@@ -3,6 +3,7 @@
  * 74HC595 通过 I2S 扩展，需先切�?passthrough 并留足延时，电平才会真正输出�?
  */
 #include "Grbl.h"
+#include "PaperSystemCore.h"
 #ifdef USE_I2S_OUT
 #    include "I2SOut.h"
 #endif
@@ -68,7 +69,7 @@ bool paper_should_ignore_host_reset(void) {
         return false;
     }
     uint32_t now = millis();
-    return paper_ignore_host_reset_until_ms != 0 && now < paper_ignore_host_reset_until_ms;
+    return paper_deadline_active(now, paper_ignore_host_reset_until_ms);
 }
 #endif
 
@@ -187,106 +188,39 @@ static inline bool paper_should_abort_change(void) {
     return sys.abort || paper_user_stop_requested;
 }
 
-// ponytail: 统一脉冲时序 + 单/双 STEP 输出；各场景只选 profile，不再复制 yield 循环
-enum PaperPulseProfile : uint8_t {
-    PaperPulsePanel,
-    PaperPulseFeederFeed,
-    PaperPulseFeederFind,
-    PaperPulseClamp,
-    PaperPulsePanelFast,
-#ifdef PAPER_EJECT_NORMAL_HI_US
-    PaperPulsePanelEject,
-#endif
-};
-
 static void paper_profile_timing(PaperPulseProfile profile, uint32_t step_index, uint32_t* hi_us, uint32_t* lo_us) {
-#ifndef USE_I2S_OUT
-    if (profile == PaperPulseFeederFind) {
-        if (step_index < PAPER_RAMP_STEPS) {
-            *hi_us = FEEDER_FIND_RAMP_HI_US;
-            *lo_us = FEEDER_FIND_RAMP_LO_US;
-        } else {
-            *hi_us = FEEDER_FIND_NORMAL_HI_US;
-            *lo_us = FEEDER_FIND_NORMAL_LO_US;
-        }
+    const PaperTimingConfig config = {
+#ifdef USE_I2S_OUT
+        true,
+#else
+        false,
+#endif
 #ifdef PAPER_EJECT_NORMAL_HI_US
-    } else if (profile == PaperPulsePanelEject) {
-        if (step_index < PAPER_RAMP_STEPS) {
-            *hi_us = PAPER_EJECT_RAMP_HI_US;
-            *lo_us = PAPER_EJECT_RAMP_LO_US;
-        } else {
-            *hi_us = PAPER_EJECT_NORMAL_HI_US;
-            *lo_us = PAPER_EJECT_NORMAL_LO_US;
-        }
+        true,
+#else
+        false,
 #endif
-    } else if (profile == PaperPulsePanelFast) {
-        if (step_index < PAPER_PANEL_FAST_RAMP_STEPS) {
-            *hi_us = 400u;
-            *lo_us = 400u;
-        } else {
-            *hi_us = PAPER_PANEL_FAST_HI_US;
-            *lo_us = PAPER_PANEL_FAST_LO_US;
-        }
-    } else {
-        *hi_us = 500u;
-        *lo_us = 500u;
-    }
-    return;
-#endif
-    switch (profile) {
-        case PaperPulseClamp:
-            *hi_us = PAPER_CLAMP_HI_US;
-            *lo_us = PAPER_CLAMP_LO_US;
-            break;
-        case PaperPulseFeederFind:
-            if (step_index < PAPER_RAMP_STEPS) {
-                *hi_us = FEEDER_FIND_RAMP_HI_US;
-                *lo_us = FEEDER_FIND_RAMP_LO_US;
-            } else {
-                *hi_us = FEEDER_FIND_NORMAL_HI_US;
-                *lo_us = FEEDER_FIND_NORMAL_LO_US;
-            }
-            break;
-        case PaperPulseFeederFeed:
-            if (step_index < PAPER_RAMP_STEPS) {
-                *hi_us = FEEDER_FEED_RAMP_HI_US;
-                *lo_us = FEEDER_FEED_RAMP_LO_US;
-            } else {
-                *hi_us = FEEDER_FEED_NORMAL_HI_US;
-                *lo_us = FEEDER_FEED_NORMAL_LO_US;
-            }
-            break;
-        case PaperPulsePanelFast:
-            if (step_index < PAPER_PANEL_FAST_RAMP_STEPS) {
-                *hi_us = PAPER_RAMP_HI_US;
-                *lo_us = PAPER_RAMP_LO_US;
-            } else {
-                *hi_us = PAPER_PANEL_FAST_HI_US;
-                *lo_us = PAPER_PANEL_FAST_LO_US;
-            }
-            break;
+        PAPER_RAMP_STEPS,
+        PAPER_PANEL_FAST_RAMP_STEPS,
+        {PAPER_RAMP_HI_US, PAPER_RAMP_LO_US},
+        {PAPER_NORMAL_HI_US, PAPER_NORMAL_LO_US},
+        {PAPER_CLAMP_HI_US, PAPER_CLAMP_LO_US},
+        {FEEDER_FIND_RAMP_HI_US, FEEDER_FIND_RAMP_LO_US},
+        {FEEDER_FIND_NORMAL_HI_US, FEEDER_FIND_NORMAL_LO_US},
+        {FEEDER_FEED_RAMP_HI_US, FEEDER_FEED_RAMP_LO_US},
+        {FEEDER_FEED_NORMAL_HI_US, FEEDER_FEED_NORMAL_LO_US},
+        {PAPER_PANEL_FAST_HI_US, PAPER_PANEL_FAST_LO_US},
 #ifdef PAPER_EJECT_NORMAL_HI_US
-        case PaperPulsePanelEject:
-            if (step_index < PAPER_RAMP_STEPS) {
-                *hi_us = PAPER_EJECT_RAMP_HI_US;
-                *lo_us = PAPER_EJECT_RAMP_LO_US;
-            } else {
-                *hi_us = PAPER_EJECT_NORMAL_HI_US;
-                *lo_us = PAPER_EJECT_NORMAL_LO_US;
-            }
-            break;
+        {PAPER_EJECT_RAMP_HI_US, PAPER_EJECT_RAMP_LO_US},
+        {PAPER_EJECT_NORMAL_HI_US, PAPER_EJECT_NORMAL_LO_US},
+#else
+        {PAPER_RAMP_HI_US, PAPER_RAMP_LO_US},
+        {PAPER_NORMAL_HI_US, PAPER_NORMAL_LO_US},
 #endif
-        case PaperPulsePanel:
-        default:
-            if (step_index < PAPER_RAMP_STEPS) {
-                *hi_us = PAPER_RAMP_HI_US;
-                *lo_us = PAPER_RAMP_LO_US;
-            } else {
-                *hi_us = PAPER_NORMAL_HI_US;
-                *lo_us = PAPER_NORMAL_LO_US;
-            }
-            break;
-    }
+    };
+    const PaperPulseTiming timing = paper_profile_timing_core(profile, step_index, config);
+    *hi_us                       = timing.high_us;
+    *lo_us                       = timing.low_us;
 }
 
 static void paper_pulse_us(uint8_t step_a, uint8_t step_b, uint32_t hi_us, uint32_t lo_us) {
@@ -568,7 +502,7 @@ static inline bool paper_sensor_stable() {
         }
         delayMicroseconds(PAPER_SENSOR_STABLE_INTERVAL_US);
     }
-    return count_low >= PAPER_SENSOR_STABLE_THRESHOLD;  // 多数 LOW 才认为有纸
+    return paper_sensor_stable_core(count_low, PAPER_SENSOR_STABLE_SAMPLES, PAPER_SENSOR_STABLE_THRESHOLD);
 }
 
 // 设定方向并发送 N 步脉冲（DIR 先稳定再 STEP，避免丢步）
