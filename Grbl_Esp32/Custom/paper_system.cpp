@@ -3,6 +3,7 @@
 // Custom code for paper-handling system (paper sensor + paper-change motors)
 // Enabled via CUSTOM_CODE_FILENAME in custom_3axis_hr4988.h
 #include "../src/PaperSystemCore.h"
+#include "../src/LicenseCore.h"
 //
 // 注意：本文件通过 CustomCode.cpp 间接包含，那里已包含 Grbl.h，
 // 这里不需要再次 include。
@@ -123,11 +124,7 @@ static uint32_t license_expected_code()
     uint64_t chipid = ESP.getEfuseMac();
     uint32_t h      = (uint32_t)(chipid >> 32);
     uint32_t l      = (uint32_t)(chipid & 0xFFFFFFFFu);
-    uint32_t mix    = h ^ l ^ LICENSE_SECRET_KEY_H ^ LICENSE_SECRET_KEY_L;
-    mix             = (mix << 7) | (mix >> (32 - 7));
-    mix            ^= LICENSE_SECRET_KEY_H;
-    mix            ^= (LICENSE_SECRET_KEY_L << 13) | (LICENSE_SECRET_KEY_L >> 19);
-    return mix;
+    return LicenseCore::code_for_chip(h, l, LICENSE_SECRET_KEY_H, LICENSE_SECRET_KEY_L);
 }
 
 // 覆盖 Grbl.cpp 中的弱符号，用于在核心代码中检查授权
@@ -259,7 +256,7 @@ Error paper_gcode_on_after_origin(bool homing_command, bool block_executed_seek)
 bool license_set_from_p_param(uint32_t p_value)
 {
     uint32_t expect = license_expected_code();
-    if (p_value == expect) {
+    if (LicenseCore::code_matches(expect, p_value)) {
         license_ok = true;
         license_save_to_nvs();
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[License] OK for this chip (saved to NVS)");

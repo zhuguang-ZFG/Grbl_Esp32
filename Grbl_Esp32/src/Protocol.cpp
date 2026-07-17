@@ -23,6 +23,7 @@
 */
 
 #include "Grbl.h"
+#include "ProtocolDecisionCore.h"
 #include "WebUI/BTState.h"
 
 static void protocol_exec_rt_suspend();
@@ -106,38 +107,18 @@ bool can_park() {
 // 规划器接近断粮时优先吃 BT 队列里已到达的 G 代码（不依赖上位机降速）
 static const uint8_t PLANNER_STARVE_THRESHOLD = 8;
 
-// G0–G3 会真正走运动；G92/G10 等设置类指令不在此列
-static bool protocol_line_is_motion_gcode_g0_g3(const char* line) {
-    while (*line == ' ' || *line == '\t') {
-        line++;
-    }
-    if (*line != 'G' && *line != 'g') {
-        return false;
-    }
-    if (line[1] == '\0' || line[1] == '\r' || line[1] == '\n') {
-        return false;
-    }
-    line++;
-    while (*line == ' ' || *line == '\t') {
-        line++;
-    }
-    char d = *line;
-    return (d >= '0' && d <= '3');
-}
-
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
 // 换纸阻塞期间：不执行 G0–G3，保留 G92 等设置指令
 static bool protocol_defer_host_motion_line_during_paper_change(const char* line) {
-    if (!paper_auto_change_is_running()) {
-        return false;
-    }
-    return protocol_line_is_motion_gcode_g0_g3(line);
+    bool modal_motion_active = gc_state.modal.motion == Motion::Seek || gc_state.modal.motion == Motion::Linear ||
+                               gc_state.modal.motion == Motion::CwArc || gc_state.modal.motion == Motion::CcwArc;
+    return ProtocolDecisionCore::should_defer_motion(line, paper_auto_change_is_running(), modal_motion_active);
 }
 
 static void protocol_notify_paper_motion_deferred(void) {
     static uint32_t last_defer_msg_ms = 0;
     uint32_t        now_ms            = millis();
-    if (last_defer_msg_ms != 0 && (now_ms - last_defer_msg_ms) < 3000u) {
+    if (!ProtocolDecisionCore::defer_notice_due(now_ms, last_defer_msg_ms)) {
         return;
     }
     last_defer_msg_ms = now_ms;
@@ -193,17 +174,21 @@ static bool protocol_poll_client(uint8_t client) {
                     break;
                 }
 #endif
-                if (!check_license() && protocol_line_is_motion_gcode_g0_g3(line)) {
-                    license_notify_motion_blocked();
-                    report_status_message(Error::AuthenticationFailed, client);
-                    if (client == CLIENT_BT) {
+                {
+                    bool modal_motion_active = gc_state.modal.motion == Motion::Seek || gc_state.modal.motion == Motion::Linear ||
+                                               gc_state.modal.motion == Motion::CwArc || gc_state.modal.motion == Motion::CcwArc;
+                    if (!check_license() && ProtocolDecisionCore::is_motion_line(line, modal_motion_active)) {
+                        license_notify_motion_blocked();
+                        report_status_message(Error::AuthenticationFailed, client);
+                        if (client == CLIENT_BT) {
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-                        paper_bt_on_first_host_ack();
+                            paper_bt_on_first_host_ack();
 #endif
+                        }
+                        empty_line(client);
+                        line_executed = true;
+                        break;
                     }
-                    empty_line(client);
-                    line_executed = true;
-                    break;
                 }
                 report_status_message(execute_line(line, client, WebUI::AuthenticationLevel::LEVEL_GUEST), client);
                 if (client == CLIENT_BT) {

@@ -4,6 +4,7 @@
  */
 #include "Grbl.h"
 #include "PaperSystemCore.h"
+#include "PaperBtAckCore.h"
 #ifdef USE_I2S_OUT
 #    include "I2SOut.h"
 #endif
@@ -48,6 +49,19 @@ static volatile uint32_t paper_ignore_host_reset_until_ms = 0;
 static portMUX_TYPE paper_bt_auto_mux                      = portMUX_INITIALIZER_UNLOCKED;
 static volatile bool paper_bt_connect_auto_change_pending  = false;
 static volatile bool paper_bt_auto_change_after_ack_armed  = false;
+
+static PaperBtAckState paper_bt_ack_state(void) {
+    PaperBtAckState state;
+    state.armed = paper_bt_auto_change_after_ack_armed;
+    state.pending = paper_bt_connect_auto_change_pending;
+    state.running = paper_auto_change_running;
+    return state;
+}
+
+static void paper_bt_store_ack_state(const PaperBtAckState& state) {
+    paper_bt_auto_change_after_ack_armed = state.armed;
+    paper_bt_connect_auto_change_pending = state.pending;
+}
 
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
 // 换纸期间用户触发 feed hold / safety door：映射为"纸路急停 + 换纸中止"，
@@ -905,8 +919,7 @@ void paper_bt_on_spp_connected(void) {
     return;
 #endif
     portENTER_CRITICAL(&paper_bt_auto_mux);
-    paper_bt_connect_auto_change_pending = false;
-    paper_bt_auto_change_after_ack_armed  = true;
+    paper_bt_store_ack_state(paper_bt_ack_reduce(paper_bt_ack_state(), PaperBtAckEvent::SppConnected));
     portEXIT_CRITICAL(&paper_bt_auto_mux);
 }
 
@@ -918,8 +931,7 @@ void paper_bt_on_spp_disconnected(void) {
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] BT disconnect while paper change running (will complete or abort via reset)");
     }
     portENTER_CRITICAL(&paper_bt_auto_mux);
-    paper_bt_connect_auto_change_pending = false;
-    paper_bt_auto_change_after_ack_armed = false;
+    paper_bt_store_ack_state(paper_bt_ack_reduce(paper_bt_ack_state(), PaperBtAckEvent::SppDisconnected));
     portEXIT_CRITICAL(&paper_bt_auto_mux);
 }
 
