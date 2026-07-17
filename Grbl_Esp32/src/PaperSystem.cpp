@@ -4,6 +4,7 @@
  */
 #include "Grbl.h"
 #include "PaperSystemCore.h"
+#include "PaperSearchCore.h"
 #include "PaperBtAckCore.h"
 #ifdef USE_I2S_OUT
 #    include "I2SOut.h"
@@ -650,13 +651,18 @@ Error paper_auto_change(void) {
             i2s_out_delay();
             delay(2);
 #endif
-            while (steps < FEEDER_FIND_STEPS_MAX) {
-                if (paper_sensor_stable()) {  // 改用防抖读取
+            while (true) {
+                PaperSearchDecision search = paper_sensor_edge_decide(
+                    paper_sensor_stable(), true, millis() - t0_ms, steps, FEEDER_FIND_STEPS_MAX, PAPER_SENSOR_TIMEOUT_MS);
+                if (search == PaperSearchDecision::Found) {
                     found = true;
                     break;
                 }
-                if ((millis() - t0_ms) >= PAPER_SENSOR_TIMEOUT_MS) {
+                if (search == PaperSearchDecision::TimedOut) {
                     timeout_10s = true;
+                    break;
+                }
+                if (search == PaperSearchDecision::StepLimit) {
                     break;
                 }
                 paper_pulses(FEEDER_MOTOR_STEP_PIN, PAPER_DISABLED, 1, PaperPulseFeederFind);  // 找传感器阶段：加速一倍
@@ -792,9 +798,17 @@ Error paper_auto_change(void) {
             i2s_out_delay();
             delay(2);
 #endif
-            while (paper_sensor_stable() && steps < PANEL_FAST_STEPS_MAX) {
-                if ((millis() - t0_ms) >= PAPER_SENSOR_TIMEOUT_MS) {
+            while (true) {
+                PaperSearchDecision search = paper_sensor_edge_decide(
+                    paper_sensor_stable(), false, millis() - t0_ms, steps, PANEL_FAST_STEPS_MAX, PAPER_SENSOR_TIMEOUT_MS);
+                if (search == PaperSearchDecision::Found) {
+                    break;
+                }
+                if (search == PaperSearchDecision::TimedOut) {
                     jam_timeout = true;
+                    break;
+                }
+                if (search == PaperSearchDecision::StepLimit) {
                     break;
                 }
                 {
@@ -848,9 +862,17 @@ Error paper_auto_change(void) {
         i2s_out_delay();
         delay(2);
 #endif
-        while (!paper_sensor_stable() && steps < PANEL_BACK_STEPS_MAX) {
-            if ((millis() - t0_ms) >= PAPER_SENSOR_TIMEOUT_MS) {
+        while (true) {
+            PaperSearchDecision search = paper_sensor_edge_decide(
+                paper_sensor_stable(), true, millis() - t0_ms, steps, PANEL_BACK_STEPS_MAX, PAPER_SENSOR_TIMEOUT_MS);
+            if (search == PaperSearchDecision::Found) {
+                break;
+            }
+            if (search == PaperSearchDecision::TimedOut) {
                 timeout_15s = true;
+                break;
+            }
+            if (search == PaperSearchDecision::StepLimit) {
                 break;
             }
             paper_step_pulses(PANEL_MOTOR_STEP_PIN, 1);
