@@ -41,9 +41,6 @@ void client_write(uint8_t client, const char* text);
 // Fetches the first byte in the serial read buffer. Called by main program.
 int client_read(uint8_t client);
 
-// See if the character is an action command like feedhold or jogging. If so, do the action and return true
-uint8_t check_action_command(uint8_t data);
-
 void client_init();
 void client_reset_read_buffer(uint8_t client);
 int  client_buffer_available_for_write(uint8_t client);

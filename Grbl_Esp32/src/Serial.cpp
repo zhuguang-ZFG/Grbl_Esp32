@@ -175,7 +175,6 @@ static uint8_t getClientChar(uint8_t* data) {
 void clientCheckTask(void* pvParameters) {
     uint8_t            data = 0;
     uint8_t            client;  // who sent the data
-    static UBaseType_t uxHighWaterMark = 0;
     while (true) {  // run continuously
         while ((client = getClientChar(&data)) != CLIENT_ALL) {
             // Pick off realtime command characters directly from the serial stream. These characters are
@@ -245,6 +244,9 @@ int client_buffer_available_for_write(uint8_t client) {
 
 // Fetches the first byte in the client read buffer. Called by protocol loop.
 int client_read(uint8_t client) {
+    if (client >= CLIENT_COUNT) {  // guard CLIENT_ALL (0xFF) / stray values, like client_buffer_available_for_write
+        return -1;
+    }
     vTaskEnterCritical(&myMutex);
     int data = client_buffer[client].read();
     vTaskExitCritical(&myMutex);

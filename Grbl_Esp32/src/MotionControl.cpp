@@ -545,7 +545,13 @@ void mc_reset() {
                     sys_rt_exec_alarm = ExecAlarm::HomingFailReset;
                 }
             } else {
-                sys_rt_exec_alarm = ExecAlarm::AbortCycle;
+                // Only set AbortCycle if no alarm is already pending, matching the
+                // Homing branch. Otherwise a hard/soft-limit alarm set just before
+                // mc_reset() finishes (limit ISR path sets EXEC_RESET then the
+                // alarm) would be clobbered by AbortCycle, losing the real cause.
+                if (sys_rt_exec_alarm == ExecAlarm::None) {
+                    sys_rt_exec_alarm = ExecAlarm::AbortCycle;
+                }
             }
             st_go_idle();  // Force kill steppers. Position has likely been lost.
         }
