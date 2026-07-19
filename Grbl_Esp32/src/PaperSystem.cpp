@@ -79,7 +79,12 @@ void paper_request_user_stop(void) {
     paper_user_stop_requested = true;
 }
 
-bool paper_should_ignore_host_reset(void) {
+bool paper_should_ignore_host_reset(uint8_t client) {
+    // Only swallow BT-originated soft-reset noise during paper change.
+    // USB/serial/WebUI 0x18 must remain an emergency stop (F3/P6).
+    if (client != CLIENT_BT) {
+        return false;
+    }
     if (!paper_auto_change_running) {
         return false;
     }
@@ -601,30 +606,29 @@ Error paper_auto_change(void) {
         return Error::IdleError;
     }
 
-    // 互斥保护：防止 M30、[ESP910]、BT 重连预约同时触发导致嵌套执行。
-    // 必须返回非 Ok：否则 user_m30 / paper_gcode_invoke 会把 busy 当成功，
-    // 错误置 paper_change_last_ok 与 paper_m30_just_completed（阻塞 yield 中可再执行 M30/M721）。
-    if (paper_auto_change_running) {
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Already running, rejected");
-        return Error::AnotherInterfaceBusy;
-    }
-
     // 换纸会直接软件打脉冲驱动纸路电机；先排空已排队的 XYZ 运动，
     // 避免与主步进 ISR 并发出料（M721/[ESP910]/BT 重连入口原本均无 buffer 同步）。
     // M30/回原点路径在调用前已各自 protocol_buffer_synchronize()，此处二次调用时 buffer 已空，立即返回，无副作用。
+    // Drain BEFORE claiming running so concurrent callers only race the atomic claim below (F1).
     protocol_buffer_synchronize();
+    if (sys.abort) {
+        return Error::MessageFailed;
+    }
 
-    // 允许起始有纸：用于“开始队列前出旧纸”和“M30 后出本页再进下一页”。第 1 步会先弹旧纸，再进新纸。
-    paper_btn_reset_press_state();
-    // 入口清急停标志：两个超时失败退出路径（feeder/fast-feed timeout）直接置 running=false 返回、
-    // 不走 abort_cleanup，若上轮换纸在 timeout 退出前恰好收到 feed hold，标志会残留并误中止本轮。
-    // 在此统一清除，保证每轮换纸开始时标志干净，与 running=true 同步。
-    // ponytail: critical section 仅窄序防"先清 stop 再设 running"的 TOCTOU（ISR 进不了已持自旋锁）；
-// 非对 stop 标志的完整互斥——bool volatile 读写各自原子，读取方不加锁即可。
+    // Atomic claim: busy check + running=true + clear stop in ONE critical section.
+    // Must return non-Ok on busy: otherwise user_m30 / paper_gcode_invoke treat busy as success.
     portENTER_CRITICAL(&paper_bt_auto_mux);
+    if (paper_auto_change_running) {
+        portEXIT_CRITICAL(&paper_bt_auto_mux);
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Already running, rejected");
+        return Error::AnotherInterfaceBusy;
+    }
     paper_auto_change_running = true;
     paper_user_stop_requested = false;
     portEXIT_CRITICAL(&paper_bt_auto_mux);
+
+    // 允许起始有纸：用于“开始队列前出旧纸”和“M30 后出本页再进下一页”。第 1 步会先弹旧纸，再进新纸。
+    paper_btn_reset_press_state();
     // 保护窗口覆盖换纸最坏路径：Step2/Step6 传感器找纸单次 15s + 重试，
     // 实测可达 ~30-40s；取 60s 上限，期间忽略上位机 0x18 软复位，避免打断弹纸。
     paper_ignore_host_reset_until_ms = millis() + 60000u;
@@ -1201,7 +1205,8 @@ bool paper_auto_change_is_running(void) {
     return false;
 }
 void paper_request_user_stop(void) {}
-bool paper_should_ignore_host_reset(void) {
+bool paper_should_ignore_host_reset(uint8_t client) {
+    (void)client;
     return false;
 }
 #endif

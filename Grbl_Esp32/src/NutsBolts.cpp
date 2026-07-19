@@ -187,10 +187,17 @@ float limit_rate_by_axis_maximum(float* unit_vec) {
 }
 
 float map_float(float x, float in_min, float in_max, float out_min, float out_max) {  // DrawBot_Badge
+    if (in_max == in_min) {
+        return out_min;
+    }
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
 uint32_t map_uint32_t(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_min, uint32_t out_max) {
+    // Guard divide-by-zero when $30==$31 (or misconfigured PWM range).
+    if (in_max == in_min) {
+        return out_min;
+    }
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 

@@ -68,14 +68,28 @@ Error Setting::check(char* s) {
 nvs_handle Setting::_handle = 0;
 
 // ESP-IDF stages nvs_set_* until nvs_commit(); without it, $ settings can be lost on reboot.
-static void nvs_commit_settings() {
+static bool nvs_commit_settings() {
     if (!Setting::_handle) {
-        return;
+        return false;
     }
     esp_err_t err = nvs_commit(Setting::_handle);
     if (err != ESP_OK) {
         grbl_sendf(CLIENT_SERIAL, "nvs_commit failed with error %d\r\n", (int)err);
+        return false;
     }
+    return true;
+}
+
+static bool nvs_erase_key_settings(const char* keyName) {
+    esp_err_t err = nvs_erase_key(Setting::_handle, keyName);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        return true;
+    }
+    if (err != ESP_OK) {
+        grbl_sendf(CLIENT_SERIAL, "nvs_erase_key failed with error %d\r\n", (int)err);
+        return false;
+    }
+    return nvs_commit_settings();
 }
 
 void Setting::init() {
@@ -113,13 +127,13 @@ void IntSetting::load() {
 
 void IntSetting::setDefault() {
     if (_currentIsNvm) {
-        nvs_erase_key(_handle, _keyName);
-        nvs_commit_settings();
+        if (nvs_erase_key_settings(_keyName)) {
+            _storedValue = std::numeric_limits<int32_t>::min();
+        }
     } else {
         _currentValue = _defaultValue;
-        if (_storedValue != _currentValue) {
-            nvs_erase_key(_handle, _keyName);
-            nvs_commit_settings();
+        if (_storedValue != _currentValue && nvs_erase_key_settings(_keyName)) {
+            _storedValue = _currentValue;
         }
     }
 }
@@ -146,14 +160,15 @@ Error IntSetting::setStringValue(char* s) {
 
     if (_storedValue != convertedValue) {
         if (convertedValue == _defaultValue) {
-            nvs_erase_key(_handle, _keyName);
-        } else {
-            if (nvs_set_i32(_handle, _keyName, convertedValue)) {
+            if (!nvs_erase_key_settings(_keyName)) {
                 return Error::NvsSetFailed;
             }
-            _storedValue = convertedValue;
+        } else {
+            if (nvs_set_i32(_handle, _keyName, convertedValue) || !nvs_commit_settings()) {
+                return Error::NvsSetFailed;
+            }
         }
-        nvs_commit_settings();
+        _storedValue = _currentIsNvm ? convertedValue : _currentValue;
     }
     check(NULL);
     return Error::Ok;
@@ -212,9 +227,8 @@ void AxisMaskSetting::load() {
 
 void AxisMaskSetting::setDefault() {
     _currentValue = _defaultValue;
-    if (_storedValue != _currentValue) {
-        nvs_erase_key(_handle, _keyName);
-        nvs_commit_settings();
+    if (_storedValue != _currentValue && nvs_erase_key_settings(_keyName)) {
+        _storedValue = _currentValue;
     }
 }
 
@@ -246,14 +260,13 @@ Error AxisMaskSetting::setStringValue(char* s) {
     _currentValue = convertedValue;
     if (_storedValue != _currentValue) {
         if (_currentValue == _defaultValue) {
-            nvs_erase_key(_handle, _keyName);
-        } else {
-            if (nvs_set_i32(_handle, _keyName, _currentValue)) {
+            if (!nvs_erase_key_settings(_keyName)) {
                 return Error::NvsSetFailed;
             }
-            _storedValue = _currentValue;
+        } else if (nvs_set_i32(_handle, _keyName, _currentValue) || !nvs_commit_settings()) {
+            return Error::NvsSetFailed;
         }
-        nvs_commit_settings();
+        _storedValue = _currentValue;
     }
     check(NULL);
     return Error::Ok;
@@ -303,7 +316,7 @@ FloatSetting::FloatSetting(const char*   description,
                            float         maxVal,
                            bool (*checker)(char*) = NULL) :
     Setting(description, type, permissions, grblName, name, checker),
-    _defaultValue(defVal), _currentValue(defVal), _minValue(minVal), _maxValue(maxVal) {}
+    _defaultValue(defVal), _currentValue(defVal), _storedValue(defVal), _minValue(minVal), _maxValue(maxVal) {}
 
 void FloatSetting::load() {
     union {
@@ -311,17 +324,17 @@ void FloatSetting::load() {
         float   fval;
     } v;
     if (nvs_get_i32(_handle, _keyName, &v.ival)) {
-        _currentValue = _defaultValue;
+        _storedValue = _defaultValue;
     } else {
-        _currentValue = v.fval;
+        _storedValue = v.fval;
     }
+    _currentValue = _storedValue;
 }
 
 void FloatSetting::setDefault() {
     _currentValue = _defaultValue;
-    if (_storedValue != _currentValue) {
-        nvs_erase_key(_handle, _keyName);
-        nvs_commit_settings();
+    if (_storedValue != _currentValue && nvs_erase_key_settings(_keyName)) {
+        _storedValue = _currentValue;
     }
 }
 
@@ -344,19 +357,20 @@ Error FloatSetting::setStringValue(char* s) {
     _currentValue = convertedValue;
     if (_storedValue != _currentValue) {
         if (_currentValue == _defaultValue) {
-            nvs_erase_key(_handle, _keyName);
+            if (!nvs_erase_key_settings(_keyName)) {
+                return Error::NvsSetFailed;
+            }
         } else {
             union {
                 int32_t ival;
                 float   fval;
             } v;
             v.fval = _currentValue;
-            if (nvs_set_i32(_handle, _keyName, v.ival)) {
+            if (nvs_set_i32(_handle, _keyName, v.ival) || !nvs_commit_settings()) {
                 return Error::NvsSetFailed;
             }
-            _storedValue = _currentValue;
         }
-        nvs_commit_settings();
+        _storedValue = _currentValue;
     }
     check(NULL);
     return Error::Ok;
@@ -423,9 +437,8 @@ void StringSetting::load() {
 
 void StringSetting::setDefault() {
     _currentValue = _defaultValue;
-    if (_storedValue != _currentValue) {
-        nvs_erase_key(_handle, _keyName);
-        nvs_commit_settings();
+    if (_storedValue != _currentValue && nvs_erase_key_settings(_keyName)) {
+        _storedValue = _currentValue;
     }
 }
 
@@ -440,15 +453,13 @@ Error StringSetting::setStringValue(char* s) {
     _currentValue = s;
     if (_storedValue != _currentValue) {
         if (_currentValue == _defaultValue) {
-            nvs_erase_key(_handle, _keyName);
-            _storedValue = _defaultValue;
-        } else {
-            if (nvs_set_str(_handle, _keyName, _currentValue.c_str())) {
+            if (!nvs_erase_key_settings(_keyName)) {
                 return Error::NvsSetFailed;
             }
-            _storedValue = _currentValue;
+        } else if (nvs_set_str(_handle, _keyName, _currentValue.c_str()) || !nvs_commit_settings()) {
+            return Error::NvsSetFailed;
         }
-        nvs_commit_settings();
+        _storedValue = _currentValue;
     }
     check(NULL);
     return Error::Ok;
@@ -504,9 +515,8 @@ void EnumSetting::load() {
 
 void EnumSetting::setDefault() {
     _currentValue = _defaultValue;
-    if (_storedValue != _currentValue) {
-        nvs_erase_key(_handle, _keyName);
-        nvs_commit_settings();
+    if (_storedValue != _currentValue && nvs_erase_key_settings(_keyName)) {
+        _storedValue = _currentValue;
     }
 }
 
@@ -546,14 +556,13 @@ Error EnumSetting::setStringValue(char* s) {
     _currentValue = it->second;
     if (_storedValue != _currentValue) {
         if (_currentValue == _defaultValue) {
-            nvs_erase_key(_handle, _keyName);
-        } else {
-            if (nvs_set_i8(_handle, _keyName, _currentValue)) {
+            if (!nvs_erase_key_settings(_keyName)) {
                 return Error::NvsSetFailed;
             }
-            _storedValue = _currentValue;
+        } else if (nvs_set_i8(_handle, _keyName, _currentValue) || !nvs_commit_settings()) {
+            return Error::NvsSetFailed;
         }
-        nvs_commit_settings();
+        _storedValue = _currentValue;
     }
     check(NULL);
     return Error::Ok;
@@ -610,9 +619,8 @@ void FlagSetting::load() {
 }
 void FlagSetting::setDefault() {
     _currentValue = _defaultValue;
-    if (_storedValue != _currentValue) {
-        nvs_erase_key(_handle, _keyName);
-        nvs_commit_settings();
+    if (_storedValue != _currentValue && nvs_erase_key_settings(_keyName)) {
+        _storedValue = _currentValue;
     }
 }
 
@@ -628,14 +636,13 @@ Error FlagSetting::setStringValue(char* s) {
     // _currentValue is 0 or 1
     if (_storedValue != (int8_t)_currentValue) {
         if (_currentValue == _defaultValue) {
-            nvs_erase_key(_handle, _keyName);
-        } else {
-            if (nvs_set_i8(_handle, _keyName, _currentValue)) {
+            if (!nvs_erase_key_settings(_keyName)) {
                 return Error::NvsSetFailed;
             }
-            _storedValue = _currentValue;
+        } else if (nvs_set_i8(_handle, _keyName, _currentValue) || !nvs_commit_settings()) {
+            return Error::NvsSetFailed;
         }
-        nvs_commit_settings();
+        _storedValue = _currentValue;
     }
     check(NULL);
     return Error::Ok;
@@ -692,9 +699,8 @@ void IPaddrSetting::load() {
 
 void IPaddrSetting::setDefault() {
     _currentValue = _defaultValue;
-    if (_storedValue != _currentValue) {
-        nvs_erase_key(_handle, _keyName);
-        nvs_commit_settings();
+    if (_storedValue != _currentValue && nvs_erase_key_settings(_keyName)) {
+        _storedValue = _currentValue;
     }
 }
 
@@ -711,14 +717,13 @@ Error IPaddrSetting::setStringValue(char* s) {
     _currentValue = ipaddr;
     if (_storedValue != _currentValue) {
         if (_currentValue == _defaultValue) {
-            nvs_erase_key(_handle, _keyName);
-        } else {
-            if (nvs_set_i32(_handle, _keyName, (int32_t)_currentValue)) {
+            if (!nvs_erase_key_settings(_keyName)) {
                 return Error::NvsSetFailed;
             }
-            _storedValue = _currentValue;
+        } else if (nvs_set_i32(_handle, _keyName, (int32_t)_currentValue) || !nvs_commit_settings()) {
+            return Error::NvsSetFailed;
         }
-        nvs_commit_settings();
+        _storedValue = _currentValue;
     }
     check(NULL);
     return Error::Ok;
@@ -753,23 +758,8 @@ Error GrblCommand::action(char* value, WebUI::AuthenticationLevel auth_level, We
 Coordinates* coords[CoordIndex::End];
 
 bool Coordinates::load() {
-    size_t len;
-    switch (nvs_get_blob(Setting::_handle, _name, _currentValue, &len)) {
-        case ESP_OK:
-            return true;
-        case ESP_ERR_NVS_INVALID_LENGTH:
-            // This could happen if the stored value is longer than the buffer.
-            // That is highly unlikely since we always store MAX_N_AXIS coordinates.
-            // It would indicate that we have decreased MAX_N_AXIS since the
-            // value was stored.  We don't flag it as an error, but rather
-            // accept the initial coordinates and ignore the residue.
-            // We could issue a warning message if we were so inclined.
-            return true;
-        case ESP_ERR_NVS_INVALID_NAME:
-        case ESP_ERR_NVS_INVALID_HANDLE:
-        default:
-            return false;
-    }
+    size_t len = sizeof(_currentValue);
+    return nvs_get_blob(Setting::_handle, _name, _currentValue, &len) == ESP_OK && len == sizeof(_currentValue);
 };
 
 void Coordinates::set(float value[MAX_N_AXIS]) {
@@ -777,7 +767,15 @@ void Coordinates::set(float value[MAX_N_AXIS]) {
 #ifdef FORCE_BUFFER_SYNC_DURING_NVS_WRITE
     protocol_buffer_synchronize();
 #endif
-    if (nvs_set_blob(Setting::_handle, _name, _currentValue, sizeof(_currentValue)) == ESP_OK) {
-        nvs_commit_settings();
+    if (nvs_set_blob(Setting::_handle, _name, _currentValue, sizeof(_currentValue)) != ESP_OK ||
+        !nvs_commit_settings()) {
+        grbl_sendf(CLIENT_SERIAL, "nvs coordinate write failed for %s\r\n", _name);
     }
+}
+
+Error Setting::eraseNVS(const char* value, WebUI::AuthenticationLevel auth_level, WebUI::ESPResponseStream* out) {
+    if (nvs_erase_all(_handle) != ESP_OK || !nvs_commit_settings()) {
+        return Error::NvsSetFailed;
+    }
+    return Error::Ok;
 }

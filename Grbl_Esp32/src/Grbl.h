@@ -153,4 +153,5 @@ bool  paper_btn_ignore_control_events(void);  // 换纸后冷却或蓝牙抑制�
 #endif
 // Always declared: real impl when GRBL_PAPER_SYSTEM, false stubs in PaperSystem.cpp #else.
 bool  paper_auto_change_is_running(void);  // 换纸流程是否正在执行
-bool  paper_should_ignore_host_reset(void);  // 换纸初期是否忽略上位机 0x18
+// 换纸保护窗内是否忽略该 client 的 0x18。仅 CLIENT_BT 可忽略；USB/串口急停始终生效。
+bool  paper_should_ignore_host_reset(uint8_t client);

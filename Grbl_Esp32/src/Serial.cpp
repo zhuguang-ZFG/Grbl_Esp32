@@ -265,10 +265,11 @@ void execute_realtime_command(Cmd command, uint8_t client) {
     switch (command) {
         case Cmd::Reset:
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-            if (paper_should_ignore_host_reset()) {
+            // Only BT soft-reset noise is swallowed; USB/serial 0x18 always resets (F3/P6).
+            if (paper_should_ignore_host_reset(client)) {
                 grbl_msg_sendf(CLIENT_SERIAL,
                                MsgLevel::Info,
-                               "[PaperAuto] Host reset (0x18) ignored during paper change");
+                               "[PaperAuto] Host reset (0x18) ignored during paper change (BT only)");
                 break;
             }
 #endif

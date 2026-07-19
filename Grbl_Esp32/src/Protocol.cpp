@@ -735,7 +735,8 @@ void protocol_exec_rt_system() {
 
         uint8_t planner_free = plan_get_block_buffer_available();
         const bool paper_running = paper_auto_change_is_running();
-        const bool paper_ignore_reset = paper_should_ignore_host_reset();
+        // Diagnostic only: BT ignore-window active? (USB 0x18 is never ignored.)
+        const bool paper_ignore_reset = paper_should_ignore_host_reset(CLIENT_BT);
         const bool prog_page_end =
             gc_state.modal.program_flow == ProgramFlow::CompletedM30 ||
             gc_state.modal.program_flow == ProgramFlow::CompletedM2;

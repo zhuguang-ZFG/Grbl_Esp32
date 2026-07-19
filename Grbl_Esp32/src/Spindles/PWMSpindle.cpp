@@ -92,7 +92,7 @@ namespace Spindles {
         _pwm_precision = calc_pwm_precision(_pwm_freq);  // detewrmine the best precision
         _pwm_period    = (1 << _pwm_precision);
 
-        if (spindle_pwm_min_value->get() > spindle_pwm_min_value->get()) {
+        if (spindle_pwm_min_value->get() > spindle_pwm_max_value->get()) {
             grbl_msg_sendf(CLIENT_ALL, MsgLevel::Info, "Warning: Spindle min pwm is greater than max. Check $35 and $36");
         }
 

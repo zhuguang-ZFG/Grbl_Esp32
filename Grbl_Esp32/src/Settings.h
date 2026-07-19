@@ -127,10 +127,7 @@ public:
         return Error::Ok;
     }
 
-    static Error eraseNVS(const char* value, WebUI::AuthenticationLevel auth_level, WebUI::ESPResponseStream* out) {
-        nvs_erase_all(_handle);
-        return Error::Ok;
-    }
+    static Error eraseNVS(const char* value, WebUI::AuthenticationLevel auth_level, WebUI::ESPResponseStream* out);
 
     ~Setting() {}
     // Setting(const char *description, group_t group, const char * grblName, const char* fullName, bool (*checker)(char *));
@@ -233,7 +230,7 @@ private:
     const char* _name;
 
 public:
-    Coordinates(const char* name) : _name(name) {}
+    Coordinates(const char* name) : _currentValue{}, _name(name) {}
 
     const char* getName() { return _name; }
     bool        load();
