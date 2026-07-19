@@ -155,7 +155,19 @@ void limits_go_home(uint8_t cycle_mask) {
         sys.homing_axis_lock = axislock;
         // Perform homing cycle. Planner buffer should be empty, as required to initiate the homing cycle.
         pl_data->feed_rate = homing_rate;   // Set current homing rate.
-        plan_buffer_line(target, pl_data);  // Bypass mc_line(). Directly plan homing motion.
+        // Fail closed on a zero-length homing move (e.g. a cycle axis with
+        // $13x=0, or any config that yields no travel this phase). Without this
+        // the empty block is left head-but-not-advanced and st_prep_buffer does
+        // 0/0 (NaN) / 0.5/0 (Inf) math on it, and the do/while below has no
+        // timeout — it would spin until the user sends 0x18.
+        if (plan_buffer_line(target, pl_data) == PLAN_EMPTY_BLOCK) {  // Bypass mc_line(). Directly plan homing motion.
+            motors_set_homing_mode(cycle_mask, false);  // tell motors homing is done...failed
+            sys_rt_exec_alarm = approach ? ExecAlarm::HomingFailApproach : ExecAlarm::HomingFailPulloff;
+            grbl_msg_sendf(CLIENT_ALL, MsgLevel::Debug, "Homing fail: zero-length move (check $27 pull-off and axis $13x travel)");
+            mc_reset();
+            protocol_execute_realtime();
+            return;
+        }
         sys.step_control                  = {};
         sys.step_control.executeSysMotion = true;  // Set to execute homing motion and clear existing flags.
         st_prep_buffer();                          // Prep and fill segment buffer from newly planned block.
