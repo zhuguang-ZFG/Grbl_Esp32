@@ -563,16 +563,18 @@ static Error paper_auto_change_abort_cleanup(const char* reason) {
 
 // 一键自动换纸流程（[ESP910] / M30 调用）
 // 步骤：1 弹旧纸 → 2 进纸器找纸 → 3 松夹 → 4 面板+进纸器同速送纸 → 5 夹紧 → 6 面板快送直到脱传感器 → 7 回找传感器 → 8 最终对位 → 9 失能
-// 结束时会发送 [PaperStatus] N（0=成功，2=进纸超时，3=第7步未找到传感器；1 保留）
+// 结束时会发送 [PaperStatus] N（0=成功，2=进纸超时，3=第7步未找到传感器→Error 非 Ok；1 保留）
 Error paper_auto_change(void) {
     if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
         return Error::GcodeUnsupportedCommand;
     }
 
-    // 互斥保护：防止 M30、[ESP910]、BT 重连预约同时触发导致嵌套执行
+    // 互斥保护：防止 M30、[ESP910]、BT 重连预约同时触发导致嵌套执行。
+    // 必须返回非 Ok：否则 user_m30 / paper_gcode_invoke 会把 busy 当成功，
+    // 错误置 paper_change_last_ok 与 paper_m30_just_completed（阻塞 yield 中可再执行 M30/M721）。
     if (paper_auto_change_running) {
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Already running, ignored");
-        return Error::Ok;
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Already running, rejected");
+        return Error::AnotherInterfaceBusy;
     }
 
     // 换纸会直接软件打脉冲驱动纸路电机；先排空已排队的 XYZ 运动，
@@ -891,8 +893,14 @@ Error paper_auto_change(void) {
                        (unsigned)steps, step7_sensor_ok ? "found" : "NOT_found",
                        timeout_15s ? ", timeout" : "");
         if (!step7_sensor_ok) {
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning, 
-                           "[PaperAuto-7-WARNING] Sensor NOT stable after reverse search - paper may not be in correct position!");
+            // 定位失败必须非 Ok：否则 user_m30 会 last_ok=true 并 arm paper_m30_just_completed，
+            // 下一原点跳过换纸，主机却以为成功。与 Step2/6 超时路径一致走 cleanup + MessageFailed。
+            paper_change_cleanup_common();
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
+                           "[PaperAuto-7] SENSOR_NOT_FOUND: reverse search failed (timeout=%u), paper may be misaligned",
+                           (unsigned)timeout_15s);
+            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_SENSOR_NOT_FOUND);
+            return Error::MessageFailed;
         }
     }
 
@@ -920,7 +928,7 @@ Error paper_auto_change(void) {
     paper_ignore_host_reset_until_ms = 0;
     paper_btn_arm_post_change_cooldown();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] All steps completed successfully!");
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", step7_sensor_ok ? PAPER_STATUS_OK : PAPER_STATUS_SENSOR_NOT_FOUND);
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_OK);
     return Error::Ok;
 }
 

@@ -204,12 +204,14 @@ Error paper_gcode_on_before_motion_modes(AxisCommand axis_command, bool axis_wor
     if (fabsf(x) >= 0.01f || fabsf(y) >= 0.01f || fabsf(z) >= 0.01f) {
         return Error::Ok;
     }
-    paper_change_done_before_first_page = true;
+    // 仅成功后置位：失败保持 false，下一匹配的 G0 X0Y0Z0 可重试首页换纸。
+    // 旧代码先置 true 再 invoke，失败后直到 parser reset 都不再进首页路径。
     protocol_buffer_synchronize();
     Error e = paper_gcode_invoke_user_m30();
     if (e != Error::Ok) {
         return e;
     }
+    paper_change_done_before_first_page = true;
     delay_ms(250);
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] 1st page");
     return Error::Ok;
@@ -302,6 +304,7 @@ void user_m30() {
     Error e = paper_auto_change();
     if (e == Error::Ok) {
         // 换纸完成后机械上 Z 已在抬笔极限（原点），将系统 Z 设为 0，避免下一页首条指令再让 Z 往“上”走
+        // 仅 Error::Ok 视为成功：Busy / SENSOR_NOT_FOUND 等不得置 last_ok，否则会错误 arm M30 skip。
         sys_position[Z_AXIS] = 0;
         plan_sync_position();
         gc_sync_position();
@@ -310,6 +313,7 @@ void user_m30() {
         paper_btn_arm_post_change_cooldown();
         paper_btn_arm_bt_suppress();
     } else {
+        // last_ok 保持 false（入口已清）；paper_gcode_invoke 据此不 arm paper_m30_just_completed
         grbl_msg_sendf(CLIENT_SERIAL,
                        MsgLevel::Warning,
                        "[PaperM30] Auto paper change returned error=%d",
