@@ -234,20 +234,20 @@ void limits_go_home(uint8_t cycle_mask) {
     // set up pull-off maneuver from axes limit switches that have been homed. This provides
     // some initial clearance off the switches and should also help prevent them from falsely
     // triggering when hard limits are enabled or when more than one axes shares a limit pin.
-    int32_t set_axis_position;
     // Set machine positions for homed limit switches. Don't update non-homed axes.
-    auto mask    = homing_dir_mask->get();
     auto pulloff = homing_pulloff->get();
     for (uint8_t idx = 0; idx < n_axis; idx++) {
         auto steps = axis_settings[idx]->steps_per_mm->get();
         if (cycle_mask & bit(idx)) {
-            float travel = axis_settings[idx]->max_travel->get();
-            float mpos   = axis_settings[idx]->home_mpos->get();
+            float mpos = axis_settings[idx]->home_mpos->get();
 
+            // Use lround to match Planner's target conversion (Planner.cpp uses
+            // lround); plain float->int32 truncates toward zero, biasing machine
+            // zero by up to 1 step and asymmetrically for negative mpos.
             if (bit_istrue(homing_dir_mask->get(), bit(idx))) {
-                sys_position[idx] = (mpos + pulloff) * steps;
+                sys_position[idx] = lround((mpos + pulloff) * steps);
             } else {
-                sys_position[idx] = (mpos - pulloff) * steps;
+                sys_position[idx] = lround((mpos - pulloff) * steps);
             }
         }
     }

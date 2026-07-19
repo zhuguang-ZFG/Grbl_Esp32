@@ -267,7 +267,12 @@ static bool checkSoftLimits(char* val) {
 static bool checkHomingEnable(char* val) {
     if (!val) {
         if (homing_enable && !homing_enable->get() && soft_limits && soft_limits->get()) {
-            soft_limits->setDefault();
+            // Force soft limits OFF, not setDefault(): a machine with
+            // DEFAULT_SOFT_LIMIT_ENABLE=1 would otherwise keep/re-enable them
+            // here while printing "disabled", running with a soft-limit envelope
+            // but no machine origin. checkSoftLimits(NULL) is a POST no-op.
+            char off[] = "0";
+            soft_limits->setStringValue(off);
             grbl_msg_sendf(CLIENT_ALL, MsgLevel::Info, "Soft limits disabled because Homing was turned off");
         }
         return true;
@@ -400,13 +405,13 @@ void make_settings() {
     spindle_pwm_off_value = new FloatSetting(
         EXTENDED, WG, "34", "Spindle/PWM/Off", DEFAULT_SPINDLE_OFF_VALUE, 0.0, 100.0, checkSpindleChange);  // these are percentages
     // IntSetting spindle_pwm_bit_precision(EXTENDED, WG, "Spindle/PWM/Precision", DEFAULT_SPINDLE_BIT_PRECISION, 1, 16);
-    spindle_pwm_freq = new FloatSetting(EXTENDED, WG, "33", "Spindle/PWM/Frequency", DEFAULT_SPINDLE_FREQ, 0, 100000, checkSpindleChange);
+    spindle_pwm_freq = new FloatSetting(EXTENDED, WG, "33", "Spindle/PWM/Frequency", DEFAULT_SPINDLE_FREQ, 1, 100000, checkSpindleChange);
     spindle_output_invert = new FlagSetting(GRBL, WG, NULL, "Spindle/PWM/Invert", DEFAULT_INVERT_SPINDLE_OUTPUT_PIN, checkSpindleChange);
 
     spindle_delay_spinup =
         new FloatSetting(EXTENDED, WG, NULL, "Spindle/Delay/SpinUp", DEFAULT_SPINDLE_DELAY_SPINUP, 0, 30, checkSpindleChange);
     spindle_delay_spindown =
-        new FloatSetting(EXTENDED, WG, NULL, "Spindle/Delay/SpinDown", DEFAULT_SPINDLE_DELAY_SPINUP, 0, 30, checkSpindleChange);
+        new FloatSetting(EXTENDED, WG, NULL, "Spindle/Delay/SpinDown", DEFAULT_SPINDLE_DELAY_SPINDOWN, 0, 30, checkSpindleChange);
     coolant_start_delay = new FloatSetting(EXTENDED, WG, NULL, "Coolant/Delay/TurnOn", DEFAULT_COOLANT_DELAY_TURNON, 0, 30);
 
     spindle_enbl_off_with_zero_speed =

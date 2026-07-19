@@ -309,7 +309,7 @@ uint8_t plan_buffer_line(float* target, plan_line_data_t* pl_data) {
 #endif
     // Compute and store initial move distance data.
     int32_t target_steps[MAX_N_AXIS], position_steps[MAX_N_AXIS];
-    float   unit_vec[MAX_N_AXIS], delta_mm;
+    float   unit_vec[MAX_N_AXIS] = { 0 }, delta_mm;  // zero high axes: only [0..n_axis) are set but the whole array is memcpy'd into previous_unit_vec
     uint8_t idx;
     // Copy position data based on type of motion being planned.
     if (block->motion.systemMotion) {
@@ -455,6 +455,13 @@ uint8_t plan_get_block_buffer_count() {
 // Re-initialize buffer plan with a partially completed block, assumed to exist at the buffer tail.
 // Called after a steppers have come to a complete stop for a feed hold and the cycle is stopped.
 void plan_cycle_reinitialize() {
+    // Nothing to re-plan on an empty buffer. Without this, a feed/rapid override
+    // change while Idle (buffer empty) makes planner_recalculate walk the whole
+    // ring, writing entry speeds into stale slots and leaving block_buffer_planned
+    // outside the active range (it self-heals, but on fragile assumptions).
+    if (block_buffer_head == block_buffer_tail) {
+        return;
+    }
     // Re-plan from a complete stop. Reset planner entry speeds and buffer planned pointer.
     st_update_plan_block_parameters();
     block_buffer_planned = block_buffer_tail;
