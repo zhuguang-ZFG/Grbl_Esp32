@@ -107,7 +107,7 @@ namespace Motors {
         uint16_t         _driver_part_number;  // example: use 2209 for TMC2209
         float            _r_sense;
         bool             _has_errors;
-        bool             _disabled;
+        bool             _disabled = true;  // init so the first set_disable() always writes the driver
 
         TrinamicUartMode _mode = TrinamicUartMode::None;
         bool             test();

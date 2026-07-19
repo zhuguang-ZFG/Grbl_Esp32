@@ -378,12 +378,12 @@ namespace Motors {
 
 #ifdef USE_TRINAMIC_ENABLE
         if (_disabled) {
-            tmcstepper->toff(TRINAMIC_TOFF_DISABLE);
+            (tmc2130) ? tmc2130->toff(TRINAMIC_TOFF_DISABLE) : tmc5160->toff(TRINAMIC_TOFF_DISABLE);
         } else {
             if (_mode == TrinamicMode::StealthChop) {
-                tmcstepper->toff(TRINAMIC_TOFF_STEALTHCHOP);
+                (tmc2130) ? tmc2130->toff(TRINAMIC_TOFF_STEALTHCHOP) : tmc5160->toff(TRINAMIC_TOFF_STEALTHCHOP);
             } else {
-                tmcstepper->toff(TRINAMIC_TOFF_COOLSTEP);
+                (tmc2130) ? tmc2130->toff(TRINAMIC_TOFF_COOLSTEP) : tmc5160->toff(TRINAMIC_TOFF_COOLSTEP);
             }
         }
 #endif

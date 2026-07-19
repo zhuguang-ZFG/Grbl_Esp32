@@ -85,7 +85,7 @@ namespace Spindles {
                 rpm               = _min_rpm;
                 sys.spindle_speed = rpm;
                 pwm_value         = 0;
-                grbl_msg_sendf(CLIENT_ALL, MsgLevel::Info, "Spindle RPM less than min RPM:%5.2f %d", rpm, pwm_value);
+                grbl_msg_sendf(CLIENT_ALL, MsgLevel::Info, "Spindle RPM less than min RPM:%u %u", rpm, pwm_value);
             }
         } else {
             // Compute intermediate PWM value with linear spindle speed model.

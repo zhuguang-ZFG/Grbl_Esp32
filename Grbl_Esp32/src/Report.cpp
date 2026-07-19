@@ -387,16 +387,16 @@ void report_gcode_modes(uint8_t client) {
             mode = "G3";
             break;
         case Motion::ProbeToward:
-            mode = "G38.1";
-            break;
-        case Motion::ProbeTowardNoError:
             mode = "G38.2";
             break;
-        case Motion::ProbeAway:
+        case Motion::ProbeTowardNoError:
             mode = "G38.3";
             break;
-        case Motion::ProbeAwayNoError:
+        case Motion::ProbeAway:
             mode = "G38.4";
+            break;
+        case Motion::ProbeAwayNoError:
+            mode = "G38.5";
             break;
     }
     strcat(modes_rpt, mode);

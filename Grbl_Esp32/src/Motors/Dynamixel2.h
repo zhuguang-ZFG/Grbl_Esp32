@@ -121,7 +121,7 @@ namespace Motors {
         uint8_t     _rts_pin;
         uart_port_t _uart_num;
 
-        bool _disabled;
+        bool _disabled = true;  // init so the first set_disable() always writes the servo
         bool _has_errors;
     };
 }

@@ -109,7 +109,7 @@ namespace Motors {
         float           _r_sense;
         int8_t          _spi_index;
         bool            _has_errors;
-        bool            _disabled;
+        bool            _disabled = true;  // init so the first set_disable() always writes the driver
 
         TrinamicMode _mode = TrinamicMode::None;
         bool         test();

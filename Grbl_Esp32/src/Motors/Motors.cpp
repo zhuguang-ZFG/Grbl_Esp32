@@ -455,7 +455,16 @@ void motors_set_disable(bool disable, uint8_t mask) {
     }
 
     // global disable.
-    digitalWrite(STEPPERS_DISABLE_PIN, disable);
+    // Only drive the shared STEPPERS_DISABLE_PIN when the mask covers every
+    // active axis; a partial mask (e.g. a single-axis $MD/$Motor/Disable) must
+    // not disable all motors via the global pin.
+    uint8_t all_axes_mask = 0;
+    for (uint8_t axis = X_AXIS; axis < n_axis; axis++) {
+        all_axes_mask |= bit(axis);
+    }
+    if ((mask & all_axes_mask) == all_axes_mask) {
+        digitalWrite(STEPPERS_DISABLE_PIN, disable);
+    }
 
     // Add an optional delay for stepper drivers. that need time
     // Some need time after the enable before they can step.

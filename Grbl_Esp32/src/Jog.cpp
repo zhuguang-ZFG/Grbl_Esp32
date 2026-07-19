@@ -44,6 +44,12 @@ Error jog_execute(plan_line_data_t* pl_data, parser_block_t* gc_block, bool* can
     }
     // Valid jog command. Plan, set state, and execute.
     if (!cartesian_to_motors(gc_block->values.xyz, pl_data, gc_state.position)) {
+        // The jog line was not queued (e.g. an in-flight jog cancel nulled the
+        // inflight plan data). Signal the caller so it does not advance
+        // gc_state.position to a target the machine never reached.
+        if (cancelledInflight != NULL) {
+            *cancelledInflight = true;
+        }
         return Error::JogCancelled;
     }
 

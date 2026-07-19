@@ -240,11 +240,6 @@
 // P1: Clamp motor DIR
 // P2: Panel motor DIR
 // P3: Feeder motor DIR
-#define USER_DIGITAL_PIN_0      PAPER_ENABLE_PIN
-#define USER_DIGITAL_PIN_1      CLAMP_MOTOR_DIR_PIN
-#define USER_DIGITAL_PIN_2      PANEL_MOTOR_DIR_PIN
-#define USER_DIGITAL_PIN_3      FEEDER_MOTOR_DIR_PIN
-
 // Map user digital outputs (M62..M65 Px) to paper-handling signals
 // M62/M64 Px = ON (HIGH), M63/M65 Px = OFF (LOW)
 // P0: Paper-change HR4988 enable (LOW=enable, HIGH=disable) - note: logic is active LOW at driver side

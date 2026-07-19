@@ -199,7 +199,11 @@ namespace Spindles {
                 // Apparently some Huanyang report modbus errors in the correct way, and the rest not. Sigh.
                 // Let's just check for the condition, and truncate the first byte.
                 if (read_length > 0 && VFD_RS485_ADDR != 0 && rx_message[0] == 0) {
-                    memmove(rx_message + 1, rx_message, read_length - 1);
+                    // Drop the spurious leading 0x00: shift the payload left by one
+                    // and decrement the count (the old code copied right, which
+                    // duplicated bytes and left the zero in place).
+                    memmove(rx_message, rx_message + 1, read_length - 1);
+                    read_length -= 1;
                 }
 
                 while (read_length < next_cmd.rx_length && current_read > 0) {
@@ -533,6 +537,13 @@ namespace Spindles {
 
         // apply override
         rpm = rpm * sys.spindle_speed_ovr / 100;  // Scale by spindle speed override value (uint8_t percent)
+
+        // Guard against a divide-by-zero in the subclass set_speed_command (rpm*.../_max_rpm)
+        // when _max_rpm is unset/misconfigured ($30=0 or an init read that returned 0).
+        if (_max_rpm == 0) {
+            sys.spindle_speed = 0;
+            return 0;
+        }
 
         if (rpm != 0 && (rpm < _min_rpm || rpm > _max_rpm)) {
             // NOTE: Don't add a info message here; this method is called from the stepper_pulse_func ISR method, so

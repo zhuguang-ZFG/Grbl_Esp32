@@ -188,8 +188,8 @@ namespace Spindles {
 #endif
 
 #ifdef SPINDLE_REVERSE_PIN
-        gpio_reset_pin(SPINDLE_FORWARD_PIN);
-        pinMode(SPINDLE_FORWARD_PIN, INPUT);
+        gpio_reset_pin(SPINDLE_REVERSE_PIN);
+        pinMode(SPINDLE_REVERSE_PIN, INPUT);
 #endif
     }
 }
