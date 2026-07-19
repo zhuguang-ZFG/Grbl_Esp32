@@ -112,6 +112,8 @@ Host SIL `agent_gate quick` 仍绿；下列为**残余真实问题**，非「已
 | Low | Stepper overrun 恢复在一次 ISR 内连跑多 tick，极端负载下拉长 ISR（已 cap=3） | `Stepper.cpp` | 可改为每 tick 只补 1 步 |
 | Design | ESP910 **WG**；60s 忽略 0x18；明文 auth | 见 §3 折中 | 开 HTTP 前评估 |
 
+**Atom minor cleanup (post e5dbdf4):** 成功路径 cooldown / first-page 仅在 `paper_auto_change()` 内 arm；`user_m30` / BT 成功路径只保留各自需要的 `bt_suppress` + Z=0。
+
 **已确认仍成立（勿回退）：** S1 program_flow 清零；P1 G28/G38/`$H` defer；P2 Idle 门；W1 登录；W3/W4；M1 nvs_commit；M2 re-arm；M3 `$21`→`limits_init`。
 
 ## 7. 相关文档

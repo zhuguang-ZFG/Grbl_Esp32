@@ -1062,9 +1062,8 @@ void paper_poll_bt_connect_auto_change(void) {
         sys_position[Z_AXIS] = 0;
         plan_sync_position();
         gc_sync_position();
-        paper_mark_first_page_change_done();
-        paper_btn_arm_post_change_cooldown();
-        paper_btn_arm_bt_suppress();
+        // first-page mark + post-change cooldown already inside paper_auto_change() success path
+        paper_btn_arm_bt_suppress();  // SPP just connected: suppress Macro0 RF glitches
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtConnect] Auto paper change completed.");
     } else {
         grbl_msg_sendf(CLIENT_SERIAL,
@@ -1123,6 +1122,7 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
                 }
             }
             if (sys.state != State::Idle) {
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperMotor] M%u rejected: not idle (state=%d)", (unsigned)code, (int)sys.state);
                 return Error::IdleError;
             }
             uint16_t nsteps = (steps > 0 && steps <= 10000) ? steps : 200;
@@ -1149,6 +1149,7 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
                 }
             }
             if (sys.state != State::Idle) {
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperMotor] M716 rejected: not idle (state=%d)", (int)sys.state);
                 return Error::IdleError;
             }
             // 步数：0 表示使用 CLAMP_TOGGLE_STEPS（与自动换纸流程保持一致）

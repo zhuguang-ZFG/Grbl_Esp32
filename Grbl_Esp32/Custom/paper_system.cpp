@@ -322,8 +322,8 @@ void user_m30() {
         gc_sync_position();
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperM30] Auto paper change completed.");
         paper_change_last_ok = true;
-        paper_btn_arm_post_change_cooldown();
-        paper_btn_arm_bt_suppress();
+        // Cooldown + first-page mark already done inside paper_auto_change() on success.
+        paper_btn_arm_bt_suppress();  // M30 page-end: extra RF suppress for BT hosts
     } else {
         // last_ok 保持 false（入口已清）；paper_gcode_invoke 据此不 arm paper_m30_just_completed
         grbl_msg_sendf(CLIENT_SERIAL,
