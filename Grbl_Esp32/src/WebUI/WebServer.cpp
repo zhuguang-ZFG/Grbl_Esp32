@@ -328,7 +328,7 @@ namespace WebUI {
                         if ((v == -1) || (v == 0)) {
                             done = true;
                         } else {
-                            _webserver->client().write(buf, 1024);
+                            _webserver->client().write(buf, (size_t)v);
                             i += v;
                         }
 
@@ -351,6 +351,10 @@ namespace WebUI {
             return;
         } else
 #    endif
+            if (path_is_traversal(path)) {
+                _webserver->send(403, "text/plain", "Forbidden");
+                return;
+            }
             if (SPIFFS.exists(pathWithGz) || SPIFFS.exists(path)) {
             if (SPIFFS.exists(pathWithGz)) {
                 path = pathWithGz;
@@ -597,8 +601,11 @@ namespace WebUI {
                     String sadminPassword = admin_password->get();
                     String suserPassword  = user_password->get();
 
-                    if (!(sUser == DEFAULT_ADMIN_LOGIN && sPassword == sadminPassword) ||
-                        (sUser == DEFAULT_USER_LOGIN && sPassword == suserPassword)) {
+                    // Accept admin OR user credentials. Precedence bug was:
+                    //   !(admin_ok) || user_ok  → valid user always rejected.
+                    const bool admin_ok = (sUser == DEFAULT_ADMIN_LOGIN && sPassword == sadminPassword);
+                    const bool user_ok  = (sUser == DEFAULT_USER_LOGIN && sPassword == suserPassword);
+                    if (!(admin_ok || user_ok)) {
                         msg_alert_error = true;
                         smsg            = "Error: Incorrect password";
                         code            = 401;
@@ -739,14 +746,24 @@ namespace WebUI {
 
         //get current path
         if (_webserver->hasArg("path")) {
-            path += _webserver->arg("path");
+            String sub = _webserver->arg("path");
+            if (sub.length() && path[path.length() - 1] != '/' && sub[0] != '/') {
+                path += "/";
+            }
+            path += sub;
         }
 
         //to have a clean path
         path.trim();
         path.replace("//", "/");
-        if (path[path.length() - 1] != '/') {
+        if (path.length() == 0 || path[path.length() - 1] != '/') {
             path += "/";
+        }
+        // Path traversal: segment ".." + raw ".." substring + keep non-admin under /user/
+        if (path_is_traversal(path) || path.indexOf("..") >= 0 ||
+            (auth_level != AuthenticationLevel::LEVEL_ADMIN && !(path == "/user/" || path.startsWith("/user/")))) {
+            _webserver->send(403, "text/plain", "Forbidden: path traversal not allowed");
+            return;
         }
 
         //check if query need some action
@@ -758,14 +775,17 @@ namespace WebUI {
                 shortname.replace("/", "");
                 filename = path + _webserver->arg("filename");
                 filename.replace("//", "/");
-                if (!SPIFFS.exists(filename)) {
+                if (path_is_traversal(filename) || shortname == ".." || shortname.indexOf("..") >= 0) {
+                    status = "Forbidden: path traversal not allowed";
+                } else if (!SPIFFS.exists(filename)) {
                     status = shortname + " does not exists!";
                 } else {
                     if (SPIFFS.remove(filename)) {
                         status = shortname + " deleted";
                         //what happen if no "/." and no other subfiles ?
                         String ptmp = path;
-                        if ((path != "/") && (path[path.length() - 1] = '/')) {
+                        // Compare for trailing slash (was assignment `=` which always mutated path).
+                        if ((path != "/") && (path.length() > 0) && (path[path.length() - 1] == '/')) {
                             ptmp = path.substring(0, path.length() - 1);
                         }
 
@@ -792,7 +812,9 @@ namespace WebUI {
                 filename = path + _webserver->arg("filename");
                 filename += "/";
                 filename.replace("//", "/");
-                if (filename != "/") {
+                if (path_is_traversal(filename) || shortname == ".." || shortname.indexOf("..") >= 0) {
+                    status = "Forbidden: path traversal not allowed";
+                } else if (filename != "/") {
                     bool delete_error = false;
                     File dir          = SPIFFS.open(path + shortname);
                     {
@@ -821,7 +843,9 @@ namespace WebUI {
                 String shortname = _webserver->arg("filename");
                 shortname.replace("/", "");
                 filename.replace("//", "/");
-                if (SPIFFS.exists(filename)) {
+                if (path_is_traversal(filename) || shortname == ".." || shortname.indexOf("..") >= 0) {
+                    status = "Forbidden: path traversal not allowed";
+                } else if (SPIFFS.exists(filename)) {
                     status = shortname + " already exists!";
                 } else {
                     File r = SPIFFS.open(filename, FILE_WRITE);
@@ -838,7 +862,7 @@ namespace WebUI {
 
         String jsonfile = "{";
         String ptmp     = path;
-        if ((path != "/") && (path[path.length() - 1] = '/')) {
+        if ((path != "/") && (path.length() > 0) && (path[path.length() - 1] == '/')) {
             ptmp = path.substring(0, path.length() - 1);
         }
 

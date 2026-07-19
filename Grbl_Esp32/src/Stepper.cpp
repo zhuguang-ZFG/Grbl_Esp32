@@ -196,6 +196,11 @@ stepper_id_t current_stepper = DEFAULT_STEPPER;
 
 static void stepper_pulse_func();
 
+// If the step timer fires while a previous pulse is still finishing, count the tick and recover it
+// instead of dropping motion. Cap recovery so a pathological overrun cannot unbounded-loop the ISR.
+static std::atomic<uint8_t> step_isr_overrun{0};
+static constexpr uint8_t    STEP_ISR_OVERRUN_CAP = 3;
+
 // TODO: Replace direct updating of the int32 position counters in the ISR somehow. Perhaps use smaller
 // int8 variables and update position counters only when a segment completes. This can get complicated
 // with probing and homing cycles that require true real-time positions.
@@ -207,13 +212,30 @@ void IRAM_ATTR onStepperDriverTimer(void* para) {
     TIMERG0.int_clr_timers.t0 = 1;
 
     bool expected = false;
-    if (busy.compare_exchange_strong(expected, true)) {
-        stepper_pulse_func();
-
+    if (!busy.compare_exchange_strong(expected, true)) {
+        // Nested / still busy: do not drop the step clock. Count a deferred tick and re-arm.
+        uint8_t o = step_isr_overrun.load(std::memory_order_relaxed);
+        if (o < STEP_ISR_OVERRUN_CAP) {
+            step_isr_overrun.store((uint8_t)(o + 1), std::memory_order_relaxed);
+        }
         TIMERG0.hw_timer[STEP_TIMER_INDEX].config.alarm_en = TIMER_ALARM_EN;
-
-        busy.store(false);
+        return;
     }
+
+    // Run the scheduled tick, then drain deferred overruns (bounded).
+    for (;;) {
+        stepper_pulse_func();
+        uint8_t o = step_isr_overrun.load(std::memory_order_relaxed);
+        if (o == 0) {
+            break;
+        }
+        step_isr_overrun.store((uint8_t)(o - 1), std::memory_order_relaxed);
+    }
+
+    // Always re-arm after work — previous code only re-armed on CAS success, so a nested
+    // entry could leave the step timer permanently disarmed (stall after missed ticks).
+    TIMERG0.hw_timer[STEP_TIMER_INDEX].config.alarm_en = TIMER_ALARM_EN;
+    busy.store(false);
 }
 
 /**
@@ -357,8 +379,9 @@ static void stepper_pulse_func() {
 }
 
 void stepper_init() {
-    busy.store(false); 
-    
+    busy.store(false);
+    step_isr_overrun.store(0, std::memory_order_relaxed);
+
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "Axis count %d", number_axis->get());
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "%s", stepper_names[current_stepper]);
 
@@ -435,6 +458,8 @@ void st_reset() {
     segment_next_head   = 1;
     st.step_outbits     = 0;
     st.dir_outbits      = 0;  // Initialize direction bits to default.
+    step_isr_overrun.store(0, std::memory_order_relaxed);
+    busy.store(false);
     // TODO do we need to turn step pins off?
 }
 

@@ -569,6 +569,16 @@ Error paper_auto_change(void) {
         return Error::GcodeUnsupportedCommand;
     }
 
+    // 统一 Idle 门禁：与 user_m30 一致。Alarm/Cycle/Hold/Homing/Check 下禁止直接打纸路电机
+    // （覆盖 ESP910 anyState、M721、BT 误触发等入口；M30 路径在调用前已 buffer sync 到 Idle）。
+    if (sys.state != State::Idle) {
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[PaperAuto] Rejected: system not idle (state=%d)",
+                       (int)sys.state);
+        return Error::IdleError;
+    }
+
     // 互斥保护：防止 M30、[ESP910]、BT 重连预约同时触发导致嵌套执行。
     // 必须返回非 Ok：否则 user_m30 / paper_gcode_invoke 会把 busy 当成功，
     // 错误置 paper_change_last_ok 与 paper_m30_just_completed（阻塞 yield 中可再执行 M30/M721）。

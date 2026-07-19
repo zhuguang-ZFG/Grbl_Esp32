@@ -239,6 +239,42 @@ static bool checkSpindleChange(char* val) {
     return true;
 }
 
+// $21 hard limits: re-attach/detach limit pin ISRs when the flag changes (POST, val==NULL).
+static bool checkHardLimits(char* val) {
+    if (!val) {
+        limits_init();
+    }
+    return true;
+}
+
+// $20 soft limits: reject enable unless homing is on (soft envelope assumes known machine zero).
+static bool checkSoftLimits(char* val) {
+    if (!val) {
+        return true;  // POST no-op
+    }
+    // Pre-check: enabling soft limits requires homing_enable.
+    // val is the new string ("1"/"0"/"on"/"off"/...); FlagSetting parses later.
+    bool enable = (strcasecmp(val, "on") == 0) || (strcasecmp(val, "true") == 0) || (strcasecmp(val, "enabled") == 0) ||
+                  (strcasecmp(val, "yes") == 0) || (strcasecmp(val, "1") == 0);
+    if (enable && homing_enable && !homing_enable->get()) {
+        grbl_msg_sendf(CLIENT_ALL, MsgLevel::Info, "Soft limits require Homing/Enable ($22=1)");
+        return false;
+    }
+    return true;
+}
+
+// $22 homing enable: when turned off, also clear soft limits (cannot stay on without home).
+static bool checkHomingEnable(char* val) {
+    if (!val) {
+        if (homing_enable && !homing_enable->get() && soft_limits && soft_limits->get()) {
+            soft_limits->setDefault();
+            grbl_msg_sendf(CLIENT_ALL, MsgLevel::Info, "Soft limits disabled because Homing was turned off");
+        }
+        return true;
+    }
+    return true;
+}
+
 // Generates a string like "122" from axisNum 2 and base 120
 static const char* makeGrblName(int axisNum, int base) {
     // To omit A,B,C axes:
@@ -399,11 +435,9 @@ void make_settings() {
     // TODO Settings - need to call st_generate_step_invert_masks()
     homing_dir_mask = new AxisMaskSetting(GRBL, WG, "23", "Homing/DirInvert", DEFAULT_HOMING_DIR_MASK);
 
-    // TODO Settings - need to call limits_init();
-    homing_enable = new FlagSetting(GRBL, WG, "22", "Homing/Enable", DEFAULT_HOMING_ENABLE);
-    // TODO Settings - need to check for HOMING_ENABLE
-    hard_limits = new FlagSetting(GRBL, WG, "21", "Limits/Hard", DEFAULT_HARD_LIMIT_ENABLE);
-    soft_limits = new FlagSetting(GRBL, WG, "20", "Limits/Soft", DEFAULT_SOFT_LIMIT_ENABLE, NULL);
+    homing_enable = new FlagSetting(GRBL, WG, "22", "Homing/Enable", DEFAULT_HOMING_ENABLE, checkHomingEnable);
+    hard_limits   = new FlagSetting(GRBL, WG, "21", "Limits/Hard", DEFAULT_HARD_LIMIT_ENABLE, checkHardLimits);
+    soft_limits   = new FlagSetting(GRBL, WG, "20", "Limits/Soft", DEFAULT_SOFT_LIMIT_ENABLE, checkSoftLimits);
 
     build_info    = new StringSetting(EXTENDED, WG, NULL, "Firmware/Build", "");
     report_inches = new FlagSetting(GRBL, WG, "13", "Report/Inches", DEFAULT_REPORT_INCHES);

@@ -1783,6 +1783,9 @@ Error gc_execute_line(char* line, uint8_t client) {
             {
                 Error paper_e = paper_gcode_on_page_end_m30();
                 if (paper_e != Error::Ok) {
+                    // Fail-closed: clear sticky CompletedM30/M2 so the next line does not
+                    // re-enter ProgramEnd / paper-change (S1).
+                    gc_state.modal.program_flow = ProgramFlow::Running;
                     return paper_e;
                 }
             }

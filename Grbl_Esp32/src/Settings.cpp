@@ -67,6 +67,17 @@ Error Setting::check(char* s) {
 
 nvs_handle Setting::_handle = 0;
 
+// ESP-IDF stages nvs_set_* until nvs_commit(); without it, $ settings can be lost on reboot.
+static void nvs_commit_settings() {
+    if (!Setting::_handle) {
+        return;
+    }
+    esp_err_t err = nvs_commit(Setting::_handle);
+    if (err != ESP_OK) {
+        grbl_sendf(CLIENT_SERIAL, "nvs_commit failed with error %d\r\n", (int)err);
+    }
+}
+
 void Setting::init() {
     if (!_handle) {
         if (esp_err_t err = nvs_open("Grbl_ESP32", NVS_READWRITE, &_handle)) {
@@ -103,10 +114,12 @@ void IntSetting::load() {
 void IntSetting::setDefault() {
     if (_currentIsNvm) {
         nvs_erase_key(_handle, _keyName);
+        nvs_commit_settings();
     } else {
         _currentValue = _defaultValue;
         if (_storedValue != _currentValue) {
             nvs_erase_key(_handle, _keyName);
+            nvs_commit_settings();
         }
     }
 }
@@ -140,6 +153,7 @@ Error IntSetting::setStringValue(char* s) {
             }
             _storedValue = convertedValue;
         }
+        nvs_commit_settings();
     }
     check(NULL);
     return Error::Ok;
@@ -200,6 +214,7 @@ void AxisMaskSetting::setDefault() {
     _currentValue = _defaultValue;
     if (_storedValue != _currentValue) {
         nvs_erase_key(_handle, _keyName);
+        nvs_commit_settings();
     }
 }
 
@@ -238,6 +253,7 @@ Error AxisMaskSetting::setStringValue(char* s) {
             }
             _storedValue = _currentValue;
         }
+        nvs_commit_settings();
     }
     check(NULL);
     return Error::Ok;
@@ -305,6 +321,7 @@ void FloatSetting::setDefault() {
     _currentValue = _defaultValue;
     if (_storedValue != _currentValue) {
         nvs_erase_key(_handle, _keyName);
+        nvs_commit_settings();
     }
 }
 
@@ -339,6 +356,7 @@ Error FloatSetting::setStringValue(char* s) {
             }
             _storedValue = _currentValue;
         }
+        nvs_commit_settings();
     }
     check(NULL);
     return Error::Ok;
@@ -407,6 +425,7 @@ void StringSetting::setDefault() {
     _currentValue = _defaultValue;
     if (_storedValue != _currentValue) {
         nvs_erase_key(_handle, _keyName);
+        nvs_commit_settings();
     }
 }
 
@@ -429,6 +448,7 @@ Error StringSetting::setStringValue(char* s) {
             }
             _storedValue = _currentValue;
         }
+        nvs_commit_settings();
     }
     check(NULL);
     return Error::Ok;
@@ -486,6 +506,7 @@ void EnumSetting::setDefault() {
     _currentValue = _defaultValue;
     if (_storedValue != _currentValue) {
         nvs_erase_key(_handle, _keyName);
+        nvs_commit_settings();
     }
 }
 
@@ -532,6 +553,7 @@ Error EnumSetting::setStringValue(char* s) {
             }
             _storedValue = _currentValue;
         }
+        nvs_commit_settings();
     }
     check(NULL);
     return Error::Ok;
@@ -590,6 +612,7 @@ void FlagSetting::setDefault() {
     _currentValue = _defaultValue;
     if (_storedValue != _currentValue) {
         nvs_erase_key(_handle, _keyName);
+        nvs_commit_settings();
     }
 }
 
@@ -612,6 +635,7 @@ Error FlagSetting::setStringValue(char* s) {
             }
             _storedValue = _currentValue;
         }
+        nvs_commit_settings();
     }
     check(NULL);
     return Error::Ok;
@@ -670,6 +694,7 @@ void IPaddrSetting::setDefault() {
     _currentValue = _defaultValue;
     if (_storedValue != _currentValue) {
         nvs_erase_key(_handle, _keyName);
+        nvs_commit_settings();
     }
 }
 
@@ -693,6 +718,7 @@ Error IPaddrSetting::setStringValue(char* s) {
             }
             _storedValue = _currentValue;
         }
+        nvs_commit_settings();
     }
     check(NULL);
     return Error::Ok;
@@ -751,5 +777,7 @@ void Coordinates::set(float value[MAX_N_AXIS]) {
 #ifdef FORCE_BUFFER_SYNC_DURING_NVS_WRITE
     protocol_buffer_synchronize();
 #endif
-    nvs_set_blob(Setting::_handle, _name, _currentValue, sizeof(_currentValue));
+    if (nvs_set_blob(Setting::_handle, _name, _currentValue, sizeof(_currentValue)) == ESP_OK) {
+        nvs_commit_settings();
+    }
 }

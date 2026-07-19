@@ -315,6 +315,10 @@ namespace WebUI {
         if ((path.length() > 0) && (path[0] != '/')) {
             path = "/" + path;
         }
+        if (webpath_is_traversal(path)) {
+            webPrintln("Forbidden: path traversal not allowed");
+            return Error::InvalidValue;
+        }
         if (!SPIFFS.exists(path)) {
             webPrintln("Error: No such file!");
             return Error::FsFileNotFound;
@@ -330,8 +334,9 @@ namespace WebUI {
         while (currentfile.available()) {
             String currentline = currentfile.readStringUntil('\n');
             if (currentline.length() > 0) {
-                byte line[256];
-                currentline.getBytes(line, LINE_BUFFER_SIZE - 1);
+                char line[LINE_BUFFER_SIZE];
+                currentline.getBytes((unsigned char*)line, LINE_BUFFER_SIZE - 1);
+                line[LINE_BUFFER_SIZE - 1] = '\0';
                 err = execute_line((char*)line, client, auth_level);
                 if (err != Error::Ok) {
                     accumErr = err;
@@ -350,6 +355,10 @@ namespace WebUI {
         String path = trim(parameter);
         if ((path.length() > 0) && (path[0] != '/')) {
             path = "/" + path;
+        }
+        if (webpath_is_traversal(path)) {
+            webPrintln("Forbidden: path traversal not allowed");
+            return Error::InvalidValue;
         }
         if (!SPIFFS.exists(path)) {
             webPrintln("Error: No such file!");
@@ -1141,12 +1150,15 @@ namespace WebUI {
         new WebCommand(NULL, WEBCMD, WU, "ESP420", "System/Stats", showSysStats, anyState);
 #endif
 #ifdef GRBL_PAPER_SYSTEM
-        new WebCommand(NULL, WEBCMD, WG, "ESP910", "Paper/AutoChange", paperAutoHandler, anyState);
+        // ESP901 status + ESP910 auto-change stay WG so BT/serial guest and physical button
+        // ([ESP910] inject) keep working without pwd=. Idle gate is inside paper_auto_change().
+        // Motor jogs / enable require user+ (HTTP user/admin or pwd=).
         new WebCommand(NULL, WEBCMD, WG, "ESP901", "Paper/Status", paperStatusHandler, anyState);
-        new WebCommand("steps", WEBCMD, WG, "ESP911", "Paper/ClampMotor", paperMotor0Handler, anyState);
-        new WebCommand("steps", WEBCMD, WG, "ESP912", "Paper/PanelMotor", paperMotor1Handler, anyState);
-        new WebCommand("steps", WEBCMD, WG, "ESP913", "Paper/FeederMotor", paperMotor2Handler, anyState);
-        new WebCommand(NULL, WEBCMD, WG, "ESP930", "Paper/EnableOnly", paperEnableOnlyHandler, anyState);
+        new WebCommand(NULL, WEBCMD, WG, "ESP910", "Paper/AutoChange", paperAutoHandler, notCycleOrHold);
+        new WebCommand("steps", WEBCMD, WU, "ESP911", "Paper/ClampMotor", paperMotor0Handler, notCycleOrHold);
+        new WebCommand("steps", WEBCMD, WU, "ESP912", "Paper/PanelMotor", paperMotor1Handler, notCycleOrHold);
+        new WebCommand("steps", WEBCMD, WU, "ESP913", "Paper/FeederMotor", paperMotor2Handler, notCycleOrHold);
+        new WebCommand(NULL, WEBCMD, WU, "ESP930", "Paper/EnableOnly", paperEnableOnlyHandler, notCycleOrHold);
 #endif
 #ifdef ENABLE_WIFI
         new WebCommand(NULL, WEBCMD, WU, "ESP410", "WiFi/ListAPs", listAPs);

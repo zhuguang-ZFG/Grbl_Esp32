@@ -93,20 +93,34 @@ namespace WebUI {
             _lastflush = millis();
         }
 
-        //send full line
-        if (_TXbufferSize + size > TXBUFFERSIZE) {
-            flush();
-        }
-
-        //need periodic check to force to flush in case of no end
-        for (int i = 0; i < size; i++) {
-            _TXbuffer[_TXbufferSize] = buffer[i];
-            _TXbufferSize++;
+        // Chunk into TXBUFFERSIZE: flush when full; never write past capacity (size may exceed TXBUFFERSIZE).
+        size_t written = 0;
+        while (written < size) {
+            if (_TXbufferSize >= TXBUFFERSIZE) {
+                flush();
+            }
+            size_t room = (size_t)TXBUFFERSIZE - (size_t)_TXbufferSize;
+            if (room == 0) {
+                // flush failed to empty; avoid infinite loop / OOB
+                break;
+            }
+            size_t chunk = size - written;
+            if (chunk > room) {
+                chunk = room;
+            }
+            memcpy(&_TXbuffer[_TXbufferSize], buffer + written, chunk);
+            _TXbufferSize += (int)chunk;
+            written += chunk;
+            if (_TXbufferSize >= TXBUFFERSIZE) {
+                flush();
+            }
         }
         log_i("[SOCKET]buffer size %d", _TXbufferSize);
         handle_flush();
-#    endif
+        return written;
+#    else
         return size;
+#    endif
     }
 
     int Serial_2_Socket::peek(void) {

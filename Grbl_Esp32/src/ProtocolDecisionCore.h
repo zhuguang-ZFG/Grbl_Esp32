@@ -248,8 +248,40 @@ public:
         return !has_g_code(line, 10u) && !has_g_code(line, 28u) && !has_g_code(line, 30u) && !has_g_code(line, 92u) && !has_g38_code(line);
     }
 
+    // Homing / jog system commands that drive axes (not covered by is_motion_line).
+    static bool is_homing_or_jog_system_line(const char* line) {
+        if (line == nullptr || *line != '$') {
+            return false;
+        }
+        const char* p = line + 1;
+        while (*p == ' ' || *p == '\t') {
+            ++p;
+        }
+        char c = *p;
+        // $H (homing); $J=... (jogging). Fail-closed: also treat $H* as homing family.
+        if (c == 'H' || c == 'h' || c == 'J' || c == 'j') {
+            return true;
+        }
+        return false;
+    }
+
+    // During paper change: defer axis motion AND homing/probe/jog that can fight paper bit-bang.
+    // Keep is_motion_line() semantics unchanged (license / modal policy still treat G28/G38 as non-motion).
     static bool should_defer_motion(const char* line, bool paper_change_running, bool modal_motion_active = false) {
-        return paper_change_running && is_motion_line(line, modal_motion_active);
+        if (!paper_change_running || line == nullptr) {
+            return false;
+        }
+        if (is_motion_line(line, modal_motion_active)) {
+            return true;
+        }
+        // Explicit machine moves excluded from is_motion_line on purpose (G10/G28/G30/G38/G92 split).
+        if (has_g_code(line, 28u) || has_g_code(line, 30u) || has_g38_code(line)) {
+            return true;
+        }
+        if (is_homing_or_jog_system_line(line)) {
+            return true;
+        }
+        return false;
     }
 
     static bool defer_notice_due(uint32_t now_ms, uint32_t last_notice_ms, uint32_t interval_ms = 3000u) {

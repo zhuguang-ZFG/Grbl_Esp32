@@ -108,7 +108,7 @@ bool can_park() {
 static const uint8_t PLANNER_STARVE_THRESHOLD = 8;
 
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
-// 换纸阻塞期间：不执行 G0–G3，保留 G92 等设置指令
+// 换纸阻塞期间：不执行会驱动轴的运动/回零/探针/点动；保留 G92/G10 等设置指令
 static bool protocol_defer_host_motion_line_during_paper_change(const char* line) {
     bool modal_motion_active = gc_state.modal.motion == Motion::Seek || gc_state.modal.motion == Motion::Linear ||
                                gc_state.modal.motion == Motion::CwArc || gc_state.modal.motion == Motion::CcwArc;
@@ -122,7 +122,7 @@ static void protocol_notify_paper_motion_deferred(void) {
         return;
     }
     last_defer_msg_ms = now_ms;
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Host G-code deferred (paper change running)");
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Host motion/homing deferred (paper change running)");
 }
 #endif
 
