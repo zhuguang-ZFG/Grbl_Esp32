@@ -487,6 +487,10 @@ Error paper_run_motor(uint8_t motor_ix, uint16_t steps) {
             return busy;
         }
     }
+    if (sys.state != State::Idle) {
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperMotor] Rejected: not idle (state=%d)", (int)sys.state);
+        return Error::IdleError;
+    }
     if (steps == 0) {
         steps = 200;
     }
@@ -955,6 +959,8 @@ Error paper_auto_change(void) {
     paper_user_stop_requested        = false;  // 成功结束也清急停请求（幂等）
     paper_ignore_host_reset_until_ms = 0;
     paper_btn_arm_post_change_cooldown();
+    // Any successful auto-change (M30/M721/ESP910/BT) skips later first-page G0 X0Y0Z0 trigger.
+    paper_mark_first_page_change_done();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] All steps completed successfully!");
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_OK);
     return Error::Ok;
@@ -1110,12 +1116,14 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
                 return Error::Ok;
             }
             {
-                char who[12];
-                snprintf(who, sizeof(who), "M%u", (unsigned)code);
+                const char* who = (code == 711) ? "M711" : (code == 712) ? "M712" : "M713";
                 Error busy = paper_reject_if_auto_change_running(who);
                 if (busy != Error::Ok) {
                     return busy;
                 }
+            }
+            if (sys.state != State::Idle) {
+                return Error::IdleError;
             }
             uint16_t nsteps = (steps > 0 && steps <= 10000) ? steps : 200;
             const char* motor_name = (code == 711) ? "Clamp" : (code == 712) ? "Panel" : "Feeder";
@@ -1139,6 +1147,9 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
                 if (busy != Error::Ok) {
                     return busy;
                 }
+            }
+            if (sys.state != State::Idle) {
+                return Error::IdleError;
             }
             // 步数：0 表示使用 CLAMP_TOGGLE_STEPS（与自动换纸流程保持一致）
             uint16_t nsteps = (steps > 0 && steps <= 10000) ? steps : (uint16_t)CLAMP_TOGGLE_STEPS;

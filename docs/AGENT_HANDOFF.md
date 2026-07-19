@@ -106,8 +106,8 @@ Host SIL `agent_gate quick` 仍绿；下列为**残余真实问题**，非「已
 | 严重度 | 问题 | 位置 | 建议 |
 |--------|------|------|------|
 | ~~**High**~~ | ~~换纸中 M711–716 / paper_run_motor 无互斥~~ | — | **已修**：`paper_reject_if_auto_change_running()` + ESP930 busy |
-| Medium | 首页换纸判定用**机床** XYZ≈0，原点路径用**工件**坐标；非零 G54 可能永不首页换纸 | `paper_system.cpp` before_motion vs after_origin | 统一为工件坐标或「指令字全 0」 |
-| Medium | M721/ESP910 成功不 `paper_mark_first_page_change_done`（BT 路径会 mark）→ 可能二次首页换纸 | `PaperSystem.cpp` / handlers | 成功路径统一 mark |
+| ~~Medium~~ | ~~首页机床 vs 工件坐标~~ | — | **已修**：before_motion 按工件坐标判 X0Y0Z0 |
+| ~~Medium~~ | ~~M721/ESP910 不 mark first page~~ | — | **已修**：`paper_auto_change` 成功路径统一 `paper_mark_first_page_change_done` |
 | Low | `has_g_code(28)` 要求非小数 → **G28.1** 不进 paper defer（一般只设参考点，风险低） | `ProtocolDecisionCore.h` | 若需 fail-closed，用 G28 前缀启发式 |
 | Low | Stepper overrun 恢复在一次 ISR 内连跑多 tick，极端负载下拉长 ISR（已 cap=3） | `Stepper.cpp` | 可改为每 tick 只补 1 步 |
 | Design | ESP910 **WG**；60s 忽略 0x18；明文 auth | 见 §3 折中 | 开 HTTP 前评估 |

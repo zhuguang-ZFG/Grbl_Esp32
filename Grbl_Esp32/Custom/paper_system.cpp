@@ -201,7 +201,19 @@ Error paper_gcode_on_before_motion_modes(AxisCommand axis_command, bool axis_wor
     if (motion != Motion::Seek) {
         return Error::Ok;
     }
-    if (fabsf(x) >= 0.01f || fabsf(y) >= 0.01f || fabsf(z) >= 0.01f) {
+    // x,y,z are machine-frame targets (GCode.cpp already applied WCS/G92/TLO).
+    // Match after_origin: trigger on work-origin seek (G0 X0Y0Z0 in G90), not machine zero.
+    float wx = x - gc_state.coord_system[X_AXIS] - gc_state.coord_offset[X_AXIS];
+    float wy = y - gc_state.coord_system[Y_AXIS] - gc_state.coord_offset[Y_AXIS];
+    float wz = z - gc_state.coord_system[Z_AXIS] - gc_state.coord_offset[Z_AXIS];
+    if (TOOL_LENGTH_OFFSET_AXIS == X_AXIS) {
+        wx -= gc_state.tool_length_offset;
+    } else if (TOOL_LENGTH_OFFSET_AXIS == Y_AXIS) {
+        wy -= gc_state.tool_length_offset;
+    } else {
+        wz -= gc_state.tool_length_offset;
+    }
+    if (fabsf(wx) >= 0.01f || fabsf(wy) >= 0.01f || fabsf(wz) >= 0.01f) {
         return Error::Ok;
     }
     // 仅成功后置位：失败保持 false，下一匹配的 G0 X0Y0Z0 可重试首页换纸。
