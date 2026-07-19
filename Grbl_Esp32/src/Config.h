@@ -105,7 +105,9 @@ const int MAX_N_AXIS = 6;
 //#define CONNECT_TO_SSID  "your SSID"
 //#define SSID_PASSWORD  "your SSID password"
 //CONFIGURE_EYECATCH_BEGIN (DO NOT MODIFY THIS LINE)
+#ifndef DISABLE_BLUETOOTH  // -DDISABLE_BLUETOOTH: QEMU/SIL builds (esp_bt_controller_init asserts under qemu-system-xtensa)
 #define ENABLE_BLUETOOTH  // enable bluetooth
+#endif
 
 //#define ENABLE_SD_CARD  // enable use of SD Card to run jobs
 
