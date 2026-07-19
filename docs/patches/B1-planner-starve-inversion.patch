@@ -1,0 +1,48 @@
+Grbl_Esp32/src/Protocol.cpp      | 4 ++--
+ Grbl_Esp32/src/Serial.cpp        | 4 +++-
+ Grbl_Esp32/src/WebUI/BTState.cpp | 5 +++--
+ 3 files changed, 8 insertions(+), 5 deletions(-)
+
+--- Changes ---
+
+Grbl_Esp32/src/Protocol.cpp
+  @@ -319,7 +319,7 @@ void protocol_main_loop() {
+  -            if (sys.state == State::Cycle && plan_get_block_buffer_available() < PLANNER_STARVE_THRESHOLD) {
+  +            if (sys.state == State::Cycle && plan_get_block_buffer_count() < PLANNER_STARVE_THRESHOLD) {
+                   for (uint8_t pass = 0; pass < 6; pass++) {
+                       if (!protocol_poll_client(CLIENT_BT)) {
+                           break;
+  @@ -327,7 +327,7 @@ void protocol_main_loop() {
+  -                    if (plan_get_block_buffer_available() >= PLANNER_STARVE_THRESHOLD) {
+  +                    if (plan_get_block_buffer_count() >= PLANNER_STARVE_THRESHOLD) {
+                           break;
+                       }
+                   }
+  +2 -2
+
+Grbl_Esp32/src/Serial.cpp
+  @@ -209,7 +209,9 @@ void clientCheckTask(void* pvParameters) {
+  -        if (sys.state == State::Cycle && plan_get_block_buffer_available() < 8) {
+  +        // 饥饿 = 排队块少（plan_get_block_buffer_count 小）。旧代码用 available()<8，
+  +        // 而 available() 是空闲槽数，语义恰好相反（满时才快轮询）。
+  +        if (sys.state == State::Cycle && plan_get_block_buffer_count() < 8) {
+               taskYIELD();
+           } else {
+               vTaskDelay(1 / portTICK_RATE_MS);
+  +3 -1
+
+Grbl_Esp32/src/WebUI/BTState.cpp
+  @@ -40,12 +40,13 @@ static uint32_t             bt_recovery_ts       = 0;
+  -// 当运动中 planner 可用块低于此值时，跳过所有可能阻塞的 BT TX 操作，
+  +// 当运动中 planner 排队块低于此值时，跳过所有可能阻塞的 BT TX 操作，
+   // 避免 SerialBT.write() 的 xQueueSend 1000ms 超时导致段缓冲欠载。
+   static const uint8_t BT_PLANNER_STARVE_THRESHOLD = 8;
+   
+   static bool bt_planner_is_starving(void) {
+  -    return sys.state == State::Cycle && plan_get_block_buffer_available() < BT_PLANNER_STARVE_THRESHOLD;
+  +    // 饥饿 = 排队块少。旧代码用 available()（空闲槽数）< 阈值，语义相反。
+  +    return sys.state == State::Cycle && plan_get_block_buffer_count() < BT_PLANNER_STARVE_THRESHOLD;
+   }
+   
+   // TX ring buffer for congested-but-critical messages. Protected by bt_tx_mux.
+  +3 -2
