@@ -191,6 +191,21 @@ WebUI 剩余网络栈子代理审 + 主审手工审报告热路径。**产品路
 
 **验证：** 产品 SUCCESS；WiFi+HTTP+Notifications 交叉编译 SUCCESS（验证后还原 Config.h）。
 
+### 6f. 七轮深审（2026-07-20，`8644f7a`）— Planner 数学 / Homing 流程 / Settings 定义
+
+**产品路径**新不变量（勿回退）：
+
+| ID | 不变量 | 关键位置 |
+|----|--------|----------|
+| **L8** | `plan_cycle_reinitialize` 在 `head==tail`（空缓冲）时早退；否则 Idle 下 override 变化会全环遍历污染 planned 指针 | `Planner.cpp` |
+| **L9** | homing 设 machine origin 用 `lround`（对齐 Planner），非 float→int32 截断 | `Limits.cpp` |
+
+**非产品修复**（潜伏至主轴/多轴构建）：`Spindle/Delay/SpinDown` 默认值改用 SPINDOWN 宏（原误用 SPINUP）；`$33` PWM 频率 min 0→1（防 `calc_pwm_precision` 除零 bootloop）；`checkHomingEnable` 用 `setStringValue("0")` 而非 `setDefault()` 关软限位；`unit_vec[MAX_N_AXIS]` 零初始化。
+
+**自审确认干净：** Planner 加减速数学逐条核对（梯形 v²=u²+2as 递推、junction 半角几何与方向映射、G93 逆时、除零/负 sqrt 保护）全部正确；homing 方向矩阵/阶段序列/多轴 sqrt(n) 速率/失败清理链/mpos 语义闭环正确；SettingsDefinitions 的 axis_settings 构造/索引、grblName 映射、POST 副作用状态前提（框架强制 Idle/Alarm）正确。Custom/paper_system.cpp 钩子（before_motion/after_origin 工件零判定、user_m30 fail-closed、按钮双击状态机跨任务临界区）逻辑正确、与真机语义一致。
+
+**评估后未改（待验证 / HIL 敏感 / 非产品）：** homing 零长度块 NaN 路径（F-H1，需 `$27>0` 门禁或检查 `plan_buffer_line` 返回值，触 homing 控制流）；approach 退出 `cycle_stop` 残留竞态（F-H3，上游同源）；主轴 spindown 时序 / startup-line 真执行副作用 / probe-protection 切 Off 不 detach（F-2/F-5/F-9，非产品，重构风险）。
+
 **二轮 gate：** `agent_gate standard` overall=pass（31 层，2026-07-19）。注意 gate 覆盖 P1/协议核/纸路模型，**不**执行 F1/F3/M1/M5/N2/W 所在 `.cpp` —— 那些靠 `pio run -e release` 编译 + §8 HIL。
 
 ## 8. HIL 专项验证（F1 / F3 / M1 —— host SIL 覆盖不到，必须真机）
