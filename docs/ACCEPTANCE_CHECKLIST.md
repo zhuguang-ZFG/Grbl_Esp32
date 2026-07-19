@@ -7,6 +7,7 @@ FluidNC 状态位说明见：[Serial Protocol — Bf 缓冲](https://wiki.fluidn
 |----|-----|
 | 分支 | `Branch_736afa70` |
 | 深度审查修复 | **`801761e`**（S1–M3；host SIL standard 已绿） |
+| 二轮 / 三轮修复 | `ad4d1a6`+`59f4304`（F1/F3/M1/M5/N2）；**`ed1089d`**（B1–B4 Blocker + 内存安全 + 段缓冲屏障，见 §7b） |
 | 更早相关 | `b036c81` M30 后跳过原点二次换纸；`468d302` parser reset 清标志；`6f44dce` SD 路径穿越 |
 | Agent 交接 | **`docs/AGENT_HANDOFF.md`**（不变量 / 勿回退表） |
 | SIL | fz 仓 `agent_gate` — **≠** 本清单真机项 |
@@ -87,6 +88,15 @@ FluidNC 状态位说明见：[Serial Protocol — Bf 缓冲](https://wiki.fluidn
 - [ ] 纸检测 M701/M704 正常
 - [ ] 未授权时运动被挡；`M800 P…` 后可运动
 
+### 7b. 三轮审查修复（`ed1089d` — P0 必测）
+
+- [ ] BT 发 `(MSG:<90 字符>)` → 不崩溃、不重启（B1 栈溢出）
+- [ ] 流式发 `M711 P50 G2`（无 F）后接 `G0 X10` → G2 报错、`G0` **不**走纸、无残留（B2）
+- [ ] 换纸/M30 后发 M800 再发普通 G 码 → 授权仅一次、后续行不误设授权（B2）
+- [ ] `$RST=$` 后 `$N0`/`$N1` **仍在**（B3 启动行保留）
+- [ ] BT 发 `[ESP401]` 带 12+ 个 `k=v` → 返回错误、不崩溃（B4）
+- [ ] 多行连续写字回归 → 步进无异常卡顿（段缓冲 release/acquire 屏障无副作用；W9）
+
 ## 8. 已知非阻塞 / 设计折中
 
 - SEG `planner_free > 70` 启发式兜底仍在
@@ -94,6 +104,8 @@ FluidNC 状态位说明见：[Serial Protocol — Bf 缓冲](https://wiki.fluidn
 - 密码明文 / 无 TLS
 - 完整纸路状态机自动化仍弱 → **以本清单 HIL 为准**
 - Host SIL 绿 **不能**单独勾选「可量产」
+- 换纸阻塞期非运动行（G92/G10 等）仍会被嵌套执行（三轮 W2，与 B2 同源）；未改，需 HIL 确认是否致写字偏移
+- BT 无配对 PIN；RF 范围内可触发 ESP910（固有取舍，需签署）
 
 ## 9. 审查与仓库卫生
 
@@ -110,6 +122,8 @@ FluidNC 状态位说明见：[Serial Protocol — Bf 缓冲](https://wiki.fluidn
 | `801761e` | S1 program_flow；P1 defer 扩展；P2 Idle 门；W1/W3/W4；M1 nvs_commit；M2 stepper；M3 limits 设置副作用；纸路 ESP 权限拆分 |
 | `6f44dce` | SD/SPIFFS upload 路径穿越 |
 | `4aa21f3` | 纸路 sensor fail-closed / busy |
+| `ad4d1a6` + `59f4304` | 二轮：M1 强化 / F1 busy 临界区 / F3 0x18 仅 BT / M5 / N2 / W-N1 / W-N2 / CI |
+| `ed1089d` | 三轮：B1 report_gcode_comment 栈溢出 / B2 pending_m_code 复位 / B3 $RST 启动行 / B4 split_params 越界 / W1 WCO-OVR break / 内存安全 + 解析加固 / W9 段缓冲屏障 |
 | fz `e01c263` | SIL 期望对齐 G38/`$H` defer |
 
 Host SIL 复验：

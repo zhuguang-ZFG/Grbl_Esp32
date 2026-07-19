@@ -8,6 +8,7 @@
 | 产品默认机 | `Machines/custom_3axis_hr4988.h`（HR4988 + I2S 595 + 纸路 + BT） |
 | 深度审查落地 | `801761e`（2026-07-19）· 已 push |
 | 二轮审查落地 | `ad4d1a6` + `59f4304`（2026-07-19）· 已 push（M1 强化 / F1 / F3 / M5 / N2 / W-N1 / W-N2 / CI） |
+| 三轮审查落地 | `ed1089d`（2026-07-20）· 已 push（B1–B4 Blocker + 内存安全 + 解析加固 + 段缓冲屏障） |
 | 配套 SIL 测试 | fz `e01c263`（G28/G38/`$H` 换纸 defer 期望） |
 | 验收 HIL | `docs/ACCEPTANCE_CHECKLIST.md` · 本文件 §8（F1/F3/M1 专项） |
 
@@ -44,6 +45,7 @@ python $env:FZ_ROOT\scripts\agent_gate.py --profile standard
 | **P2b** | 换纸中 **禁止** M711–713/M716 与 `paper_run_motor`/ESP930 驱动纸路（`AnotherInterfaceBusy`） | `PaperSystem.cpp` `paper_reject_if_auto_change_running` |
 | **F1** | `paper_auto_change()` 的 busy 检查 + `running=true` + 清 stop 必须在**同一 `portENTER/EXIT_CRITICAL`**；`protocol_buffer_synchronize()` 在 claim **之前**（先排空再抢锁）。禁止把 busy 检查移出临界区——WiFi/BT/协议多任务会 TOCTOU 双入纸路 bit-bang | `PaperSystem.cpp` `paper_auto_change` |
 | **F3** | `0x18` 软复位**仅对 `CLIENT_BT` 忽略**；USB/串口/WebUI 的 0x18 **永远急停**（与上游 Grbl_Esp32/FluidNC "reset 全局急停" 铁律一致）。`paper_should_ignore_host_reset(client)` 必须带 client 参数 | `Serial.cpp` `Cmd::Reset` + `PaperSystem.cpp` |
+| **B2** | `pending_m_code`（M700-721/M800 延迟执行标志）必须在 `gc_execute_line` **入口**与 `gc_init()` 复位。STEP2 置位后若该行 FAIL 会残留，下一行任意 G 码用**本行 P/Q** 误触发纸路/授权，且软复位清不掉。STEP3 执行仅凭该 static 值，无 command_words 门控 | `GCode.cpp` |
 | M30 成功跳过下一原点换纸 | `paper_m30_just_completed` 不在 `line_begin` 清；仅 consume / 非原点 seek / parser_reset | `Custom/paper_system.cpp` |
 | Busy 重入 | 已在 running 时返回 **非 Ok**（`AnotherInterfaceBusy`） | `PaperSystem.cpp` |
 | Sensor fail-closed | Step2/6/7 失败走 cleanup + `MessageFailed` + `[PaperStatus]` | `PaperSystem.cpp` |
@@ -57,6 +59,8 @@ python $env:FZ_ROOT\scripts\agent_gate.py --profile standard
 | **M3** | `$21` POST → `limits_init()`；`$20=1` 需 `$22=1`；关 `$22` 清 soft limits | `SettingsDefinitions.cpp` |
 | **M5** | PWM min>max 告警比较 **min 与 max**（勿写成 min>min） | `Spindles/PWMSpindle.cpp` |
 | **N2** | `map_uint32_t`/`map_float` 在 `in_max==in_min` 时返回 `out_min`（防除零；`$30==$31`） | `NutsBolts.cpp` |
+| **B3** | `settings_restore` 保留启动行时比 **`"GCode/Line0"`/`"GCode/Line1"`**（真实 getName，非 `"Line0"`）；否则 `$RST=$` 每次误清 `$N0`/`$N1` | `ProcessSettings.cpp` |
+| **W9** | `segment_buffer_head` 为 `volatile`，生产者发布段前 `atomic_thread_fence(release)`、消费者读 head 后 `acquire`；防编译器重排使步进 ISR 读到半写段 | `Stepper.cpp` |
 
 ### WebUI / 安全（默认 WiFi 关 = 潜伏面；开 WiFi 前必守）
 
@@ -68,6 +72,8 @@ python $env:FZ_ROOT\scripts\agent_gate.py --profile standard
 | SD 流 | 下载 `write(buf, v)` 按实际读长 | `WebServer.cpp` |
 | **W-N1** | `[ESP]` 命令拷进 `line[256]` 后 **补 NUL**（`strncpy` 截断不终止） | `WebServer.cpp` |
 | **W-N2** | SD 分支 `path.substring(3)` 剥 `/SD` 后 **重算 `pathWithGz`** | `WebServer.cpp` |
+| **B4** | `split_params` 填 `static keyval_t params[10]` 前查 `i >= 9`（留 NULL 终止槽）；否则 BT `[ESP401/610/103]` 发 12+ 个 `k=v` 越界写 .bss（auth 编译关 = 所有 BT 客户端 admin） | `WebSettings.cpp` |
+| **B1** | `report_gcode_comment` 拷贝加 `sizeof(msg)-1` 上界；否则 BT 发 `(MSG:≥84字符)` 冲爆 `msg[80]` 栈 | `Report.cpp` |
 
 ### 有意产品折中（不要「顺手改严」）
 
@@ -123,6 +129,20 @@ Host SIL `agent_gate quick` 仍绿；下列为**残余真实问题**，非「已
 
 **Atom minor cleanup (post e5dbdf4):** 成功路径 cooldown / first-page 仅在 `paper_auto_change()` 内 arm；`user_m30` / BT 成功路径只保留各自需要的 `bt_suppress` + Z=0。
 
+### 6b. 三轮深审残余（2026-07-20，`ed1089d` 之后）
+
+三轮修了 B1–B4 Blocker + 一批内存安全/解析加固（见 §3 与 `.omk/CODE_REVIEW_ISSUES.md`）。下列为**评估后未改**的残余项：
+
+| 严重度 | 问题 | 位置 | 为何不改 / 建议 |
+|--------|------|------|------|
+| Warning | 换纸阻塞期 `protocol_service_during_blocking` 重入 `gc_execute_line`，非运动行（G92/G10/G90/G21）被嵌套执行覆写全局 `gc_block`/`gc_state`，M30 after-origin 判定读到污染值 → 首页/换页误判或写字偏移（与 B2 同源） | `Protocol.cpp:111-116`（有意保留非运动行） | 触及真机换纸触发语义，**无 HIL 不动**。修法备选：换纸期只 pump 实时+BT ack、短路完整 G 码行；或 `gc_execute_line` 重入 guard。见记忆 `gcode-global-state-reentrancy` |
+| Warning | `stepper_pulse_func` + `motors_step/direction/unstep` + `StandardStepper::*` 非 `IRAM_ATTR`；运动中若发生 NVS/BT 写盘（flash cache off）→ cache-disabled panic | `Stepper.cpp:248` + `Motors.cpp` | 需"运动中写 NVS"才触发（通常空闲存盘），上游继承。待验证；可标 IRAM 或保证运动态不写 NVS |
+| Warning | pen plotter 上 `PARKING_ENABLE`，安全门事件可能驱动 Z 到 -5.0 而非纯 hold | `Config.h:599` | 纸路 e-stop（`paper_request_user_stop`）是否抑制 parking 需 HIL 确认 |
+| Design | 硬限位 ISR 调 `grbl_msg_sendf`/`mc_reset` **对产品不可触**：`custom_3axis_hr4988.h:81` 定义 `ENABLE_SOFTWARE_DEBOUNCE` → 走 `xQueueSendFromISR`。仅 Config.h 默认构建（其它机器）潜伏 | `Limits.cpp` | 其它机器若关软件去抖需修 |
+| Design | BT 无配对 PIN；RF 范围内可触发 ESP910 换纸/motion | `BTConfig.cpp` | BT 写字机固有取舍，需产品签署 |
+
+**已确认仍成立（勿回退）：** S1 program_flow 清零；P1 G28/G38/`$H` defer；P2 Idle 门；F1 busy 单临界区；F3 0x18 仅 BT；B1/B2/B3/B4 三轮 Blocker 修复；W1 登录；W3/W4；M1 nvs_commit；M2 re-arm；M3 `$21`→`limits_init`；M5/N2 主轴；W9 段缓冲屏障。
+
 **已确认仍成立（勿回退）：** S1 program_flow 清零；P1 G28/G38/`$H` defer；P2 Idle 门；F1 busy 单临界区；F3 0x18 仅 BT；W1 登录；W3/W4；M1 nvs_commit；M2 re-arm；M3 `$21`→`limits_init`；M5/N2 主轴。
 
 **二轮 gate：** `agent_gate standard` overall=pass（31 层，2026-07-19）。注意 gate 覆盖 P1/协议核/纸路模型，**不**执行 F1/F3/M1/M5/N2/W 所在 `.cpp` —— 那些靠 `pio run -e release` 编译 + §8 HIL。
@@ -156,6 +176,20 @@ Host SIL `agent_gate quick` 仍绿；下列为**残余真实问题**，非「已
 | 人为触发 NVS 写失败（如满区）| 串口报 `nvs ... failed`，不静默 |
 
 失败任一项 → 对应不变量（§3 F1/F3/M1）**回退了**，勿声称修好。
+
+### 三轮修复项 HIL（B1/B2/B3/B4 + 段缓冲屏障 —— 编译过，未真机）
+
+`ed1089d` 只经 `pio run -e release` 编译 + 审查；`agent_gate standard` 唯一硬失败 `json_feed_hold_tcp` 与本改动无关（grblHAL 参考模型 TCP 时序 flaky，非产品固件）。发货前须真机：
+
+| 步骤 | 期望 |
+|------|------|
+| BT 发 `(MSG:<90 字符>)` | 不崩溃；注释截断到 ~75 字符（B1） |
+| 流水线发 `M711 P50 G2`（无 F，G2 会 FAIL）后接 `G0 X10` | G2 报错；`G0` **不**触发走纸；无残留（B2） |
+| 换纸中/后发 M800，再发普通 G 码 | 授权仅一次；后续行不误设授权（B2） |
+| `$RST=$` 后查 `$N0` / `$N1` | 启动行**保留**（B3） |
+| BT 发 `[ESP401]` 带 12+ 个 `k=v` | 返回错误，不崩溃（B4） |
+| Cycle 中抓 `?` 状态流 | WCO/Ov 出现频率回落到 busy 档（W1 修复） |
+| 多行连续写字（回归） | 步进无异常卡顿（验证段缓冲屏障无副作用；W9） |
 
 ## 9. 相关文档
 
