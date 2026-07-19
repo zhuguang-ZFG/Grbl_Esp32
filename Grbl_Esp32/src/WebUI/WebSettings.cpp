@@ -697,6 +697,11 @@ namespace WebUI {
         if (path[0] != '/') {
             path = "/" + path;
         }
+        // Align with ESP215 delete: reject ".." before open/run/show (ESP220/ESP221).
+        if (webpath_is_traversal(path)) {
+            webPrintln("Forbidden: path traversal not allowed");
+            return Error::InvalidValue;
+        }
         SDState state = get_sd_state(true);
         if (state != SDState::Idle) {
             if (state == SDState::NotPresent) {

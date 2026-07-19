@@ -973,20 +973,33 @@ namespace WebUI {
                         filename        = "/user" + upload_filename;
                     }
 
-                    if (SPIFFS.exists(filename)) {
-                        SPIFFS.remove(filename);
+                    // Same ".." rejection as SD upload; blocks admin/user SPIFFS path traversal.
+                    if (path_is_traversal(filename)) {
+                        _upload_status = UploadStatusType::FAILED;
+                        grbl_send(CLIENT_ALL, "[MSG:Upload rejected]\r\n");
+                        pushError(ESP_ERROR_UPLOAD_CANCELLED, "Upload rejected, invalid path");
                     }
-                    if (fsUploadFile) {
-                        fsUploadFile.close();
-                    }
-                    String sizeargname = upload.filename + "S";
-                    if (_webserver->hasArg(sizeargname)) {
-                        uint32_t filesize  = _webserver->arg(sizeargname).toInt();
-                        uint32_t freespace = SPIFFS.totalBytes() - SPIFFS.usedBytes();
-                        if (filesize > freespace) {
-                            _upload_status = UploadStatusType::FAILED;
-                            grbl_send(CLIENT_ALL, "[MSG:Upload error]\r\n");
-                            pushError(ESP_ERROR_NOT_ENOUGH_SPACE, "Upload rejected, not enough space");
+
+                    if (_upload_status != UploadStatusType::FAILED) {
+                        if (SPIFFS.exists(filename)) {
+                            SPIFFS.remove(filename);
+                        }
+                        if (fsUploadFile) {
+                            fsUploadFile.close();
+                        }
+                        String sizeargname = upload.filename + "S";
+                        if (_webserver->hasArg(sizeargname)) {
+                            uint32_t filesize  = _webserver->arg(sizeargname).toInt();
+                            uint32_t freespace = SPIFFS.totalBytes() - SPIFFS.usedBytes();
+                            if (filesize > freespace) {
+                                _upload_status = UploadStatusType::FAILED;
+                                grbl_send(CLIENT_ALL, "[MSG:Upload error]\r\n");
+                                pushError(ESP_ERROR_NOT_ENOUGH_SPACE, "Upload rejected, not enough space");
+                            }
+                        }
+                    } else {
+                        if (fsUploadFile) {
+                            fsUploadFile.close();
                         }
                     }
 
@@ -1273,6 +1286,13 @@ namespace WebUI {
         if (path[path.length() - 1] != '/') {
             path += "/";
         }
+        // Reject ".." in directory path before list/delete/mkdir (same helper as SD upload).
+        if (path_is_traversal(path)) {
+            set_sd_state(SDState::Idle);
+            SD.end();
+            _webserver->send(403, "application/json", "{\"status\":\"Forbidden: path traversal not allowed\"}");
+            return;
+        }
         //check if query need some action
         if (_webserver->hasArg("action")) {
             //delete a file
@@ -1282,7 +1302,9 @@ namespace WebUI {
                 filename         = path + shortname;
                 shortname.replace("/", "");
                 filename.replace("//", "/");
-                if (!SD.exists(filename)) {
+                if (path_is_traversal(filename) || shortname == ".." || shortname.indexOf("..") >= 0) {
+                    sstatus = "Forbidden: path traversal not allowed";
+                } else if (!SD.exists(filename)) {
                     sstatus = shortname + " does not exist!";
                 } else {
                     if (SD.remove(filename)) {
@@ -1300,7 +1322,9 @@ namespace WebUI {
                 shortname.replace("/", "");
                 filename = path + "/" + shortname;
                 filename.replace("//", "/");
-                if (filename != "/") {
+                if (path_is_traversal(filename) || shortname == ".." || shortname.indexOf("..") >= 0) {
+                    sstatus = "Forbidden: path traversal not allowed";
+                } else if (filename != "/") {
                     if (!SD.exists(filename)) {
                         sstatus = shortname + " does not exist!";
                     } else {
@@ -1323,7 +1347,9 @@ namespace WebUI {
                 filename         = path + shortname;
                 shortname.replace("/", "");
                 filename.replace("//", "/");
-                if (SD.exists(filename)) {
+                if (path_is_traversal(filename) || shortname == ".." || shortname.indexOf("..") >= 0) {
+                    sstatus = "Forbidden: path traversal not allowed";
+                } else if (SD.exists(filename)) {
                     sstatus = shortname + " already exists!";
                 } else {
                     if (!SD.mkdir(filename)) {
