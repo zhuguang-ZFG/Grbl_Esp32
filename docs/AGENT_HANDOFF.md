@@ -40,6 +40,7 @@ python $env:FZ_ROOT\scripts\agent_gate.py --profile standard
 | **S1** | M30 换纸失败时必须清 `gc_state.modal.program_flow = Running`，禁止 sticky `CompletedM30` 导致下行反复 ProgramEnd/换纸 | `GCode.cpp` M30 分支 early return |
 | **P1** | 换纸中 `should_defer_motion` 挡 **G0–G3、模态轴字、G28/G30/G38、`$H`/`$J`**；`is_motion_line` **不**因 license 策略把 G28 当 motion | `ProtocolDecisionCore.h`、`Protocol.cpp` |
 | **P2** | `paper_auto_change()` 入口仅 **`State::Idle`** 可进（覆盖 ESP910/M721/BT 预约） | `PaperSystem.cpp` |
+| **P2b** | 换纸中 **禁止** M711–713/M716 与 `paper_run_motor`/ESP930 驱动纸路（`AnotherInterfaceBusy`） | `PaperSystem.cpp` `paper_reject_if_auto_change_running` |
 | M30 成功跳过下一原点换纸 | `paper_m30_just_completed` 不在 `line_begin` 清；仅 consume / 非原点 seek / parser_reset | `Custom/paper_system.cpp` |
 | Busy 重入 | 已在 running 时返回 **非 Ok**（`AnotherInterfaceBusy`） | `PaperSystem.cpp` |
 | Sensor fail-closed | Step2/6/7 失败走 cleanup + `MessageFailed` + `[PaperStatus]` | `PaperSystem.cpp` |
@@ -98,11 +99,20 @@ fz 侧若改 `should_defer_motion` 语义：同步更新
 `native_sim/test_protocol_decision_trace.py` 与  
 `native_sim/scenarios/protocol_input_boundary_sequence.json`。
 
-## 6. 仍开放（非阻塞 host SIL）
+## 6. 仍开放（2026-07-19 加固后二次深审）
 
-- 真机：M30 缺纸/急停后**不再连环换纸**；换纸中灌 G28/`$H` 被拒；Alarm 下 M721 被拒（见验收清单 §1.5+）。
-- ESP910 保持 guest 可写：局域网若启用 HTTP，视为已知暴露面。
-- 明文密码 / 无 TLS：设计层限制，不是遗漏实现。
+Host SIL `agent_gate quick` 仍绿；下列为**残余真实问题**，非「已修又复发」。
+
+| 严重度 | 问题 | 位置 | 建议 |
+|--------|------|------|------|
+| ~~**High**~~ | ~~换纸中 M711–716 / paper_run_motor 无互斥~~ | — | **已修**：`paper_reject_if_auto_change_running()` + ESP930 busy |
+| Medium | 首页换纸判定用**机床** XYZ≈0，原点路径用**工件**坐标；非零 G54 可能永不首页换纸 | `paper_system.cpp` before_motion vs after_origin | 统一为工件坐标或「指令字全 0」 |
+| Medium | M721/ESP910 成功不 `paper_mark_first_page_change_done`（BT 路径会 mark）→ 可能二次首页换纸 | `PaperSystem.cpp` / handlers | 成功路径统一 mark |
+| Low | `has_g_code(28)` 要求非小数 → **G28.1** 不进 paper defer（一般只设参考点，风险低） | `ProtocolDecisionCore.h` | 若需 fail-closed，用 G28 前缀启发式 |
+| Low | Stepper overrun 恢复在一次 ISR 内连跑多 tick，极端负载下拉长 ISR（已 cap=3） | `Stepper.cpp` | 可改为每 tick 只补 1 步 |
+| Design | ESP910 **WG**；60s 忽略 0x18；明文 auth | 见 §3 折中 | 开 HTTP 前评估 |
+
+**已确认仍成立（勿回退）：** S1 program_flow 清零；P1 G28/G38/`$H` defer；P2 Idle 门；W1 登录；W3/W4；M1 nvs_commit；M2 re-arm；M3 `$21`→`limits_init`。
 
 ## 7. 相关文档
 

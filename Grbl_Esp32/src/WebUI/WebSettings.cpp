@@ -1069,6 +1069,10 @@ namespace WebUI {
         return paperMotorHandler(parameter, auth_level, 2);
     }
     static Error paperEnableOnlyHandler(char* parameter, AuthenticationLevel auth_level) {
+        if (paper_auto_change_is_running()) {
+            webPrintln("Busy: paper change running");
+            return Error::AnotherInterfaceBusy;
+        }
         paper_enable_drivers();
         webPrintln("MotorEn=On (no motion). Use M64/M65 P1/P2/P3 then [ESP911/912/913] to jog.");
         return Error::Ok;

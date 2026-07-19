@@ -465,9 +465,27 @@ static void paper_enable_panel_and_feeder(void) {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperEn] panel_and_feeder: Q1=LOW, DRV_EN=LOW");
 }
 
+// Fail-closed: no manual paper-motor jog while auto-change bit-bangs the same drivers/I2S.
+static Error paper_reject_if_auto_change_running(const char* who) {
+    if (!paper_auto_change_running) {
+        return Error::Ok;
+    }
+    grbl_msg_sendf(CLIENT_SERIAL,
+                   MsgLevel::Info,
+                   "[Paper] %s rejected: auto paper change running",
+                   who ? who : "paper motor");
+    return Error::AnotherInterfaceBusy;
+}
+
 Error paper_run_motor(uint8_t motor_ix, uint16_t steps) {
     if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
         return Error::GcodeUnsupportedCommand;
+    }
+    {
+        Error busy = paper_reject_if_auto_change_running("paper_run_motor");
+        if (busy != Error::Ok) {
+            return busy;
+        }
     }
     if (steps == 0) {
         steps = 200;
@@ -1091,6 +1109,14 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
                 grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M%u: paper system not configured", (unsigned)code);
                 return Error::Ok;
             }
+            {
+                char who[12];
+                snprintf(who, sizeof(who), "M%u", (unsigned)code);
+                Error busy = paper_reject_if_auto_change_running(who);
+                if (busy != Error::Ok) {
+                    return busy;
+                }
+            }
             uint16_t nsteps = (steps > 0 && steps <= 10000) ? steps : 200;
             const char* motor_name = (code == 711) ? "Clamp" : (code == 712) ? "Panel" : "Feeder";
             uint8_t step_pin = (code == 711) ? CLAMP_MOTOR_STEP_PIN : (code == 712) ? PANEL_MOTOR_STEP_PIN : FEEDER_MOTOR_STEP_PIN;
@@ -1107,6 +1133,12 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
             if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
                 grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M716: paper system not configured");
                 return Error::Ok;
+            }
+            {
+                Error busy = paper_reject_if_auto_change_running("M716");
+                if (busy != Error::Ok) {
+                    return busy;
+                }
             }
             // 步数：0 表示使用 CLAMP_TOGGLE_STEPS（与自动换纸流程保持一致）
             uint16_t nsteps = (steps > 0 && steps <= 10000) ? steps : (uint16_t)CLAMP_TOGGLE_STEPS;
