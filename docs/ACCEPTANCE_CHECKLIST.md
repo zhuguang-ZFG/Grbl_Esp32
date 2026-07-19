@@ -124,6 +124,7 @@ FluidNC 状态位说明见：[Serial Protocol — Bf 缓冲](https://wiki.fluidn
 | `4aa21f3` | 纸路 sensor fail-closed / busy |
 | `ad4d1a6` + `59f4304` | 二轮：M1 强化 / F1 busy 临界区 / F3 0x18 仅 BT / M5 / N2 / W-N1 / W-N2 / CI |
 | `ed1089d` | 三轮：B1 report_gcode_comment 栈溢出 / B2 pending_m_code 复位 / B3 $RST 启动行 / B4 split_params 越界 / W1 WCO-OVR break / 内存安全 + 解析加固 / W9 段缓冲屏障 |
+| `4b29822` | 四轮（错误逻辑）：L1 $G 探针标签 G38.2-38.5 / L2 全局禁用尊重掩码 / L3 map 反区间守卫 / L4 jog cancelledInflight；非产品 Trinamic 编译/VFD/Dynamixel/10v/Dac |
 | fz `e01c263` | SIL 期望对齐 G38/`$H` defer |
 
 Host SIL 复验：

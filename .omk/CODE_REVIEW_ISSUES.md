@@ -281,3 +281,44 @@
 | BT 发 `[ESP401]` 12+ 个 `k=v` | 返回错误，不崩溃 |
 | Cycle 中抓 `?` 状态流 | WCO/Ov 出现频率回落（busy 档） |
 | 多行连续写字（回归） | 步进无异常卡顿（验证段缓冲屏障无副作用） |
+
+---
+
+# Code Review — 第四轮（错误逻辑专项）
+
+**日期：** 2026-07-20 · **落地：** `4b29822` · **验证：** 产品 + VFD 机器 + SPI Trinamic 机器编译 SUCCESS
+
+方法：自审三轮修复找回归（int_value 哨兵/enum/W1/Jog 全部正确，且 int_value 哨兵顺带修 E 越界）+ 3 路代理扫 Motors/Spindles/Machines/Probe/MotionControl。
+
+## 已落地（12 处确定逻辑错误）
+
+### 产品路径
+| ID | 位置 | 错误逻辑 | 修复 |
+|----|------|---------|------|
+| L1 | `Report.cpp` report_gcode_modes | `$G` 探针标签 G38.1–G38.4，enum/parser 是 G38.2–G38.5（三轮 G38.5 修复漏掉的姊妹处） | 整体上移标签 |
+| L2 | `Motors.cpp` motors_set_disable | 全局 `STEPPERS_DISABLE_PIN` 忽略轴掩码，部分掩码 `$MD` 禁全部电机 | 仅掩码覆盖全轴才写全局引脚 |
+| L3 | `NutsBolts.cpp` map_uint32_t | 只挡 `in_max==in_min`；反区间 `$30>$31` 时 `(x-in_min)`/`(in_max-in_min)` 无符号下溢 | 守卫 `in_max <= in_min` |
+| L4 | `Jog.cpp` jog_execute | 从不写 `*cancelledInflight`，调用方依赖它（当前被返回码掩盖） | 取消路径置 true |
+
+### 非产品驱动/主轴（库正确性）
+| 位置 | 错误逻辑 | 修复 |
+|------|---------|------|
+| `TrinamicDriver.cpp` set_disable | 用不存在的 `tmcstepper`（SPI 类成员是 tmc2130/tmc5160）→ SPI Trinamic+USE_TRINAMIC_ENABLE 无法编译（Blocker for that config） | `tmc2130?:tmc5160` 分派 |
+| Trinamic/UART/Dynamixel `.h` | `_disabled` 未初始化，首次 set_disable 可能被相等守卫跳过 | 就地初始化 `=true` |
+| `Dynamixel2.cpp` read_settings | `swap(_dxl_count_min, _dxl_count_min)` 自交换，方向反转失效 | swap min↔max |
+| `VFDSpindle.cpp` | RS485 删首字节 0x00 的 memmove 方向反了（重复数据、零没删）；set_rpm 无 `_max_rpm==0` 除零守卫 | 左移+减长；加除零早退 |
+| `10vSpindle.cpp` deinit | `#ifdef SPINDLE_REVERSE_PIN` 块复位的是 FORWARD_PIN（复制粘贴） | 改回 REVERSE_PIN |
+| `DacSpindle.cpp` | printf `%5.2f` 配 uint32 rpm | 改 `%u` |
+| `custom_3axis_hr4988.h` | USER_DIGITAL_PIN_0..3 重复定义 | 删冗余块 |
+
+## 评估后未改
+- **RMT 通道分配差一**（`StandardStepper.cpp`：浪费 ch0，第 8 轴失效）— 修复会改变产品 channel 分配（1-3→0-2），触步进硬件，对产品零收益，**无 HIL 不动**。
+- RMT static config 运行时 `$` 重入、VFD set_mode 后 delay 不可达、VFD shouldWait 疑似 `||` 应 `&&`、PWM calc_pwm_precision 高频下溢等 — 非活 bug / 待验证。
+- strapping 引脚（GPIO2/12/14/15）— 硬件层，需 HIL/硬件评审。
+
+## HIL（产品路径 L1–L4）
+| 场景 | 期望 |
+|------|------|
+| 探针后查 `$G` | 报告 G38.2–G38.5，无 G38.1 |
+| `$MD X`（单轴禁用，若开放） | 仅该轴，Y/Z 不被全局引脚误禁 |
+| `$30>$31` 误配后设主轴转速（通用机） | 不下溢乱转（产品主轴 NONE 不适用） |

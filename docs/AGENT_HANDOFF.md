@@ -9,6 +9,7 @@
 | 深度审查落地 | `801761e`（2026-07-19）· 已 push |
 | 二轮审查落地 | `ad4d1a6` + `59f4304`（2026-07-19）· 已 push（M1 强化 / F1 / F3 / M5 / N2 / W-N1 / W-N2 / CI） |
 | 三轮审查落地 | `ed1089d`（2026-07-20）· 已 push（B1–B4 Blocker + 内存安全 + 解析加固 + 段缓冲屏障） |
+| 四轮审查落地 | `4b29822`（2026-07-20）· 已 push（错误逻辑专项：$G 探针标签 / 全局禁用掩码 / map 反区间 / Trinamic 编译 / VFD 等） |
 | 配套 SIL 测试 | fz `e01c263`（G28/G38/`$H` 换纸 defer 期望） |
 | 验收 HIL | `docs/ACCEPTANCE_CHECKLIST.md` · 本文件 §8（F1/F3/M1 专项） |
 
@@ -143,7 +144,22 @@ Host SIL `agent_gate quick` 仍绿；下列为**残余真实问题**，非「已
 
 **已确认仍成立（勿回退）：** S1 program_flow 清零；P1 G28/G38/`$H` defer；P2 Idle 门；F1 busy 单临界区；F3 0x18 仅 BT；B1/B2/B3/B4 三轮 Blocker 修复；W1 登录；W3/W4；M1 nvs_commit；M2 re-arm；M3 `$21`→`limits_init`；M5/N2 主轴；W9 段缓冲屏障。
 
-**已确认仍成立（勿回退）：** S1 program_flow 清零；P1 G28/G38/`$H` defer；P2 Idle 门；F1 busy 单临界区；F3 0x18 仅 BT；W1 登录；W3/W4；M1 nvs_commit；M2 re-arm；M3 `$21`→`limits_init`；M5/N2 主轴。
+### 6c. 四轮深审（2026-07-20，`4b29822`）— 错误逻辑专项
+
+修了 12 处确定逻辑错误（详见 `.omk/CODE_REVIEW_ISSUES.md`）。**产品路径**新不变量（勿回退）：
+
+| ID | 不变量 | 关键位置 |
+|----|--------|----------|
+| **L1** | `$G` 探针 modal 报告映射 `ProbeToward→G38.2 … ProbeAwayNoError→G38.5`（对齐 enum；无 G38.1） | `Report.cpp` `report_gcode_modes` |
+| **L2** | `motors_set_disable` 仅在 mask 覆盖全部激活轴时才写共享 `STEPPERS_DISABLE_PIN`；部分掩码（`$MD` 单轴）不得禁全部电机 | `Motors.cpp` |
+| **L3** | `map_uint32_t` 守卫 `in_max <= in_min`（不止 `==`），防反区间无符号下溢 | `NutsBolts.cpp` |
+| **L4** | `jog_execute` 在 `cartesian_to_motors` 取消路径置 `*cancelledInflight=true` | `Jog.cpp` |
+
+**非产品驱动/主轴修复**（库正确性，第三方驱动才编译）：Trinamic SPI `set_disable` 分派（修编译错）、`_disabled` 初始化、Dynamixel2 方向 swap、VFD memmove 方向 + max_rpm 除零守卫、10v deinit 引脚、Dac printf。
+
+**评估后未改：** RMT 通道分配差一（`StandardStepper.cpp` — 修复会改变产品 channel 分配，对产品零收益，触步进硬件路径，无 HIL 不动）；RMT static config 运行时 `$` 重入、VFD 状态机 delay 不可达等（非活 bug / 待验证）。
+
+**验证：** 产品 + `Root_4_Lite_RS485`(VFD) + `spi_daisy_4axis_xyza`(SPI Trinamic+enable) 三配置编译 SUCCESS。
 
 **二轮 gate：** `agent_gate standard` overall=pass（31 层，2026-07-19）。注意 gate 覆盖 P1/协议核/纸路模型，**不**执行 F1/F3/M1/M5/N2/W 所在 `.cpp` —— 那些靠 `pio run -e release` 编译 + §8 HIL。
 
