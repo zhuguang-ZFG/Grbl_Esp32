@@ -50,7 +50,7 @@ void settings_restore(uint8_t restore_flag) {
                 const char* name = s->getName();
                 if (restore_startup) {  // all settings get restored
                     s->setDefault();
-                } else if ((strcmp(name, "Line0") != 0) && (strcmp(name, "Line1") != 0)) {  // non startup settings get restored
+                } else if ((strcmp(name, "GCode/Line0") != 0) && (strcmp(name, "GCode/Line1") != 0)) {  // non startup settings get restored
                     s->setDefault();
                 }
             }
@@ -393,13 +393,17 @@ Error listErrors(const char* value, WebUI::AuthenticationLevel auth_level, WebUI
 }
 
 Error motor_disable(const char* value, WebUI::AuthenticationLevel auth_level, WebUI::ESPResponseStream* out) {
+    char* base;
     char* s;
     if (value == NULL) {
         value = "\0";
     }
 
-    s = strdup(value);
-    s = trim(s);
+    base = strdup(value);
+    if (base == NULL) {
+        return Error::BadNumberFormat;
+    }
+    s = trim(base);  // trim may advance past leading whitespace; keep base for free()
 
     int32_t convertedValue;
     char*   endptr;
@@ -414,12 +418,14 @@ Error motor_disable(const char* value, WebUI::AuthenticationLevel auth_level, We
             while (*s) {
                 int index = axisNames.indexOf(toupper(*s++));
                 if (index < 0) {
+                    free(base);
                     return Error::BadNumberFormat;
                 }
                 convertedValue |= bit(index);
             }
         }
     }
+    free(base);
     motors_set_disable(true, convertedValue);
     return Error::Ok;
 }

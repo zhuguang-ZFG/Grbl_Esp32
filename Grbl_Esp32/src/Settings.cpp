@@ -443,7 +443,11 @@ void StringSetting::setDefault() {
 }
 
 Error StringSetting::setStringValue(char* s) {
-    if (_minLength && _maxLength && (strlen(s) < _minLength || strlen(s) > _maxLength)) {
+    // Evaluate each bound independently: a setting with _minLength==0 and a real
+    // _maxLength must still enforce the max (the old && required both non-zero,
+    // disabling all length checks whenever min was 0).
+    size_t len = strlen(s);
+    if ((_maxLength && len > _maxLength) || (_minLength && len < _minLength)) {
         return Error::BadNumberFormat;
     }
     Error err = check(s);
@@ -539,11 +543,17 @@ Error EnumSetting::setStringValue(char* s) {
             return Error::BadNumberFormat;
         }
         char*   endptr;
-        uint8_t num = strtol(s, &endptr, 10);
+        long    parsed = strtol(s, &endptr, 10);
         // Disallow non-numeric characters in string
         if (*endptr) {
             return Error::BadNumberFormat;
         }
+        // Reject out-of-range indices before the uint8 truncation below, so e.g.
+        // "256" cannot silently wrap to 0 and alias a valid enum option.
+        if (parsed < 0 || parsed > 255) {
+            return Error::BadNumberFormat;
+        }
+        uint8_t num = (uint8_t)parsed;
         for (it = _options->begin(); it != _options->end(); it++) {
             if (it->second == num) {
                 break;

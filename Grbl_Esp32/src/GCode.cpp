@@ -42,13 +42,14 @@ parser_block_t gc_block;
 
 // Paper system M-command tracking: Store M code and params for processing after parameter parsing
 static uint16_t pending_m_code = 0;
-static uint16_t pending_m_steps = 0;
-static int8_t pending_m_clamp_dir = -1;
 #define FAIL(status) return (status);
 
 void gc_init() {
     // Reset parser state:
     memset(&gc_state, 0, sizeof(parser_state_t));
+    // Discard any pending paper/license M-code so a soft-reset cannot leave a
+    // stale command that a later line would execute with the wrong parameters.
+    pending_m_code = 0;
     // Load default G54 coordinate system.
     gc_state.modal.coord_select = CoordIndex::G54;
     coords[gc_state.modal.coord_select]->get(gc_state.coord_system);
@@ -146,6 +147,12 @@ Error gc_execute_line(char* line, uint8_t client) {
        block. This struct contains all of the necessary information to execute the block. */
     memset(&gc_block, 0, sizeof(parser_block_t));                  // Initialize the parser block struct.
     memcpy(&gc_block.modal, &gc_state.modal, sizeof(gc_modal_t));  // Copy current modes
+    // Clear any paper/license M-code left pending from a previous line. If the
+    // previous block set pending_m_code in STEP 2 but failed before STEP 3, the
+    // stale value would otherwise make this line execute paper_system_mcode /
+    // license_set_from_p_param with this line's P/Q. STEP 2 re-sets it when a
+    // real M700-721/M800 is present on this line.
+    pending_m_code = 0;
     AxisCommand axis_command = AxisCommand::None;
     uint8_t     axis_0, axis_1, axis_linear;
     CoordIndex  coord_select = CoordIndex::G54;  // Tracks G10 P coordinate selection for execution
@@ -206,7 +213,17 @@ Error gc_execute_line(char* line, uint8_t client) {
         // a good enough compromise and catch most all non-integer errors. To make it compliant,
         // we would simply need to change the mantissa to int16, but this add compiled flash space.
         // Maybe update this later.
-        int_value = round(value);  // 使用四舍五入而非截断，处理浮点数精度问题
+        float rounded_value = round(value);
+        // Guard against command numbers >255 aliasing into a valid case via the
+        // uint8_t truncation below (e.g. G256 -> 0 -> G0). Clamp to a sentinel (255)
+        // that matches no G/M case, so oversized commands fail cleanly. The M-code
+        // default branch re-derives large paper/license codes from the float `value`,
+        // which is unaffected.
+        if (rounded_value < 0.0f || rounded_value > 255.0f) {
+            int_value = 255;
+        } else {
+            int_value = (uint8_t)rounded_value;  // 使用四舍五入而非截断，处理浮点数精度问题
+        }
         mantissa  = round(100 * (value - int_value));  // Compute mantissa for Gxx.x commands.
         // NOTE: Rounding must be used to catch small floating point errors.
         // Check if the g-code word is supported or errors due to modal group violations or has
@@ -310,7 +327,7 @@ Error gc_execute_line(char* line, uint8_t client) {
                                 gc_block.modal.motion = Motion::ProbeAway;
                                 break;
                             case 50:
-                                gc_block.modal.motion = Motion::ProbeAway;
+                                gc_block.modal.motion = Motion::ProbeAwayNoError;
                                 break;
                             default:
                                 FAIL(Error::GcodeUnsupportedCommand);
@@ -565,19 +582,12 @@ Error gc_execute_line(char* line, uint8_t client) {
                         if (value >= 700.0f && value <= 721.0f) {
                             m_code = (uint16_t)value;
                         }
-                        {
-                            uint16_t steps     = 0;
-                            int8_t   clamp_dir = -1;
-                            
-                            // M700-721 纸张系统（720/721 无 P/Q，仅 711-716 用参数）；M800 授权（P=十进制授权码）
-                            if ((m_code >= 700 && m_code <= 721) || m_code == 800) {
-                                // Store for later processing in STEP 3 when parameters are parsed
-                                pending_m_code = m_code;
-                                pending_m_steps = 0;  // Will be filled from gc_block.values.p in STEP 3
-                                pending_m_clamp_dir = -1;  // Will be filled from gc_block.values.q in STEP 3
-                                mg_word_bit = ModalGroup::MM10;
-                                break;
-                            }
+                        // M700-721 纸张系统（720/721 无 P/Q，仅 711-716 用参数）；M800 授权（P=十进制授权码）
+                        // steps/clamp_dir 在 STEP 3 参数解析后从 gc_block 重算。
+                        if ((m_code >= 700 && m_code <= 721) || m_code == 800) {
+                            pending_m_code = m_code;
+                            mg_word_bit = ModalGroup::MM10;
+                            break;
                         }
                         {
                             Error e = user_m_code(m_code);
@@ -800,7 +810,7 @@ Error gc_execute_line(char* line, uint8_t client) {
         if (gc_block.modal.feed_rate == FeedRate::InverseTime) {  // = G93
             // NOTE: G38 can also operate in inverse time, but is undefined as an error. Missing F word check added here.
             if (axis_command == AxisCommand::MotionMode) {
-                if ((gc_block.modal.motion != Motion::None) || (gc_block.modal.motion != Motion::Seek)) {
+                if ((gc_block.modal.motion != Motion::None) && (gc_block.modal.motion != Motion::Seek)) {
                     if (bit_isfalse(value_words, bit(GCodeWord::F))) {
                         FAIL(Error::GcodeUndefinedFeedRate);  // [F word missing]
                     }

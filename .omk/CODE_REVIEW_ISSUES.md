@@ -234,3 +234,50 @@
 - **仅 BT 写字机默认配置：** 接近 — 建议完成 (1)(2) 并做缺纸/急停多行 HIL 后再标 yes。  
 - **开 WiFi/HTTP 前：** 必须 (3) + 确认 W1–W4 已在目标镜像。  
 - **通用 CNC/主轴机：** 必须 (4)。
+
+---
+
+# Code Review — 第三轮全项目深度审查
+
+**日期：** 2026-07-20  
+**分支：** `Branch_736afa70` @ `add0416`（工作树干净）  
+**范围：** 整仓 HEAD，7 路并行子系统 deep review + 主审交叉核实  
+**验证：** `pio run -e release` SUCCESS（RAM 28.6% / Flash 74.7%）
+
+## 本轮新发现（前两轮未捕获）
+
+### 已落地修复（源码，本次 commit）
+
+| ID | 位置 | 问题 | 修复 | 产品可触 |
+|----|------|------|------|:---:|
+| **B1** | `Report.cpp:818` `report_gcode_comment` | `msg[80]` 无界拷贝，BT 发 `(MSG:≥84字符)` 冲爆栈 | 拷贝加 `sizeof(msg)-1` 上界 | ✅ 两代理印证 |
+| **B2** | `GCode.cpp` `pending_m_code` static | M700-721/M800 在 STEP2 置位后若该行 FAIL 则残留，下一行任意 G 码用本行 P/Q 误触发纸路/授权；软复位清不掉 | `gc_execute_line` 入口 + `gc_init()` 复位；删死变量 | ✅ 核心纸路 |
+| **B3** | `ProcessSettings.cpp:53` | `$RST=$` 保护判断比 `"Line0"` 而真实 name `"GCode/Line0"`，永不匹配→每次抹掉 $N0/$N1 | 改比 `GCode/Line0`/`GCode/Line1` | ✅ |
+| **B4** | `WebSettings.cpp:113` `split_params` | `static keyval_t params[10]` 无边界，BT(auth 关=admin) 发 12+ 个 `k=v` 越界写 .bss | 循环加 `i>=9` 边界 | ✅ |
+| **W1** | `Report.cpp:736,759` | WCO/OVR 两 switch 缺 `break`，busy 刷新档被 idle 档覆盖→Cycle 期状态行膨胀 3×，加剧 BT planner 饿死 | 两处补 `break` | ✅ 两代理印证 |
+| **W5** | `ProcessSettings.cpp` `motor_disable` | `strdup` 后 `trim` 移指针、从不 free，guest 可反复调→堆耗尽 | 保留 base 指针，各返回路径 free | ✅ |
+| **W7** | `UserOutput.cpp:46` `set_level` | 守卫 `_number`(0-3) 而非 `_pin`→永假→引脚未定义仍 `digitalWrite(255)` | 改守卫 `_pin==UNDEFINED_PIN` 且与 isOn 无关 | ✅ |
+| **W8** | `SDCard.cpp:105`/`Report.cpp:255`/`Report.cpp:846`/`Error.cpp` | SD readFileLine 差一栈溢出；verbose 错误 NULL 传 `%s`；report_hex_msg 溢出；Eol=111 缺映射 | SD 预留终止符字节；NULL 防护；snprintf+offset 加界；补 Eol 映射 | SD/VFD 默认关 |
+| **Sug** | `GCode.cpp` | G38.5 误映射 ProbeAway→ProbeAwayNoError；命令号 uint8 回绕别名(G256→G0)→越界哨兵拒绝；G93 恒真 `\|\|`→`&&` | 逐条修 | 探针默认无 |
+| **Sug** | `Settings.cpp:446,542` | StringSetting 长度校验要求 min&&max 同时非零→改独立评估；enum 数值 uint8 回绕→宽类型+范围校验 | 逐条修 | ✅ |
+| **W9** | `Stepper.cpp:79,929,291` | `segment_buffer_head` 非 volatile、payload 发布无屏障→编译器可重排，ISR 读半写段 | head 加 volatile + release/acquire 屏障 | 待验证(上游继承) |
+
+### 降级/豁免（评估后不改，有据）
+
+- **Limits-W2 / Protocol-F-W3**（硬限位 ISR 调 `grbl_msg_sendf`/`mc_reset`）：**产品机器 `custom_3axis_hr4988.h:81` 定义 `ENABLE_SOFTWARE_DEBOUNCE`**，走 `xQueueSendFromISR` 安全路径→对产品不可触，降为 Config.h 默认构建（其它机器）潜伏缺陷。
+- **W2 换纸期 G 码解析器重入**（`Protocol.cpp:111-116` 有意保留 G92/G10 等非运动行）：与 B2 同源（全局 parser 状态被重入污染）。触及真机换纸触发语义，**无 HIL 不动**；修法备选：换纸期短路非实时行 / `gc_execute_line` 重入 guard。
+- **W10 `stepper_pulse_func`+电机原语非 IRAM**：NVS 写盘(cache off)与步进 ISR 重叠时 panic，需"运动中写 NVS"才触发（通常空闲时存盘），上游继承，标待验证。
+- **W11 pen plotter 上 `PARKING_ENABLE`**：安全门事件可能驱动 Z 到 -5.0；纸路 e-stop 是否抑制需 HIL 确认。
+- **BT 无配对 PIN**（W3/W4）：RF 范围内可触发 ESP910 换纸/motion，属 BT 写字机固有设计取舍，需产品签署。
+
+## HIL 建议（本轮修复项）
+
+| 场景 | 期望 |
+|------|------|
+| BT 发 `(MSG:<90 字符>)` | 不崩溃，注释截断到 ~75 字符 |
+| 流水线发 `M711 P50 G2`(无 F) 后接 `G0 X10` | G2 报错；G0 **不**触发走纸；无残留 |
+| 换纸中/后发 M800，再发普通 G 码 | 授权仅一次；后续行不误设授权 |
+| `$RST=$` 后查 `$N0`/`$N1` | 启动行**保留** |
+| BT 发 `[ESP401]` 12+ 个 `k=v` | 返回错误，不崩溃 |
+| Cycle 中抓 `?` 状态流 | WCO/Ov 出现频率回落（busy 档） |
+| 多行连续写字（回归） | 步进无异常卡顿（验证段缓冲屏障无副作用） |

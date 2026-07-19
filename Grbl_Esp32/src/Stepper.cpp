@@ -76,7 +76,7 @@ static stepper_t st;
 
 // Step segment ring buffer indices
 static volatile uint8_t segment_buffer_tail;
-static uint8_t          segment_buffer_head;
+static volatile uint8_t segment_buffer_head;
 static uint8_t          segment_next_head;
 
 // 用于判断卡顿是否来自步进 ISR 段缓冲欠载（segment buffer empty -> st_go_idle）
@@ -289,6 +289,9 @@ static void stepper_pulse_func() {
     if (st.exec_segment == NULL) {
         // Anything in the buffer? If so, load and initialize next step segment.
         if (segment_buffer_head != segment_buffer_tail) {
+            // Acquire barrier pairs with the release in st_prep_buffer: once we
+            // observe the advanced head, all segment payload writes are visible.
+            std::atomic_thread_fence(std::memory_order_acquire);
             // Initialize new step segment and load number of steps to execute
             st.exec_segment = &segment_buffer[segment_buffer_tail];
             // Initialize step segment timing per step and load number of steps to execute.
@@ -926,6 +929,11 @@ void st_prep_buffer() {
         prep_segment->isrPeriod = timerTicks > 0xffff ? 0xffff : timerTicks;
 
         // Segment complete! Increment segment buffer indices, so stepper ISR can immediately execute it.
+        // Release barrier: ensure all segment payload stores (n_step, isrPeriod,
+        // st_block_index, amass_level, ...) are visible before the head advance
+        // that publishes the segment to the timer ISR, so the ISR cannot observe
+        // an advanced head with a half-written segment.
+        std::atomic_thread_fence(std::memory_order_release);
         segment_buffer_head = segment_next_head;
         if (++segment_next_head == SEGMENT_BUFFER_SIZE) {
             segment_next_head = 0;

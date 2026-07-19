@@ -102,7 +102,7 @@ boolean readFileLine(char* line, int maxlen) {
     sd_current_line_number += 1;
     int len = 0;
     while (myFile.available()) {
-        if (len >= maxlen) {
+        if (len >= maxlen - 1) {  // reserve one byte for the NUL terminator written below
             return false;
         }
         char c = myFile.read();

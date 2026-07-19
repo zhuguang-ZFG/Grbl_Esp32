@@ -44,7 +44,10 @@ namespace UserOutput {
     }
 
     bool DigitalOutput::set_level(bool isOn) {
-        if (_number == UNDEFINED_PIN && isOn) {
+        // Guard the actual GPIO, not the logical index (_number is 0..3 and can
+        // never equal UNDEFINED_PIN). Reject unconditionally when the pin is
+        // undefined so sys_digital_all_off()/M63 cannot write to GPIO 255.
+        if (_pin == UNDEFINED_PIN) {
             return false;
         }
 

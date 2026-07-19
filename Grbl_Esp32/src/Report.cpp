@@ -252,7 +252,12 @@ void report_status_message(Error status_code, uint8_t client) {
             // Grbl 0.9 used to display the text, while Grbl 1.1 switched to the number.
             // Many senders support both formats.
             if (verbose_errors->get()) {
-                grbl_sendf(client, "error: %s\r\n", errorString(status_code));
+                const char* msg = errorString(status_code);
+                if (msg) {
+                    grbl_sendf(client, "error: %s\r\n", msg);
+                } else {
+                    grbl_sendf(client, "error:%d\r\n", static_cast<int>(status_code));
+                }
             } else {
                 grbl_sendf(client, "error:%d\r\n", static_cast<int>(status_code));
             }
@@ -734,6 +739,7 @@ void report_realtime_status(uint8_t client) {
             case State::Jog:
             case State::SafetyDoor:
                 sys.report_wco_counter = (REPORT_WCO_REFRESH_BUSY_COUNT - 1);  // Reset counter for slow refresh
+                break;
             default:
                 sys.report_wco_counter = (REPORT_WCO_REFRESH_IDLE_COUNT - 1);
                 break;
@@ -757,6 +763,7 @@ void report_realtime_status(uint8_t client) {
             case State::Jog:
             case State::SafetyDoor:
                 sys.report_ovr_counter = (REPORT_OVR_REFRESH_BUSY_COUNT - 1);  // Reset counter for slow refresh
+                break;
             default:
                 sys.report_ovr_counter = (REPORT_OVR_REFRESH_IDLE_COUNT - 1);
                 break;
@@ -820,7 +827,10 @@ void report_gcode_comment(char* comment) {
     const uint8_t offset = 4;  // ignore "MSG_" part of comment
     uint8_t       index  = offset;
     if (strstr(comment, "MSG")) {
-        while (index < strlen(comment)) {
+        size_t len = strlen(comment);
+        // Bound the copy to msg[] to avoid a stack overflow from an
+        // over-long untrusted comment (comment can be up to LINE_BUFFER_SIZE-1).
+        while (index < len && (index - offset) < (sizeof(msg) - 1)) {
             msg[index - offset] = comment[index];
             index++;
         }
@@ -840,11 +850,9 @@ void report_machine_type(uint8_t client) {
 */
 void report_hex_msg(char* buf, const char* prefix, int len) {
     char report[200];
-    char temp[20];
-    sprintf(report, "%s", prefix);
-    for (int i = 0; i < len; i++) {
-        sprintf(temp, " 0x%02X", buf[i]);
-        strcat(report, temp);
+    int  offset = snprintf(report, sizeof(report), "%s", prefix);
+    for (int i = 0; i < len && offset > 0 && offset < (int)sizeof(report); i++) {
+        offset += snprintf(report + offset, sizeof(report) - offset, " 0x%02X", buf[i]);
     }
 
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "%s", report);
@@ -852,11 +860,9 @@ void report_hex_msg(char* buf, const char* prefix, int len) {
 
 void report_hex_msg(uint8_t* buf, const char* prefix, int len) {
     char report[200];
-    char temp[20];
-    sprintf(report, "%s", prefix);
-    for (int i = 0; i < len; i++) {
-        sprintf(temp, " 0x%02X", buf[i]);
-        strcat(report, temp);
+    int  offset = snprintf(report, sizeof(report), "%s", prefix);
+    for (int i = 0; i < len && offset > 0 && offset < (int)sizeof(report); i++) {
+        offset += snprintf(report + offset, sizeof(report) - offset, " 0x%02X", buf[i]);
     }
 
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "%s", report);

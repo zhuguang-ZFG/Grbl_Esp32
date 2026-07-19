@@ -115,6 +115,10 @@ namespace WebUI {
         int i = 0;
         for (char* s = parameter; *s; s++) {
             if (*s == '=') {
+                // Reserve one slot for the NULL terminator written after the loop.
+                if (i >= (int)(sizeof(params) / sizeof(params[0])) - 1) {
+                    return false;
+                }
                 params[i].value = s + 1;
                 *s              = '\0';
                 // Search backward looking for the start of the key,
