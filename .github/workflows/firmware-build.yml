@@ -1,0 +1,134 @@
+# Build firmware with PlatformIO; always upload Artifacts; on version tags also publish a Release.
+# Product default machine: custom_3axis_hr4988 (Machine.h). Optional test_drive recovery image.
+name: Firmware Build
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - "Branch_*"
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+      - master
+      - "Branch_*"
+  workflow_dispatch:
+
+permissions:
+  contents: write  # needed for softprops/action-gh-release on tags
+
+concurrency:
+  group: firmware-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: PlatformIO release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-pio-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-pio-
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            .pio
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini', '**/library.json', '**/library.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-
+
+      - name: Install PlatformIO Core
+        run: |
+          python -m pip install -U pip
+          pip install -U platformio
+
+      - name: Build product firmware (custom_3axis_hr4988 default)
+        run: pio run -e release
+
+      - name: Collect product binaries
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp .pio/build/release/firmware.bin dist/firmware-product.bin
+          test -f .pio/build/release/partitions.bin && cp .pio/build/release/partitions.bin dist/partitions.bin || true
+          # Bootloader path varies by platform package; copy if present
+          if [ -f .pio/build/release/bootloader.bin ]; then
+            cp .pio/build/release/bootloader.bin dist/bootloader.bin
+          fi
+          # Optional ELF for offline decode (large; still useful for agents)
+          if [ -f .pio/build/release/firmware.elf ]; then
+            cp .pio/build/release/firmware.elf dist/firmware-product.elf
+          fi
+          printf '%s\n' \
+            "machine=custom_3axis_hr4988 (Machine.h default)" \
+            "env=release" \
+            "ref=${GITHUB_REF}" \
+            "sha=${GITHUB_SHA}" \
+            "run=${GITHUB_RUN_ID}" \
+            > dist/BUILD_INFO.txt
+          ls -la dist/
+
+      - name: Build test_drive (safe / no I/O)
+        env:
+          PLATFORMIO_BUILD_FLAGS: "-DMACHINE_FILENAME=test_drive.h"
+        run: |
+          # Clean app objects so MACHINE_FILENAME switch rebuilds correctly
+          rm -rf .pio/build/release/src
+          pio run -e release
+          cp .pio/build/release/firmware.bin dist/firmware-test_drive.bin
+          ls -la dist/
+
+      - name: Upload build artifacts (once per run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: grbl-esp32-firmware-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release (once per version tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Firmware ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          generate_release_notes: true
+          files: |
+            dist/firmware-product.bin
+            dist/firmware-test_drive.bin
+            dist/partitions.bin
+            dist/BUILD_INFO.txt
+          body: |
+            ## Binaries
+            | File | Machine |
+            |------|---------|
+            | `firmware-product.bin` | Product default (`custom_3axis_hr4988`, paper + BT) |
+            | `firmware-test_drive.bin` | Safe no-I/O (`test_drive.h`) |
+            | `partitions.bin` | Partition table (`min_spiffs.csv`) |
+
+            Flash app image at **0x10000** (or use PlatformIO `pio run -t upload`).
+
+            Commit: `${{ github.sha }}`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

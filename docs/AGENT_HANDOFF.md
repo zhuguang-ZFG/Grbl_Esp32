@@ -122,6 +122,7 @@ Host SIL `agent_gate quick` 仍绿；下列为**残余真实问题**，非「已
 |------|------|
 | `Agents.md` | 架构、构建、门禁总则 |
 | `docs/ACCEPTANCE_CHECKLIST.md` | 真机验收勾选 |
+| `docs/FIRMWARE_CI.md` | **GitHub 自动编译 / Artifacts / Release 下载** |
 | `tools/SIMULATION.md` | fz 入口 |
 | `配置.md` | 默认机硬件/引脚中文说明 |
 | `doc/Commands.txt` | `[ESP…]` 命令 |

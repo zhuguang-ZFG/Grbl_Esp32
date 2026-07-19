@@ -286,3 +286,4 @@ This tree is a **product fork** of [bdring/Grbl_Esp32](https://github.com/bdring
 5. Verify with the serial monitor: `platformio device monitor` (115200).
 6. After protocol/motion/paper changes: run **`agent_gate`** (see Testing Strategy) before claiming fixed.
 7. When adding a feature or fixing a bug across machines, run `build-all.py` if the change is not product-only.
+8. Cloud firmware binaries: **Actions → Firmware Build** (Artifacts) or **Releases** on `v*` tags — see `docs/FIRMWARE_CI.md`.
