@@ -232,12 +232,28 @@ Key conventions (from `CodingStyle.md` and `.clang-format`):
 
 ## Security Considerations
 
-- **Authentication is optional and weak.** `ENABLE_AUTHENTICATION` adds an admin/user password scheme, but the current implementation stores and transmits passwords in cleartext over unencrypted channels. The codebase itself comments that it should be treated as a "friendly suggestion" rather than effective security against a malicious attacker.
-- **Bluetooth serial and Telnet expose the same G-code command surface as USB serial.** If you enable these, anyone within range can send motion and configuration commands unless the network is isolated.
-- **OTA updates** are enabled by default (`ENABLE_OTA`). Ensure the device is on a trusted network.
-- **mDNS/SSDP/Captive Portal** discovery services are enabled by default when Wi-Fi is on. This advertises the device on the local network.
-- **SD card and web file access** can read, delete, and run arbitrary G-code files via `[ESP...]` commands.
-- **Avoid committing secrets.** `Config.h` contains placeholder Wi-Fi credentials (`CONNECT_TO_SSID`, `SSID_PASSWORD`) that are commented out by default; do not un-comment and commit real credentials.
+- **Product default (`Config.h` eyecatch):** Bluetooth **on**; Wi-Fi / HTTP / OTA / Telnet / SD **off**; `ENABLE_AUTHENTICATION` **on** (still cleartext — “friendly suggestion”).
+- **Authentication is weak.** Passwords are stored and transmitted in the clear when Wi-Fi/HTTP is enabled. Treat as a soft guard, not real security.
+- **Bluetooth serial exposes the full G-code surface** (same as USB). Anyone in range can motion/config unless RF is controlled. **ESP910 paper auto-change stays guest-writable by design** (button inject + BT); ESP911–913 motor jogs require user+.
+- **Do not re-enable OTA/Telnet/HTTP without** path-traversal guards (SD + SPIFFS + ESP700/701), login operator fix, Serial2Socket TX bounds, and a trusted LAN — see `docs/AGENT_HANDOFF.md` WebUI table.
+- **Avoid committing secrets.** Placeholder Wi-Fi credentials in `Config.h` must stay commented out.
+
+## Product handoff (read first on paper/BT/protocol work)
+
+- **`docs/AGENT_HANDOFF.md`** — **start here for product-fork context**: invariants from deep review `801761e`, fail-closed paper rules, intentional WG on ESP910, what SIL vs HIL covers, and “do not regress” tables.
+- **`docs/ACCEPTANCE_CHECKLIST.md`** — real-machine acceptance (G3b); host SIL alone is not ship.
+
+### Do not regress (summary — full table in AGENT_HANDOFF)
+
+| Area | Rule |
+|------|------|
+| M30 paper fail | Always clear `program_flow` to `Running` before error return |
+| Paper running | Defer G0–G3 **and** G28/G30/G38 / `$H`/`$J` via `should_defer_motion` |
+| `paper_auto_change` | Require `State::Idle` at entry |
+| Settings NVS | Call `nvs_commit` after every successful set/erase |
+| Stepper ISR | Never leave step timer disarmed on busy collision; recover overruns |
+| `$21` hard limits | POST must call `limits_init()` |
+| ESP910 | Keep **WG** (physical button + BT guest); motor ESP911–913 stay **WU** |
 
 ## Useful Reference Files
 
@@ -248,6 +264,7 @@ Key conventions (from `CodingStyle.md` and `.clang-format`):
 - `doc/csv/` — error codes, alarm codes, setting codes, build-option codes.
 - `配置.md` — Chinese hardware/firmware configuration notes for the default `custom_3axis_hr4988.h` plotter/writer setup.
 - `Grbl_Esp32/Custom/custom_code_template.cpp` — template for machine-specific code.
+- `tools/SIMULATION.md` — pointer to fz host SIL (source of truth for sim).
 
 ## Fork vs upstream (this repository)
 
@@ -261,9 +278,11 @@ This tree is a **product fork** of [bdring/Grbl_Esp32](https://github.com/bdring
 
 ## Quick Start for Agents
 
-1. Install PlatformIO Core and (optionally) the VS Code PlatformIO IDE.
-2. Build the default configuration: `platformio run`.
-3. For a safe first upload, switch to `test_drive.h`:
+1. Read **`docs/AGENT_HANDOFF.md`** if touching paper, protocol, BT, settings, or WebUI.
+2. Install PlatformIO Core and (optionally) the VS Code PlatformIO IDE.
+3. Build the default configuration: `platformio run` (machine = `custom_3axis_hr4988` unless overridden).
+4. For a safe first upload, switch to `test_drive.h`:
    - `PLATFORMIO_BUILD_FLAGS=-DMACHINE_FILENAME=test_drive.h platformio run --target upload`
-4. Verify with the serial monitor: `platformio device monitor`.
-5. When adding a feature or fixing a bug, run `build-all.py` to ensure all machine definitions still compile.
+5. Verify with the serial monitor: `platformio device monitor` (115200).
+6. After protocol/motion/paper changes: run **`agent_gate`** (see Testing Strategy) before claiming fixed.
+7. When adding a feature or fixing a bug across machines, run `build-all.py` if the change is not product-only.
