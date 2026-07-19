@@ -301,6 +301,7 @@ namespace WebUI {
             }
             //remove /SD
             path = path.substring(3);
+            pathWithGz = path + ".gz";  // recompute after stripping /SD so .gz lookup uses the SD-relative path
             if (SDState::Idle != get_sd_state(true)) {
                 String content = "cannot open: ";
                 content += path + ", SD is not available.";
@@ -490,7 +491,8 @@ namespace WebUI {
         int ESPpos = cmd.indexOf("[ESP");
         if (ESPpos > -1) {
             char line[256];
-            strncpy(line, cmd.c_str(), 255);
+            strncpy(line, cmd.c_str(), sizeof(line) - 1);
+            line[sizeof(line) - 1] = '\0';  // strncpy does not NUL-terminate when truncating
             ESPResponseStream* espresponse = silent ? NULL : new ESPResponseStream(_webserver);
             Error              err         = system_execute_line(line, espresponse, auth_level);
             String             answer;

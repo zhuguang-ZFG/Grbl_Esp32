@@ -17,8 +17,9 @@ on:
       - "Branch_*"
   workflow_dispatch:
 
+# Least privilege at the top level; the build job elevates only what it needs.
 permissions:
-  contents: write  # needed for softprops/action-gh-release on tags
+  contents: read
 
 concurrency:
   group: firmware-${{ github.workflow }}-${{ github.ref }}
@@ -29,6 +30,8 @@ jobs:
     name: PlatformIO release
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: write  # softprops/action-gh-release needs write to publish on v* tags
 
     steps:
       - name: Checkout
@@ -92,8 +95,9 @@ jobs:
         env:
           PLATFORMIO_BUILD_FLAGS: "-DMACHINE_FILENAME=test_drive.h"
         run: |
-          # Clean app objects so MACHINE_FILENAME switch rebuilds correctly
-          rm -rf .pio/build/release/src
+          # Full clean so the MACHINE_FILENAME switch rebuilds every unit that
+          # includes Machine.h (not just src/), avoiding stale product objects.
+          pio run -e release -t clean
           pio run -e release
           cp .pio/build/release/firmware.bin dist/firmware-test_drive.bin
           ls -la dist/
