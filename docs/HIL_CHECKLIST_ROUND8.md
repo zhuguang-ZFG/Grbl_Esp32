@@ -6,6 +6,11 @@
 
 先决条件：`agent_gate standard` 应先在 PC 侧 `overall=pass`（见 AGENT_HANDOFF §2）。
 
+> **✅ 门禁已过（2026-07-20，HEAD @ `add6bac`）：** `agent_gate standard` **overall=pass exit=0**，
+> 33 层全 PASS / 0 hard failure。此前偶发失败的 `json_feed_hold_tcp` 本次 PASS（确认是 TCP
+> 传输时序 flaky，非代码回归）。`soft_divergence` 的 `user_io.nc`/`parsetest*.nc` 为已知
+> allowlist（pending 产品契约复核，不阻断）。**PC 侧关卡已清，可刷机进 HIL。**
+
 ---
 
 ## P0 — 产品默认配置（仅 BT）必测
