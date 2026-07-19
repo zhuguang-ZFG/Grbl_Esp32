@@ -167,7 +167,25 @@
 
 ---
 
-## 五、Must Fix 优先级（本轮）
+## 四·补 — 本轮已落地修复（commit）
+
+| commit | 内容 |
+|--------|------|
+| `ad4d1a6` | M1 nvs_commit 全路径 + `_storedValue` 同步；F3/P6 0x18 仅 BT；F1 busy TOCTOU 单临界区；M5 PWM min>max；N2 map 除零守卫 |
+| `d070ae2` | 本审查报告 |
+| `59f4304` | W-N1 strncpy NUL 终止；W-N2 SD `.gz` 路径重算；CI 最小权限 + test_drive `-t clean` |
+
+**验证：** `pio run -e release` SUCCESS（Flash 74.7%）。
+
+**评估后不改（有据）：**
+- **F4** — before_motion（执行前，X/Y/Z 齐全判工件零）与 after_origin（执行后，判 X/Y 落点）是互补钩子，非 bug；改动触及真机调过的换纸触发语义，无 HIL 不动。
+- **F2** — BT ack 双实现无活 bug，属 EMI 敏感产品路径，投机重构风险 > 收益。
+- **N1/N3/N4/N6** — ESP32 同优先级 timer ISR 不自嵌套 + busy CAS 兜底 + CAP 有界，overrun RMW 竞态硬件不可达；其余步率失真属硬件层，无 HIL 不动。
+- **M4/N7** — planner buffer=250 为吞吐/负载权衡，需实测数据而非静态改。
+
+---
+
+## 五、Must Fix 优先级（原始，供追踪）
 
 1. **提交 Settings（M1）** — 避免工作树丢失  
 2. **F3/P6** — 0x18 仅忽略 BT（或缩窗）— 产品默认可触  
