@@ -175,6 +175,22 @@ Host SIL `agent_gate quick` 仍绿；下列为**残余真实问题**，非「已
 
 **评估后未改（待验证 / 非产品）：** polar_coaster `motors_to_cartesian` 的 X 轴 `*-1` 与逆变换 `atan2(Y,X)` 疑似符号不一致（涉机械装配约定，产品不用 polar，不盲改）。
 
+### 6e. 六轮深审（2026-07-20，`2f2a87f`）— WebUI 网络栈 + 报告热路径
+
+WebUI 剩余网络栈子代理审 + 主审手工审报告热路径。**产品路径**新不变量（勿回退）：
+
+| ID | 不变量 | 关键位置 |
+|----|--------|----------|
+| **L7** | `JSONencoder::quoted` 按 JSON 规则转义（`"`/`\`/控制字符）；否则含引号的设置值经 BT `[ESP400]/[ESP420]` 产生非法/可注入 JSON | `WebUI/JSONEncoder.cpp` |
+
+**WiFi-only 修复**（潜伏至开 WiFi）：`NotificationsService::end` 清 `_token2`（原漏，凭证滞留 RAM）；`Web_Server::end` 先 `detachWS` 再 delete（防 CLIENT_WEBUI 输出 use-after-free）；`dec_level` 加下限（防 >16 深嵌套 count[] 越界）；`ESPResponse::_header_sent` 无条件初始化。
+
+**自审确认干净（无 bug）：** `report_realtime_status`（BT 最热路径）全程 append lambda / snprintf 有界；`report_probe_parameters` / `report_ngc_parameters` / `report_util_axis_values` 缓冲有裕量；`protocol_main_loop` 启动/alarm 恢复/安全门/启动脚本逻辑正确；`run_once`/`reset_variables` 软复位重入（先 paper_on_soft_reset_restart 再 gc_init 复位 pending_m_code）闭环正确。Commands/Serial2Socket/ESPResponse 缓冲与 RX 环形边界正确（子代理验证）。
+
+**评估后未改（设计 / 非产品）：** telnet 无认证（开 WiFi+Telnet 前需签署）；telnet 单客户端 early-return（MAX=1 无害）；`|FS:`/`|Ov:` 用 `%d` 配 uint32（值域内正确，风格）。
+
+**验证：** 产品 SUCCESS；WiFi+HTTP+Notifications 交叉编译 SUCCESS（验证后还原 Config.h）。
+
 **二轮 gate：** `agent_gate standard` overall=pass（31 层，2026-07-19）。注意 gate 覆盖 P1/协议核/纸路模型，**不**执行 F1/F3/M1/M5/N2/W 所在 `.cpp` —— 那些靠 `pio run -e release` 编译 + §8 HIL。
 
 ## 8. HIL 专项验证（F1 / F3 / M1 —— host SIL 覆盖不到，必须真机）
