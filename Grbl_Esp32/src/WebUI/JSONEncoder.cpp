@@ -38,7 +38,38 @@ namespace WebUI {
     // Private function to add a name enclosed with quotes.
     void JSONencoder::quoted(const char* s) {
         add('"');
-        str.concat(s);
+        // Escape per JSON string rules so a value containing ", \, or a control
+        // char (e.g. a setting/SSID/filename) cannot produce malformed or
+        // structure-injecting JSON. Reachable over Bluetooth via ESP400/ESP420.
+        for (const char* p = s; p && *p; ++p) {
+            unsigned char c = (unsigned char)*p;
+            switch (c) {
+                case '"':
+                    str.concat("\\\"");
+                    break;
+                case '\\':
+                    str.concat("\\\\");
+                    break;
+                case '\n':
+                    str.concat("\\n");
+                    break;
+                case '\r':
+                    str.concat("\\r");
+                    break;
+                case '\t':
+                    str.concat("\\t");
+                    break;
+                default:
+                    if (c < 0x20) {
+                        char u[7];
+                        snprintf(u, sizeof(u), "\\u%04x", c);
+                        str.concat(u);
+                    } else {
+                        add((char)c);
+                    }
+                    break;
+            }
+        }
         add('"');
     }
 
@@ -54,7 +85,14 @@ namespace WebUI {
     }
 
     // Private function to increment the nesting level.
-    void JSONencoder::dec_level() { --level; }
+    void JSONencoder::dec_level() {
+        // Floor at 0: inc_level() clamps at MAX_JSON_LEVEL (deep incs become
+        // no-ops) while their paired decs still run, so without this guard level
+        // could go negative and index count[] out of bounds.
+        if (level > 0) {
+            --level;
+        }
+    }
 
     // Private function to implement pretty-printing
     void JSONencoder::line() {

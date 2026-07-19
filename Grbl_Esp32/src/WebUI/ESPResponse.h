@@ -42,7 +42,7 @@ namespace WebUI {
 
     private:
         uint8_t _client;
-        bool    _header_sent;
+        bool    _header_sent = false;  // init unconditionally; constructors only set it under ENABLE_HTTP
 
 #if defined(ENABLE_HTTP) && defined(ENABLE_WIFI)
         WebServer* _webserver;

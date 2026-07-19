@@ -236,6 +236,10 @@ namespace WebUI {
         mdns_service_remove("_http", "_tcp");
 #    endif
         if (_socket_server) {
+            // Clear Serial2Socket's cached _web_socket pointer before freeing the
+            // object; otherwise later CLIENT_WEBUI output dereferences a dangling
+            // (freed but non-NULL) pointer → use-after-free.
+            Serial2Socket.detachWS();
             delete _socket_server;
             _socket_server = NULL;
         }

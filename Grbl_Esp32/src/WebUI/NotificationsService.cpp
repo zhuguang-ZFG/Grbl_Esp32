@@ -357,7 +357,7 @@ namespace WebUI {
         _started          = false;
         _notificationType = 0;
         _token1           = "";
-        _token1           = "";
+        _token2           = "";  // was a duplicate _token1; leaving _token2 set kept the secret in RAM
         _settings         = "";
         _serveraddress    = "";
         _port             = 0;
