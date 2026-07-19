@@ -35,6 +35,12 @@ python $env:FZ_ROOT\protocol_sim\run_regression.py --start-sim
 - `fz/docs/specs/2026-07-14-hardware-sim-optimization-design.md`
 - `fz/docs/specs/2026-07-14-software-fullchain-sim-design.md`
 
-产品实机清单仍用本仓 `docs/ACCEPTANCE_CHECKLIST.md`（门禁 G3b）。
+产品实机清单仍用本仓 `docs/ACCEPTANCE_CHECKLIST.md`（门禁 G3b）。  
+产品不变量 / 勿回退表：本仓 **`docs/AGENT_HANDOFF.md`**（深度审查 `801761e` 后 agent 优先读）。
+
+改 `ProtocolDecisionCore::should_defer_motion` 时同步 fz：
+
+- `native_sim/test_protocol_decision_trace.py`
+- `native_sim/scenarios/protocol_input_boundary_sequence.json`
 
 本目录下旧的 `sim_regression/`、`grblhal_sim/` 视为遗留副本，**新改动请只提交到 fz 仓**。

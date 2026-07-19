@@ -3,75 +3,119 @@
 对照本仓库自定义纸路 + 社区 Grbl/FluidNC 流控实践。  
 FluidNC 状态位说明见：[Serial Protocol — Bf 缓冲](https://wiki.fluidnc.com/support/serial_protocol)。
 
-分支：`Branch_736afa70`  
-相关提交：`b036c81`（M30 后跳过原点二次换纸）、`468d302`（parser reset 清标志）。
+| 项 | 值 |
+|----|-----|
+| 分支 | `Branch_736afa70` |
+| 深度审查修复 | **`801761e`**（S1–M3；host SIL standard 已绿） |
+| 更早相关 | `b036c81` M30 后跳过原点二次换纸；`468d302` parser reset 清标志；`6f44dce` SD 路径穿越 |
+| Agent 交接 | **`docs/AGENT_HANDOFF.md`**（不变量 / 勿回退表） |
+| SIL | fz 仓 `agent_gate` — **≠** 本清单真机项 |
 
 ## 0. 编译
 
-- [x] `pio run -e release` 成功（P2/P3 落地后：RAM 28.6% / Flash 74.5%）
-- [x] Flash/RAM 无异常暴涨（参考：RAM ~28%、Flash ~74%）
+- [ ] `pio run -e release` 成功（参考：RAM ~28.6% / Flash ~74.7%，`801761e` 附近）
+- [ ] Flash/RAM 无异常暴涨
+- [ ] （可选）`test_drive.h` 交叉编译：`$env:PLATFORMIO_BUILD_FLAGS='-DMACHINE_FILENAME=test_drive.h'; pio run`
 
-## 1. 换纸 / M30（P0 已修，必测）
+## 1. 换纸 / M30（P0 — 必测）
 
 | # | 步骤 | 期望 |
 |---|------|------|
-| 1.1 | 蓝牙流式写满一页，发 **M30** | 换纸一次；串口可见 `[PaperM30] Auto paper change completed` 或等价日志 |
+| 1.1 | 蓝牙流式写满一页，发 **M30** | 换纸一次；`[PaperM30] Auto paper change completed` 或等价 |
 | 1.2 | M30 后上位机再发 **G0 X0 Y0 Z0**（或回原点） | **不再二次换纸** |
-| 1.2b | M30 与原点之间夹 **G90/G21/注释** 等非运动行 | 仍只换纸一次（跳过标志跨中间行保留） |
-| 1.2c | 页末 M30 | 蓝牙侧可见 `[MSG:PAGE_END_IMMINENT]`（`CLIENT_ALL`） |
-| 1.3 | 软复位（Ctrl-X / 0x18）后再回原点 | 不因残留 `paper_m30_just_completed` 误跳过合法换纸 |
-| 1.4 | 同一行内重复触发路径 | 同线去重仍有效（不连换两次） |
+| 1.2b | M30 与原点之间夹 **G90/G21/注释** | 仍只换纸一次 |
+| 1.2c | 页末 M30 | 蓝牙侧 `[MSG:PAGE_END_IMMINENT]`（`CLIENT_ALL`） |
+| 1.3 | 软复位（0x18）后再回原点 | 不因残留 `paper_m30_just_completed` 误跳过合法换纸 |
+| 1.4 | 同一行内重复触发路径 | 同线去重，不连换两次 |
+| **1.5** | **M30 时人为缺纸 / 卡纸 / feed-hold 中止换纸，再发任意 G 行** | **只失败一次**；**不得**连环 PAGE_END / 反复换纸（S1） |
+| **1.6** | 换纸进行中灌 **G28** 或 **`$H`**（或探针 G38） | **拒绝/defer**（IdleError 类），XYZ 不与纸路并发（P1） |
+| **1.7** | **Alarm / 非 Idle** 下发 **M721** 或 **`[ESP910]`** | **拒绝**（Idle 门禁）（P2） |
+| 1.8 | 换纸中发 feed-hold / 安全门字符 | 纸路急停中止换纸，不误显示 Hold 却电机仍转 |
 
-## 2. 物理键（P2 冷却）
+## 2. 物理键
 
 | # | 步骤 | 期望 |
 |---|------|------|
-| 2.1 | Idle 双击换纸键（间隔 0.5–5s） | 注入 `[ESP910]`，走自动换纸 |
+| 2.1 | Idle 双击换纸键（间隔 0.5–5s） | 注入 `[ESP910]`，走自动换纸（ESP910 保持 WG） |
 | 2.2 | 换纸刚结束后 **500ms 内** 按键 | **忽略**（冷却） |
-| 2.3 | 换纸进行中再按 | 忽略 / 提示 already running |
+| 2.3 | 换纸进行中再按 | 忽略 / already running |
 | 2.4 | 蓝牙刚连接后 1s 内按键 | BT suppress，忽略 |
 
-## 3. SEG / 缓冲（P3 诊断）
+## 3. SEG / 缓冲
 
-社区侧：主机应用 `?` 状态里的 **Bf**（planner 空闲块数）做流控，而不是无限塞 G 代码。  
-本固件：`BLOCK_BUFFER_SIZE=250`，`SEGMENT_BUFFER_SIZE=48`（远大于经典 Grbl）。
+社区侧：主机应用 `?` 状态里的 **Bf** 做流控。  
+本固件：`BLOCK_BUFFER_SIZE=250`，`SEGMENT_BUFFER_SIZE=48`。
 
 | # | 步骤 | 期望 |
 |---|------|------|
 | 3.1 | 正常 BT 连续写 | 不应频繁 `[SEG underflow]` |
-| 3.2 | M30 / 换纸页间断流 | 可见 `[BT] Page-gap/seg empty ...` 类信息，**不应**误报硬 underflow 刷屏 |
-| 3.3 | 真饥饿（上位机停发过久且非换纸） | 仍报 `[SEG underflow] B=...`，并尽量 reprime |
-| 3.4 | 串口监视 | `LOW_BUFFER` 仅 DEBUG 构建出现（避免占 BT 带宽） |
+| 3.2 | M30 / 换纸页间断流 | `[BT] Page-gap/seg empty ...`，非硬 underflow 刷屏 |
+| 3.3 | 真饥饿（上位机停发且非换纸） | `[SEG underflow]`，并尽量 reprime |
+| 3.4 | 串口监视 | `LOW_BUFFER` 仅 DEBUG 构建（避免占 BT） |
 
-## 4. 与上位机约定（社区兼容）
+## 4. 与上位机约定
 
-- 实时状态：`?` → 标准 Grbl 风格；可选看 `Bf:`（FluidNC/Grbl 习惯）
-- 页末：固件可发 `[MSG:PAGE_END_IMMINENT]`（M30 同步前）
-- 换纸中：主机应暂停运动行；固件侧有 defer host motion 保护
+- 实时状态：`?` → 标准 Grbl 风格；可选 `Bf:`
+- 页末：`[MSG:PAGE_END_IMMINENT]`（M30 同步前）
+- 换纸中：主机应停发运动行；固件 defer G0–G3 + G28/G30/G38 + `$H`/`$J`
+- 换纸中误发 0x18 可能被短时忽略；**用户急停用 feed-hold**
 
-## 5. 回归烟测
+## 5. 设置 / 限位（有限位硬件时）
 
-- [ ] 归位 / 限位无异常（含 upstream cherry-pick 后）
-- [ ] 探针路径无误触发（若硬件接探针）
-- [ ] 面板电机：换纸结束后面板不蠕动（595 使能策略）
+| # | 步骤 | 期望 |
+|---|------|------|
+| 5.1 | Idle 下 `$100` 等改设置后断电再上电 | 值仍在（`nvs_commit`） |
+| 5.2 | Idle 下改 `$21` 硬限位 on/off | **无需复位**即可挂/卸 ISR（`limits_init`） |
+| 5.3 | `$22=0` 时设 `$20=1` | **拒绝**；提示需先开 homing |
+| 5.4 | `$22=0` 且 soft 已开 | soft limits 被清掉 |
+
+## 6. WebUI（仅当编译打开 WiFi+HTTP 时）
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| 6.1 | user / admin 登录 | **两者均可**（W1） |
+| 6.2 | SPIFFS `/files?path=../` 或 ESP700 `../` | **403 / Forbidden** |
+| 6.3 | Guest 调 ESP911 点动 | **鉴权失败**；ESP910 仍可（产品 WG） |
+
+默认产品配置 WiFi 关 → §6 可标 N/A。
+
+## 7. 回归烟测
+
+- [ ] 归位 / 限位无异常（若接限位）
+- [ ] 探针路径无误触发（若接探针）
+- [ ] 面板电机：换纸后面板不蠕动（595 使能策略）
 - [ ] 纸检测 M701/M704 正常
+- [ ] 未授权时运动被挡；`M800 P…` 后可运动
 
-## 6. 已知非阻塞 nits
+## 8. 已知非阻塞 / 设计折中
 
-- SEG 仍保留 `planner_free > 70` 作启发式兜底（已叠加纸路/程序流语义）
-- `[BT] Page-gap/seg empty` 未做限频；若 underflow 标志在页间反复置位可能多打几行 Info（远好于硬 underflow 刷屏）
-- 完整自动化单元测试覆盖纸路状态机仍弱（以实机清单为准）
-- Claude/MiMo A2A 本轮不可用时，以本地审查 + 编译成功为准
+- SEG `planner_free > 70` 启发式兜底仍在
+- ESP910 **WG**：按钮 + BT guest；开 HTTP 时局域网可触发换纸（已知）
+- 密码明文 / 无 TLS
+- 完整纸路状态机自动化仍弱 → **以本清单 HIL 为准**
+- Host SIL 绿 **不能**单独勾选「可量产」
 
-## 7. 本轮落地（P2/P3）
+## 9. 审查与仓库卫生
 
-| 项 | 文件 | 状态 |
-|----|------|------|
-| P2 换纸后 Macro0 冷却 500ms | `Custom/paper_system.cpp` | 已改、`pio run -e release` 过 |
-| P3 页间 vs 真 SEG 饥饿语义 | `src/Protocol.cpp` | 已改、reprime 路径保留 |
-| 验收清单 | `docs/ACCEPTANCE_CHECKLIST.md` | 本文 |
-| 审查垃圾 gitignore | `.gitignore` | `.codex-*` / `.mimo-*` / `.claude-review-*` 等 |
+| 项 | 说明 |
+|----|------|
+| Agent 过程产物 | `.omk/`、`.cursor-review-*`、`.atom-review-*`、`.mimo-*`、`.claude-review-*` — **gitignore，勿提交** |
+| 正式交接 | `docs/AGENT_HANDOFF.md`（提交到 git） |
+| 过程台账 | 本地 `.omk/CODE_REVIEW_ISSUES.md` 可选，非源码真相 |
 
-## 审查垃圾文件（勿提交）
+## 10. 落地提交索引（便于 bisect）
 
-根目录 `.mimo-*` / `.codex-*` / `.claude-review-*` / 大型 `*-log.txt` 为 Agent 过程产物，已写入 `.gitignore`。
+| Commit | 内容 |
+|--------|------|
+| `801761e` | S1 program_flow；P1 defer 扩展；P2 Idle 门；W1/W3/W4；M1 nvs_commit；M2 stepper；M3 limits 设置副作用；纸路 ESP 权限拆分 |
+| `6f44dce` | SD/SPIFFS upload 路径穿越 |
+| `4aa21f3` | 纸路 sensor fail-closed / busy |
+| fz `e01c263` | SIL 期望对齐 G38/`$H` defer |
+
+Host SIL 复验：
+
+```powershell
+$env:FZ_ROOT='D:\Users\zhugu\fz'
+$env:GRBL_ROOT='D:\Users\Grbl_Esp32'
+python $env:FZ_ROOT\scripts\agent_gate.py --profile standard
+```

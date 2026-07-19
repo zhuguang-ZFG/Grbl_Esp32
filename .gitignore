@@ -35,6 +35,8 @@ COM28_Terminal.txt
 .codex-*
 .mimo-*
 .claude-review-*
+.cursor-review-*
+.atom-review-*
 .atomcode-*
 .kimi-code*
 .mimocode/
