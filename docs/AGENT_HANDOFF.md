@@ -141,6 +141,7 @@ Host SIL `agent_gate quick` 仍绿；下列为**残余真实问题**，非「已
 | Warning | pen plotter 上 `PARKING_ENABLE`，安全门事件可能驱动 Z 到 -5.0 而非纯 hold | `Config.h:599` | 纸路 e-stop（`paper_request_user_stop`）是否抑制 parking 需 HIL 确认 |
 | Design | 硬限位 ISR 调 `grbl_msg_sendf`/`mc_reset` **对产品不可触**：`custom_3axis_hr4988.h:81` 定义 `ENABLE_SOFTWARE_DEBOUNCE` → 走 `xQueueSendFromISR`。仅 Config.h 默认构建（其它机器）潜伏 | `Limits.cpp` | 其它机器若关软件去抖需修 |
 | Design | BT 无配对 PIN；RF 范围内可触发 ESP910 换纸/motion | `BTConfig.cpp` | BT 写字机固有取舍，需产品签署 |
+| ~~待验证~~ | ~~`paper_system_init` 早于 `settings_init`~~ | `Grbl.cpp:43/45` | **已核实无依赖**：`PaperSystem.cpp:314-346` 只做 GPIO/DAC/I2S passthrough + 日志，不读任何 `Setting*`/NVS。非 bug，勿再标记 |
 
 **已确认仍成立（勿回退）：** S1 program_flow 清零；P1 G28/G38/`$H` defer；P2 Idle 门；F1 busy 单临界区；F3 0x18 仅 BT；B1/B2/B3/B4 三轮 Blocker 修复；W1 登录；W3/W4；M1 nvs_commit；M2 re-arm；M3 `$21`→`limits_init`；M5/N2 主轴；W9 段缓冲屏障。
 
@@ -160,6 +161,19 @@ Host SIL `agent_gate quick` 仍绿；下列为**残余真实问题**，非「已
 **评估后未改：** RMT 通道分配差一（`StandardStepper.cpp` — 修复会改变产品 channel 分配，对产品零收益，触步进硬件路径，无 HIL 不动）；RMT static config 运行时 `$` 重入、VFD 状态机 delay 不可达等（非活 bug / 待验证）。
 
 **验证：** 产品 + `Root_4_Lite_RS485`(VFD) + `spi_daisy_4axis_xyza`(SPI Trinamic+enable) 三配置编译 SUCCESS。
+
+### 6d. 五轮深审（2026-07-20）— 潜伏路径 + System 剩余分支
+
+子代理因 API 额度耗尽中断，主审手工接手 System.cpp / ProcessSettings / I2SOut / 运动学。**产品路径**新不变量（勿回退）：
+
+| ID | 不变量 | 关键位置 |
+|----|--------|----------|
+| **L5** | `user_defined_macro` 的 `toCharArray(line, sizeof(line)-1, 0)` 给尾部 `strcat("\r")` 留位；否则 254 字符宏 → `line[255]` 越界 | `System.cpp` |
+| **L6** | `sys_calc_pwm_precision` 守卫 `freq==0`（除零）；`sys_set_analog` 用 `constrain_float(percent,0,100)`（防 uint32 转换溢出） | `System.cpp` |
+
+**自审确认干净（无 bug）：** rt_exec 七个 bit 置位/消费/清除配对完整；`GrblCommand::action` 的 `_cmdChecker` 状态门禁正确；`do_command_or_setting` auth 检查；`doJog`/`report_gcode_modes` 缓冲有界；I2S 产品 passthrough 路径（原子 port_data + single_data）正确，STEPPING/DMA 为产品不编译的 dead code；CoreXY 正逆变换数学互逆一致。`paper_system_init` 早于 `settings_init` **确认无依赖**（只做 GPIO/DAC/I2S，不读 Setting）。
+
+**评估后未改（待验证 / 非产品）：** polar_coaster `motors_to_cartesian` 的 X 轴 `*-1` 与逆变换 `atan2(Y,X)` 疑似符号不一致（涉机械装配约定，产品不用 polar，不盲改）。
 
 **二轮 gate：** `agent_gate standard` overall=pass（31 层，2026-07-19）。注意 gate 覆盖 P1/协议核/纸路模型，**不**执行 F1/F3/M1/M5/N2/W 所在 `.cpp` —— 那些靠 `pio run -e release` 编译 + §8 HIL。
 

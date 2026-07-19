@@ -358,6 +358,7 @@ void sys_analog_all_off() {
 // io_num is the virtual analog pin#
 bool sys_set_analog(uint8_t io_num, float percent) {
     auto     analog    = myAnalogOutputs[io_num];
+    percent            = constrain_float(percent, 0.0f, 100.0f);  // clamp so the uint32 cast can't underflow/overflow
     uint32_t numerator = percent / 100.0 * analog->denominator();
     return analog->set_level(numerator);
 }
@@ -389,6 +390,10 @@ int8_t sys_get_next_PWM_chan_num() {
 	*/
 uint8_t sys_calc_pwm_precision(uint32_t freq) {
     uint8_t precision = 0;
+
+    if (freq == 0) {
+        return 0;  // guard divide-by-zero below; a 0 Hz PWM is meaningless
+    }
 
     // increase the precision (bits) until it exceeds allow by frequency the max or is 16
     while ((1 << precision) < (uint32_t)(80000000 / freq) && precision <= 16) {  // TODO is there a named value for the 80MHz?
@@ -429,7 +434,10 @@ void __attribute__((weak)) user_defined_macro(uint8_t index) {
     }
 
     user_macro.replace('&', '\n');
-    user_macro.toCharArray(line, 255, 0);
+    // Leave room for the trailing "\r" appended below: toCharArray copies at
+    // most (size-1) chars + NUL, so cap at 254 so the strcat cannot write past
+    // line[254] (valid indices 0..254).
+    user_macro.toCharArray(line, sizeof(line) - 1, 0);
     strcat(line, "\r");
     WebUI::inputBuffer.push(line);
 }
