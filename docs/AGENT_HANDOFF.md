@@ -209,6 +209,23 @@ WebUI 剩余网络栈子代理审 + 主审手工审报告热路径。**产品路
 
 **F-H1 已修（`3173f54`）：** homing 零长度块 NaN + 死循环，两层 fail-closed（`$27` min≥0.001 + `plan_buffer_line` 返回值检查）。见 L10。
 
+### 6g. 八轮深审（2026-07-20，`ae19c68`）— Serial/BT 热路径 + MotionControl 剩余
+
+**已修（确定、不改运动时序）：**
+- `mc_reset` Cycle 分支改为仅 `alarm==None` 时写 `AbortCycle`（对齐 Homing 分支）；否则限位 ISR"先 EXEC_RESET 后置 alarm"路径中真实 alarm 被 AbortCycle 覆盖。产品 `$21` 默认关，潜伏。
+- `client_read` 加 `client>=CLIENT_COUNT` 越界防护；删死声明 `check_action_command` 与遮蔽 `uxHighWaterMark`。
+
+**关闭的待验证项：** mc_line 缓冲满等待仅查 `sys.abort` —— **确认安全**（所有异步 alarm 要么置 EXEC_RESET→abort，要么把 mc_line 扣在 `protocol_exec_rt_system` 临界环内，逐点核实）。
+
+> ### ⚠️ 待决策（高价值，需 HIL）—— B1：planner 饥饿判据疑似全线取反
+> **位置：** `Serial.cpp:213`、`Protocol.cpp:322/330`、`WebUI/BTState.cpp:48`（阈值均 8）
+> **论点：** `plan_get_block_buffer_available()`（`Planner.cpp:437`）返回**空闲槽数** `(SIZE-1)-排队`，非排队数。故 `available < 8` ⟺ 排队≥242 ⟺ planner **接近满**。而注释意图是"饥饿（排队少=空闲多）时 taskYIELD 快搬 BT 字节"。若论点成立：满速流式时忙转抢 core1 CPU（制造卡顿），真饥饿时反而 `vTaskDelay` 慢轮询（抗饥饿失效）——恰是产品 BT 卡顿痛点方向。
+> **矛盾证据（须一并查）：** `Protocol.cpp:427/736` 把同一返回值命名 `planner_free` 并按"空闲数"正确使用（`>= BUFFER_LOW_THRESHOLD`）。即代码库对该函数语义**两处相反**——一处当排队、一处当空闲。
+> **未改原因：** 触及产品最敏感的 BT 抗饥饿运行时时序（与 M4/N7/换纸重入同属"无 HIL 不动"）。修法明确（统一改用 `plan_get_block_buffer_count()` 排队语义，或翻转为 `available > SIZE-1-8`），但 taskYIELD/vTaskDelay 触发条件反转会显著改变 core1 调度，**必须** HIL + `agent_gate` 验证卡顿实际改善后再落地。
+> **HIL 观测手段：** 现成 `[BT-EOL gap]` 日志（`Protocol.cpp:151`，注意其 `B=` 也是空闲数）。
+
+**其它未改（待验证/微优化）：** BT/INPUT 路径无写闸门、满时静默丢字节（B2，需镜像串口闸门，改接收背压语义待验证）；每字节双重临界区 P1、Uart0 TX 缓冲 0 阻塞 P2、strlen 重复 P3（性能项，P2 全局改法涉 TMC/VFD 半双工时序待验证）；MotionControl W1 硬限位竞态根因已由本轮 mc_reset 对称化缓解，但"先置 alarm 再 mc_reset"的调用点侧改动仍需 HIL；pen up/down 绕过软限位 W2（`$20` 默认关）；`PARKING_ENABLE` 未注释 W3（`can_park` 双重闸住，潜伏）。
+
 **二轮 gate：** `agent_gate standard` overall=pass（31 层，2026-07-19）。注意 gate 覆盖 P1/协议核/纸路模型，**不**执行 F1/F3/M1/M5/N2/W 所在 `.cpp` —— 那些靠 `pio run -e release` 编译 + §8 HIL。
 
 ## 8. HIL 专项验证（F1 / F3 / M1 —— host SIL 覆盖不到，必须真机）
