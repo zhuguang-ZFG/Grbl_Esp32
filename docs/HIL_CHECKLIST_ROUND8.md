@@ -49,6 +49,8 @@
 
 ## P2 — 待决策项（需 HIL 数据后才改）
 
+> 调优路线（B1 / Uart0 TX / 运动参数的真机验证方法）单列于 **`docs/HIL_TUNING_ROADMAP.md`**。
+
 ### B1 — planner 饥饿判据取反（八轮，潜在收益最大）
 补丁：`docs/patches/B1-planner-starve-inversion.{patch,md}`（未 land）。
 - [ ] 现 HEAD（无补丁）复现 BT 卡顿，采 `[BT-EOL gap]` 日志基线
