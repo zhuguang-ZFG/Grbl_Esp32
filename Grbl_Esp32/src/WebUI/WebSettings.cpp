@@ -906,9 +906,13 @@ namespace WebUI {
         j.begin_array("files");
         listDirJSON(SPIFFS, "/", 4, &j);
         j.end_array();
-        j.member("total", SPIFFS.totalBytes());
+        size_t fs_total = SPIFFS.totalBytes();
+        j.member("total", fs_total);
         j.member("used", SPIFFS.usedBytes());
-        j.member("occupation", String(100 * SPIFFS.usedBytes() / SPIFFS.totalBytes()));
+        // Guard divide-by-zero: on a BT-only build SPIFFS is never mounted
+        // (only WifiServices mounts it), so totalBytes()==0 → integer divide
+        // panic / reboot. Report 0% occupation instead.
+        j.member("occupation", String(fs_total ? (100 * SPIFFS.usedBytes() / fs_total) : 0));
         webPrint(j.end());
         if (espresponse->client() != CLIENT_WEBUI) {
             webPrintln("");
