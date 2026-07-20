@@ -407,29 +407,30 @@ void client_write(uint8_t client, const char* text) {
     if (client == CLIENT_INPUT) {
         return;
     }
+    size_t len = strlen(text);  // compute once; reused by every transport below
 #ifdef ENABLE_BLUETOOTH
     if (WebUI::SerialBT.hasClient() && (client == CLIENT_BT || client == CLIENT_ALL)) {
         bool critical = bt_tx_message_is_critical(text);
-        bt_tx_send(text, strlen(text), critical);
+        bt_tx_send(text, len, critical);
         // 让出 CPU 给蓝牙栈/RTOS，避免蓝牙回包阻塞导致上位机等待（进而造成 BT 画圆卡顿）
         yield();
     }
 #endif
 #if defined(ENABLE_WIFI) && defined(ENABLE_HTTP) && defined(ENABLE_SERIAL2SOCKET_OUT)
     if (client == CLIENT_WEBUI || client == CLIENT_ALL) {
-        WebUI::Serial2Socket.write((const uint8_t*)text, strlen(text));
+        WebUI::Serial2Socket.write((const uint8_t*)text, len);
     }
 #endif
 #if defined(ENABLE_WIFI) && defined(ENABLE_TELNET)
     if (client == CLIENT_TELNET || client == CLIENT_ALL) {
-        WebUI::telnet_server.write((const uint8_t*)text, strlen(text));
+        WebUI::telnet_server.write((const uint8_t*)text, len);
     }
 #endif
     if (client == CLIENT_SERIAL || client == CLIENT_ALL) {
 #ifdef REVERT_TO_ARDUINO_SERIAL
         Serial.write(text);
 #else
-        Uart0.write(text);
+        Uart0.write(text, len);
 #endif
     }
 }

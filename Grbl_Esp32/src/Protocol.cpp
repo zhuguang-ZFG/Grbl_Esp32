@@ -29,10 +29,6 @@
 static void protocol_exec_rt_suspend();
 
 static char    line[LINE_BUFFER_SIZE];     // Line to be executed. Zero-terminated.
-static char    comment[LINE_BUFFER_SIZE];  // Line to be executed. Zero-terminated.
-static uint8_t line_flags           = 0;
-static uint8_t char_counter         = 0;
-static uint8_t comment_char_counter = 0;
 
 // BT 发送节奏排查：记录上一次 BT 到达一整行（EOL）的时间
 static uint32_t last_bt_eol_ms = 0;
