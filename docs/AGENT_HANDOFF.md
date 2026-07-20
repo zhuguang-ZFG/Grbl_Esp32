@@ -228,7 +228,19 @@ WebUI 剩余网络栈子代理审 + 主审手工审报告热路径。**产品路
 
 **二轮 gate：** `agent_gate standard` overall=pass（31 层，2026-07-19）。注意 gate 覆盖 P1/协议核/纸路模型，**不**执行 F1/F3/M1/M5/N2/W 所在 `.cpp` —— 那些靠 `pio run -e release` 编译 + §8 HIL。
 
-## 8. HIL 专项验证（F1 / F3 / M1 —— host SIL 覆盖不到，必须真机）
+### 6h. 九轮深审（2026-07-20，`a5b9aec`）— WebSettings/WiFi/Auth + 纸路 M 命令
+
+**产品路径**新不变量（勿回退）：
+
+| ID | 不变量 | 关键位置 |
+|----|--------|----------|
+| **L11** | `$LocalFS/ListJSON` occupation 计算守卫 `totalBytes()==0`；BT-only 产品 SPIFFS 未挂载，否则整数除零 panic 重启（BT 可触，auth 内 LEVEL_USER 即可达） | `WebSettings.cpp` `listLocalFilesJSON` |
+
+**自审确认干净：** `paper_system_mcode`（M701/704/711/712/713/716/721 分派）门禁完整——M711-716 各有 `paper_reject_if_auto_change_running` + Idle + `protocol_buffer_synchronize`；M721 缺显式门禁但 `paper_auto_change` 入口有 PAPER_DISABLED/Idle/原子 busy 三道兜底（有意设计）。`InputBuffer` 环形缓冲逐行正确。WebSettings 的 split_params 调用方全部检查返回值、auth 门禁三查找路径统一无漏门、密码 `isPassword()` 遮蔽、BTConfig MAC 缓冲精确。
+
+**评估后未改（非产品 / 认证语义 / 待验证）：** W2 `$RST=@` 越权重置（`wifi_config.reset_settings` 仅 ENABLE_WIFI 链接，产品不可触）；W3 `remove_password` 子串匹配应为行尾 token（真实缺陷，改认证语义需确认上位机行为）；W10 ESP700 截断宏行执行（SPIFFS 宏路径，产品未挂载不可达）；W5-W12 其余 WiFi/notifications/SD-only；ESP550 未注册等 12 条 suggestion。
+
+**九轮 gate：** `agent_gate standard` overall=pass（33 层，2026-07-20 @ HEAD 全绿，`json_feed_hold_tcp` 本次 PASS 确认为 TCP flaky 非回归）。
 
 二轮修复中这三项只经 `pio run -e release` 编译 + 代码审查，**未被 `agent_gate` 执行**（逻辑在带硬件依赖的 `.cpp`）。发货前须真机验证：
 
