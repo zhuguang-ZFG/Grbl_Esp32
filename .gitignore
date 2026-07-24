@@ -6,10 +6,10 @@ Thumbs.db
 embedded/node_modules
 embedded/dist
 *~
-.pio/
 .vscode/
 .history/
 *.pyc
+__pycache__/
 .vs/
 Debug/
 Release/
@@ -21,3 +21,44 @@ __vm/
 *.suo
 Grbl_Esp32.ino.cpp
 /packages
+
+# Local IDE / agent / review clutter
+.cache/
+.serena/
+.kimi-code/
+.pio-mcp-workspace/
+.idea/
+*.patch
+.*-review-*.md
+.*-review-*.txt
+.*-review-*.patch
+.a2a_*.py
+.claude-*.txt
+.claude-*.md
+.codex-*.txt
+.codex-*.md
+.cursor-*.txt
+.cursor-*.md
+.mimo-*.md
+.mimo-*.txt
+.mimo-*.patch
+.atom-*.txt
+.atom-*.md
+.atom-*.patch
+.atomcode-*.md
+.atomcode-*.patch
+.kimi-*.md
+.reasonix-*.md
+.review-*.patch
+.review-*.md
+
+# Local build / serial / clangd noise
+build_*.log
+compile_commands.json
+EEPROM.DAT
+COM*.txt
+*Terminal*.txt
+
+# Host sim lives in fz; do not track under this firmware tree
+/tools/
+/docs/superpowers/
