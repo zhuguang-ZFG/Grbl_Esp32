@@ -36,6 +36,8 @@
 
 // 一键换纸流程是否正在执行（用于彩灯“快闪”与互斥）
 static volatile bool paper_auto_change_running = false;
+// 换纸成功后的面板低电流保持（写字/点动/回零前释放；LED 刷新也需跳过）
+static volatile bool paper_panel_low_hold_active = false;
 
 // 换纸开始后短时忽略上位机 0x18（蓝牙连接常误发软复位，会打断弹纸）
 static uint32_t paper_ignore_host_reset_until_ms = 0;
@@ -96,9 +98,10 @@ void paper_led_update(void) {
     }
     last_ms = now_ms;
 
-    // 雕刻/点动/回零时不再刷新 74HC595（LED 与面板 STEP 同芯片）。
-    // 蓝牙上位机高频 ? 报告会放大主循环抖动，重复锁存易导致面板电机微动。
-    if (sys.state == State::Cycle || sys.state == State::Jog || sys.state == State::Homing || sys.state == State::Hold) {
+    // 雕刻/点动/回零时，以及换纸后面板低电流保持期间，不再刷新 74HC595。
+    // LED 与 PANEL_MOTOR_STEP 同芯片；hold 时使能仍开，重复锁存易微步进回退对位。
+    if (sys.state == State::Cycle || sys.state == State::Jog || sys.state == State::Homing || sys.state == State::Hold ||
+        paper_panel_low_hold_active) {
         return;
     }
 
@@ -351,9 +354,6 @@ static void paper_ensure_i2s_passthrough(void) {
 #endif
 }
 
-// 换纸成功后的面板低电流保持：写字/点动/回零开始前释放
-static volatile bool paper_panel_low_hold_active = false;
-
 // 内部辅助函数：启用所有纸路驱动（面板 + 拾落 + 进纸器）
 static void paper_enable_drivers(void) {
     paper_ensure_i2s_passthrough();
@@ -551,22 +551,27 @@ Error paper_run_motor(uint8_t motor_ix, uint16_t steps) {
     if (motor_ix == 0) {
         step_pin   = CLAMP_MOTOR_STEP_PIN;
         motor_name = "Clamp";
+    } else if (motor_ix == 1) {
+        step_pin   = PANEL_MOTOR_STEP_PIN;
+        motor_name = "Panel";
+    } else if (motor_ix == 2) {
+        step_pin   = FEEDER_MOTOR_STEP_PIN;
+        motor_name = "Feeder";
+    } else {
+        return Error::GcodeUnsupportedCommand;
+    }
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperMotor] %s: jog start (%u steps)", motor_name, (unsigned)steps);
+    paper_release_panel_hold_for_xyz_motion();
+    if (motor_ix == 0) {
         paper_enable_clamp_feeder_only();
 #ifdef PAPER_DRIVER_REF_PIN
         paper_set_ref_dac(PAPER_REF_DAC_CLAMP);
 #endif
     } else if (motor_ix == 1) {
-        step_pin   = PANEL_MOTOR_STEP_PIN;
-        motor_name = "Panel";
         paper_enable_panel_only();
-    } else if (motor_ix == 2) {
-        step_pin   = FEEDER_MOTOR_STEP_PIN;
-        motor_name = "Feeder";
-        paper_enable_clamp_feeder_only();
     } else {
-        return Error::GcodeUnsupportedCommand;
+        paper_enable_clamp_feeder_only();
     }
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperMotor] %s: jog start (%u steps)", motor_name, (unsigned)steps);
     paper_step_pulses(step_pin, steps);
     paper_disable_drivers();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperMotor] %s: jog complete", motor_name);
@@ -575,6 +580,7 @@ Error paper_run_motor(uint8_t motor_ix, uint16_t steps) {
 
 // 仅使能换纸驱动（I2S passthrough + 拉低 EN），不动作；便于用 M64/M65 设方向后单独点动调试
 void paper_enable_drivers_only(void) {
+    paper_release_panel_hold_for_xyz_motion();
     paper_enable_drivers();
 }
 
@@ -951,6 +957,11 @@ Error paper_auto_change(void) {
 void paper_on_soft_reset_restart(void) {
     // 仅取消已预约；保留 SPP 连上后的 after_ack_armed（连接后上位机常发 0x18）
     paper_bt_connect_auto_change_pending = false;
+    // 软复位后全局状态已失效：必须结束面板低电流保持，避免带电残留
+    if (paper_panel_low_hold_active) {
+        paper_disable_drivers();
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Panel hold cleared on soft reset");
+    }
 }
 
 void paper_bt_on_spp_connected(void) {
@@ -1086,6 +1097,7 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
             uint8_t step_pin = (code == 711) ? CLAMP_MOTOR_STEP_PIN : (code == 712) ? PANEL_MOTOR_STEP_PIN : FEEDER_MOTOR_STEP_PIN;
             
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M%u (%s): jog start (%u steps)", (unsigned)code, motor_name, (unsigned)nsteps);
+            paper_release_panel_hold_for_xyz_motion();
             paper_enable_drivers();
             paper_step_pulses(step_pin, nsteps);
             paper_disable_drivers();
@@ -1109,6 +1121,7 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
                            do_clamp ? "CLAMP(Q0)" : "RELEASE(Q1)",
                            (unsigned)nsteps,
                            (int)clamp_dir);
+            paper_release_panel_hold_for_xyz_motion();
             paper_enable_drivers();
 #ifdef PAPER_DRIVER_REF_PIN
             paper_set_ref_dac(PAPER_REF_DAC_CLAMP);  // 【Superpowers-主动控制】确保拾落电机使用优化后的电流
