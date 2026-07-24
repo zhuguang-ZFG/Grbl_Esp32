@@ -298,23 +298,24 @@ static void paper_step_pulses(uint8_t step_pin, uint32_t steps) {
 #endif
 
 // Step 6 正向锚边（Grbl homing 同侧定位路线）：历史纸尾边沿位置（自 Step 6 起点的步数），仅本次上电有效。
-// 有历史时快进段盲走到 边沿-PANEL_EDGE_APPROACH_STEPS，再慢速逐 step 采边（检测延迟 <1 step）；
-// 无历史（上电第一页/上次失败）退回全程快速采边，成功后重新学习。全程正向不换向，回差不进测量链。
+// 有历史时快进盲走到 边沿-PANEL_EDGE_APPROACH_STEPS，再慢速采边；无历史则全程采边。
+// 仅无历史时首次成功写入并冻结——后续成功页不覆盖，避免页间噪声拽偏盲走目标。
+// 失败/EDGE_PASSED/软复位清 valid 后重学。全程正向不换向，回差不进测量链。
 static uint32_t paper_panel_edge_steps = 0;
 static bool     paper_panel_edge_valid = false;
 
-// 纸张传感器防抖参数：100+ 页后灰尘/纸屑/EMI 干扰增大，提高采样次数和间隔
+// 纸张传感器防抖参数：采边原点抖动时优先加采样（HIL：5/4/2 → 9/7/3，对称 Present/Absent）
 #ifndef PAPER_SENSOR_STABLE_SAMPLES
-#    define PAPER_SENSOR_STABLE_SAMPLES 5  // 采样次数
+#    define PAPER_SENSOR_STABLE_SAMPLES 9  // 采样次数
 #endif
 #ifndef PAPER_SENSOR_STABLE_THRESHOLD
-#    define PAPER_SENSOR_STABLE_THRESHOLD 4  // 至少多少次 LOW 才认为有纸
+#    define PAPER_SENSOR_STABLE_THRESHOLD 7  // ≥7/9 LOW=Present；≥7/9 HIGH=Absent；中间 Uncertain
 #endif
 #ifndef PAPER_SENSOR_STABLE_INTERVAL_US
 #    define PAPER_SENSOR_STABLE_INTERVAL_US 500u  // 采样间隔 us
 #endif
 #ifndef PAPER_SENSOR_LOST_STREAK
-#    define PAPER_SENSOR_LOST_STREAK 2u  // 连续 Absent 次数才确认纸尾离开（P6 无反向回找）
+#    define PAPER_SENSOR_LOST_STREAK 3u  // 连续 Absent 次数才确认纸尾离开（P6 无反向回找）
 #endif
 
 // 标记I2S是否已初始化（延迟到第一次需要时）
@@ -381,6 +382,13 @@ static void paper_ensure_i2s_passthrough(void) {
 #endif
 }
 
+#ifdef PAPER_DRIVER_REF_PIN
+// 按当前运行的电机切换 REF（拾落/面板/进纸器可单独设定 DAC 值，见 custom_3axis_hr4988.h 中 PAPER_REF_DAC_*）
+static void paper_set_ref_dac(uint8_t dac_val) {
+    dacWrite((int)PAPER_DRIVER_REF_PIN, dac_val);
+}
+#endif
+
 // 内部辅助函数：启用所有纸路驱动（面板 + 拾落 + 进纸器）
 void paper_enable_drivers(void) {
     paper_ensure_i2s_passthrough();
@@ -400,14 +408,43 @@ void paper_disable_drivers(void) {
 #ifdef PAPER_DRIVER_ENABLE_PIN
     digitalWrite(PAPER_DRIVER_ENABLE_PIN, HIGH);
 #endif
+#ifdef PAPER_DRIVER_REF_PIN
+    paper_set_ref_dac(0);
+#endif
 }
 
-#ifdef PAPER_DRIVER_REF_PIN
-// 按当前运行的电机切换 REF（拾落/面板/进纸器可单独设定 DAC 值，见 custom_3axis_hr4988.h 中 PAPER_REF_DAC_*）
-static void paper_set_ref_dac(uint8_t dac_val) {
-    dacWrite((int)PAPER_DRIVER_REF_PIN, dac_val);
-}
+// 换纸成功：仅面板低电流保持（FluidNC idle_ms=255 思路；本机用降 REF 降发热/595 误步进蠕动）
+static void paper_enter_panel_low_hold(void) {
+    paper_ensure_i2s_passthrough();
+    // STEP/DIR 置已知电平，减轻 I2S/595 毛刺当步进脉冲
+    digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
+    digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_FEED);
+#ifdef USE_I2S_OUT
+    i2s_out_delay();
 #endif
+#ifdef PAPER_DRIVER_REF_PIN
+#    ifndef PAPER_REF_DAC_PANEL_HOLD
+#        define PAPER_REF_DAC_PANEL_HOLD ((PAPER_REF_DAC_PANEL) / 2)
+#    endif
+    paper_set_ref_dac((uint8_t)PAPER_REF_DAC_PANEL_HOLD);
+#endif
+    digitalWrite(PAPER_ENABLE_PIN, LOW);
+#ifdef PAPER_DRIVER_ENABLE_PIN
+    digitalWrite(PAPER_DRIVER_ENABLE_PIN, HIGH);  // 拾落/进纸器关
+#endif
+#ifdef USE_I2S_OUT
+    i2s_out_delay();
+#endif
+    grbl_msg_sendf(CLIENT_SERIAL,
+                   MsgLevel::Info,
+                   "[PaperAuto] Panel low-current hold (REF=%u, clamp/feeder off)",
+#ifdef PAPER_DRIVER_REF_PIN
+                   (unsigned)PAPER_REF_DAC_PANEL_HOLD
+#else
+                   0u
+#endif
+    );
+}
 
 // 仅使能面板电机（互斥：关闭拾落 + 进纸器）
 static void paper_enable_panel_only(void) {
@@ -872,6 +909,9 @@ Error paper_auto_change(void) {
             if (!learn_mode && paper_panel_edge_steps > PANEL_EDGE_APPROACH_STEPS) {
                 // 快进段：按历史边沿盲走，停在减速窗口前；不采传感器（慢速段负责精确定位）
                 uint32_t fast_steps = paper_panel_edge_steps - PANEL_EDGE_APPROACH_STEPS;
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info,
+                               "[PaperAuto-6] mode=fast_approach hist=%u blind=%u",
+                               (unsigned)paper_panel_edge_steps, (unsigned)fast_steps);
                 paper_pulses(PANEL_MOTOR_STEP_PIN, PAPER_DISABLED, fast_steps, PaperPulsePanelFast);
                 if (paper_should_abort_change()) {
                     return paper_auto_change_abort_cleanup("during fast approach to paper edge");
@@ -893,6 +933,9 @@ Error paper_auto_change(void) {
                 }
             } else {
                 learn_mode = true;  // 无历史，或历史值不足一个减速窗口：全程采边
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info,
+                               "[PaperAuto-6] mode=learn hist_valid=%u hist=%u",
+                               (unsigned)paper_panel_edge_valid, (unsigned)paper_panel_edge_steps);
             }
             bool edge_confirmed = false;
             {
@@ -971,15 +1014,29 @@ Error paper_auto_change(void) {
                 continue;
             }
             if (sensor_lost) {
-                // 仅首次尝试成功才写历史：重试前有 backoff 反向移位，步数坐标系已偏，
-                // 写入会污染下页快进段；重试成功则置无效，下页全程重学（坐标系干净）
+                // 历史策略：
+                // - attempt==0 且尚无历史 → 写入并冻结（后续成功页不覆盖，抑盲走目标页间漂移）
+                // - attempt==0 且已有历史 → 保持冻结值；Step8 仍按当页边沿 + PANEL_FINAL（纸边相对对位）
+                // - attempt>0（经 backoff）→ 坐标系已偏，清历史，下页重学
+                const char* edge_note = "ok, history deferred";
                 if (attempt == 0) {
-                    paper_panel_edge_steps = steps;
-                    paper_panel_edge_valid = true;
+                    if (!paper_panel_edge_valid) {
+                        paper_panel_edge_steps = steps;
+                        paper_panel_edge_valid = true;
+                        edge_note              = "learned";
+                    } else {
+                        edge_note = "ok, history frozen";
+                    }
                 } else {
                     paper_panel_edge_valid = false;
                 }
-                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Sensor lost at attempt %u step %u (edge %s)", (unsigned)attempt, (unsigned)steps, (attempt == 0) ? "learned" : "ok, history deferred");
+                grbl_msg_sendf(CLIENT_SERIAL,
+                               MsgLevel::Info,
+                               "[PaperAuto-6] Sensor lost at attempt %u step %u (edge %s, hist=%u)",
+                               (unsigned)attempt,
+                               (unsigned)steps,
+                               edge_note,
+                               (unsigned)paper_panel_edge_steps);
                 break;
             }
             paper_panel_edge_valid = false;  // 本次失败，作废历史，重试走全程采边
@@ -1006,23 +1063,53 @@ Error paper_auto_change(void) {
     }
 
     // （原 Step 7 反向回找已移除：换向会把机械回差引入最终对位；现 Step 6 正向采边后全程同向）
-    // 8. 面板电机再向送纸方向走固定步数，作为最终对位（夹紧后速度加倍；与 Step 6 同向，无回差事件）
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Final alignment (%u steps)...", (unsigned)PANEL_FINAL_STEPS);
-    digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_FEED);
-#ifdef USE_I2S_OUT
-    i2s_out_delay();
-    delay(2);
+    // 8. 自当页边沿再向送纸方向走 PANEL_FINAL（纸边相对对位；勿用 hist 钉电机总行程——晚采会少走=不到位）
+#ifndef PANEL_FINAL_SLOW_TAIL_STEPS
+#    define PANEL_FINAL_SLOW_TAIL_STEPS 40u
 #endif
-    paper_pulses(PANEL_MOTOR_STEP_PIN, PAPER_DISABLED, PANEL_FINAL_STEPS, PaperPulsePanelFast);
-    if (paper_should_abort_change()) {
-        return paper_auto_change_abort_cleanup("during final alignment");
+    {
+        uint32_t slow_tail = PANEL_FINAL_SLOW_TAIL_STEPS;
+        if (slow_tail > PANEL_FINAL_STEPS) {
+            slow_tail = PANEL_FINAL_STEPS;
+        }
+        uint32_t fast_part = PANEL_FINAL_STEPS - slow_tail;
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[PaperAuto-8] Final alignment (fast=%u slow=%u)...",
+                       (unsigned)fast_part,
+                       (unsigned)slow_tail);
+        digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_FEED);
+#ifdef USE_I2S_OUT
+        i2s_out_delay();
+        delay(2);
+#endif
+        if (fast_part > 0) {
+            paper_pulses(PANEL_MOTOR_STEP_PIN, PAPER_DISABLED, fast_part, PaperPulsePanelFast);
+            if (paper_should_abort_change()) {
+                return paper_auto_change_abort_cleanup("during final alignment");
+            }
+        }
+        for (uint32_t i = 0; i < slow_tail; i++) {
+            paper_pulse_us(PANEL_MOTOR_STEP_PIN, PAPER_DISABLED, PANEL_LOCATE_HI_US, PANEL_LOCATE_LO_US);
+            if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+                if (paper_refill_segment_buffer_during_blocking()) {
+                    return paper_auto_change_abort_cleanup("during final alignment slow tail");
+                }
+            }
+        }
+        if (paper_should_abort_change()) {
+            return paper_auto_change_abort_cleanup("during final alignment");
+        }
     }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Done");
 
-    // 9. 到位后短时保持面板力矩，再关纸路使能——立刻失能会让弹性/间隙把纸拽回，对位偏短
-    // （社区：FluidNC settle_ms / idle_ms·disable_delay；非 backlash 软件补偿，见 #756）
+    // 9. settle → 面板低电流保持（社区 idle_ms=255；本机降 REF + 锁 STEP/DIR 静态电平）
+    //    开环 springback 预冲在保持开启时默认关闭（PANEL_SPRINGBACK_COMP_STEPS=0）
 #ifndef PANEL_FINAL_SETTLE_MS
 #    define PANEL_FINAL_SETTLE_MS 200u
+#endif
+#ifndef PAPER_PANEL_HOLD_AFTER_CHANGE
+#    define PAPER_PANEL_HOLD_AFTER_CHANGE 1
 #endif
     if (PANEL_FINAL_SETTLE_MS > 0) {
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Settle hold %u ms...", (unsigned)PANEL_FINAL_SETTLE_MS);
@@ -1031,11 +1118,40 @@ Error paper_auto_change(void) {
             return paper_auto_change_abort_cleanup("during settle hold");
         }
     }
+#if PAPER_PANEL_HOLD_AFTER_CHANGE
+    paper_enter_panel_low_hold();
+#else
+#    ifndef PANEL_SPRINGBACK_COMP_STEPS
+#        define PANEL_SPRINGBACK_COMP_STEPS 0u
+#    endif
+    if (PANEL_SPRINGBACK_COMP_STEPS > 0) {
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[PaperAuto-8] Springback compensate %u steps (feed dir)...",
+                       (unsigned)PANEL_SPRINGBACK_COMP_STEPS);
+        digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_FEED);
+#ifdef USE_I2S_OUT
+        i2s_out_delay();
+        delay(2);
+#endif
+        for (uint32_t i = 0; i < PANEL_SPRINGBACK_COMP_STEPS; i++) {
+            paper_pulse_us(PANEL_MOTOR_STEP_PIN, PAPER_DISABLED, PANEL_LOCATE_HI_US, PANEL_LOCATE_LO_US);
+            if ((i + 1) % PAPER_YIELD_STEPS == 0) {
+                if (paper_refill_segment_buffer_during_blocking()) {
+                    return paper_auto_change_abort_cleanup("during springback compensate");
+                }
+            }
+        }
+        if (paper_should_abort_change()) {
+            return paper_auto_change_abort_cleanup("during springback compensate");
+        }
+    }
     paper_disable_drivers();
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Paper drivers disabled (after settle hold)");
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Paper drivers disabled (no panel hold)");
+#endif
 
-    // 成功路径故意不调用 paper_change_cleanup_common()：不做 plan_reset / 失能 XYZ，
-    // 纸路已在上面 paper_disable_drivers()，sys.state 保持 Idle 供后续 M 指令使用。
+    // 成功路径故意不调用 paper_change_cleanup_common()：不做 plan_reset / 失能 XYZ；
+    // 纸路：保持模式下面板低电流使能，否则已 disable；sys.state 保持 Idle。
     paper_auto_change_running        = false;
     paper_user_stop_requested        = false;  // 成功结束也清急停请求（幂等）
     paper_ignore_host_reset_until_ms = 0;
@@ -1059,6 +1175,8 @@ void paper_on_soft_reset_restart(void) {
     }
     // 软复位后机构/纸位可能已偏，边沿历史作废，下页全程重学（与 cleanup_common 一致）
     paper_panel_edge_valid = false;
+    // 清面板低电流保持，避免复位后仍锁力矩/595 状态不明
+    paper_disable_drivers();
     // 仅取消已预约；保留 SPP 连上后的 after_ack_armed（连接后上位机常发 0x18）
     portENTER_CRITICAL(&paper_bt_auto_mux);
     paper_bt_connect_auto_change_pending = false;

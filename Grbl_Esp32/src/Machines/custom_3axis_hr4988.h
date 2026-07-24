@@ -119,6 +119,13 @@
 #ifndef PAPER_REF_DAC_PANEL
 #    define PAPER_REF_DAC_PANEL   90    // 面板电机
 #endif
+// 换纸成功后面板低电流保持（防失能回缩；写字期仍使能，REF 远低于运行值以降发热/蠕动）
+#ifndef PAPER_REF_DAC_PANEL_HOLD
+#    define PAPER_REF_DAC_PANEL_HOLD  40  // ≈运行电流 44%；偏软加大，发烫/蠕动则减小
+#endif
+#ifndef PAPER_PANEL_HOLD_AFTER_CHANGE
+#    define PAPER_PANEL_HOLD_AFTER_CHANGE 1  // 1=换纸后低电流保持；0=失能（旧行为）
+#endif
 #ifndef PAPER_REF_DAC_FEEDER
 #    define PAPER_REF_DAC_FEEDER  110   // 进纸器电机
 #endif
@@ -149,9 +156,15 @@
 #define PANEL_LOCATE_HI_US    1500u
 #define PANEL_LOCATE_LO_US    1500u
 // 面板电机：最终微调到位的步数（HIL：320 过头 → 300）
-#define PANEL_FINAL_STEPS     300u
-// 对位完成后、失能前保持使能的毫秒数（防弹性/间隙回弹；对齐 FluidNC settle / disable_delay 思路）
+#define PANEL_FINAL_STEPS     300u  // 纸边相对再进量；保持开启后按 HIL 标（曾 250 偏短）
+// Step8 末尾改慢速的步数（降动能，减轻硬停弹性）
+#define PANEL_FINAL_SLOW_TAIL_STEPS 40u
+// 对位完成后、失能前保持使能的毫秒数（进入低电流保持前的短 settle）
 #define PANEL_FINAL_SETTLE_MS 200u
+// 开环回弹预留：低电流保持开启时默认 0（由保持力矩顶住，不再预冲）
+#define PANEL_SPRINGBACK_COMP_STEPS 0u
+// 失能前 REF 软降：保持模式下不用
+#define PANEL_DISABLE_SOFT_REF_MS 0u
 
 // 进纸器电机：寻找新纸到感应器的最大步数（超时时间，可根据实际距离调大）
 // 100+ 页后进纸阻力增加，放宽上限配合 PAPER_SENSOR_TIMEOUT_MS 使用

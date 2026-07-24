@@ -643,4 +643,5 @@ const int N_PIECES = 3;
 const double RPM_MAX = 23935.2;
 const double RPM_MIN = 2412.2;
 
-// 面板写字保持（M902/M903）已移除：蓝牙雕刻时与 I2S/595 冲突易导致面板蠕动，换纸后统一关使能
+// 面板写字保持：换纸成功后默认低电流保持（PAPER_PANEL_HOLD_AFTER_CHANGE + PAPER_REF_DAC_PANEL_HOLD）
+// 旧 M902/M903 全电流保持已移除；低 REF + STEP/DIR 静态电平减轻 595 误步进蠕动，仍需 HIL 观察写字期是否蠕动

@@ -11,6 +11,7 @@
 | 三轮审查落地 | `ed1089d`（2026-07-20）· 已 push（B1–B4 Blocker + 内存安全 + 解析加固 + 段缓冲屏障） |
 | 四轮审查落地 | `4b29822`（2026-07-20）· 已 push（错误逻辑专项：$G 探针标签 / 全局禁用掩码 / map 反区间 / Trinamic 编译 / VFD 等） |
 | 正向锚边 + 量产镜像 | `31db6d8`…`618b1fb`（2026-07-24）· 已 push（P6；见 §6i） |
+| 面板低电流保持 + 边沿冻结 | 本提交（2026-07-24）· 换纸后 `paper_enter_panel_low_hold`；hist 首学冻结；Step8 纸边相对 + 慢尾；**勿** hist 绝对补偿 |
 | 配套 SIL 测试 | fz `e01c263`（G28/G38/`$H` 换纸 defer 期望） |
 | 验收 HIL | `docs/ACCEPTANCE_CHECKLIST.md` · 本文件 §8（F1/F3/M1 专项）· §6i P6 对位 |
 
@@ -51,7 +52,7 @@ python $env:FZ_ROOT\scripts\agent_gate.py --profile standard
 | M30 成功跳过下一原点换纸 | `paper_m30_just_completed` 不在 `line_begin` 清；仅 consume / 非原点 seek / parser_reset | `Custom/paper_system.cpp` |
 | Busy 重入 | 已在 running 时返回 **非 Ok**（`AnotherInterfaceBusy`） | `PaperSystem.cpp` |
 | Sensor fail-closed | Step2/6 失败走 cleanup + `MessageFailed` + `[PaperStatus]` | `PaperSystem.cpp` |
-| **P6** | 换纸 Step 6 采纸尾边沿后**全程正向不换向**（正向锚边，2026-07-24 起）：原 Step 7 反向回找已移除——换向会把机械回差引入 Step 8 最终对位。禁止在无回差补偿前提下恢复"反向找边"；边沿历史仅 RAM（`paper_panel_edge_steps/valid`），快进段停 `PANEL_EDGE_APPROACH_STEPS` 前转慢速采边；仅 attempt==0 成功写入历史，重试成功 deferred；失败/中止/`paper_on_soft_reset_restart` 清 `valid`；采边用对称 `PaperSensorLevel` + 连续 `PAPER_SENSOR_LOST_STREAK` Absent（过渡区不当前沿）；**成功路径统一 `sys_position[Z]=0` sync**（ESP910/M721/按键与 M30/BT 一致）；Step 8 后 **`PANEL_FINAL_SETTLE_MS` 保持使能再失能**（防弹性回弹，非 backlash） | `PaperSystem.cpp` Step 6/8、`PaperSystemCore.h`、`Machines/custom_3axis_hr4988.h` |
+| **P6** | 换纸 Step 6 采纸尾边沿后**全程正向不换向**（正向锚边，2026-07-24 起）：原 Step 7 反向回找已移除——换向会把机械回差引入 Step 8 最终对位。禁止在无回差补偿前提下恢复"反向找边"；边沿历史仅 RAM（`paper_panel_edge_steps/valid`），快进段停 `PANEL_EDGE_APPROACH_STEPS` 前转慢速采边；**仅无历史时首次成功写入并冻结**，后续成功页不覆盖（抑盲走目标漂移）；重试成功 deferred 清历史；失败/中止/`paper_on_soft_reset_restart` 清 `valid`；采边用对称 `PaperSensorLevel` + 连续 `PAPER_SENSOR_LOST_STREAK` Absent（过渡区不当前沿）；**成功路径统一 `sys_position[Z]=0` sync**；Step 8 自当页边沿走 **`PANEL_FINAL`**（纸边相对；勿用 hist 钉电机总行程）；其后 settle + 面板低电流保持 | `PaperSystem.cpp` Step 6/8、`PaperSystemCore.h`、`Machines/custom_3axis_hr4988.h` |
 
 ### 设置 / 步进
 
@@ -307,8 +308,8 @@ WebUI 剩余网络栈子代理审 + 主审手工审报告热路径。**产品路
 | 步骤 | 期望 |
 |------|------|
 | 连续换纸 5–10 页 | 对位一致；串口可见首页 learn、后续页 fast approach |
-| 相对旧固件目视/尺量进纸终点 | 停边侧已从「有纸」改为「无纸」+ 无换向回差 → **`PANEL_FINAL_STEPS` 按 HIL 标定**（当前 **300**，由 320 减 20 防过头）；失能前 **`PANEL_FINAL_SETTLE_MS=200`** 保持力矩（防回弹） |
-| 对位后立刻失能目视回弹 | 串口应有 `Settle hold`；仍回弹则加大 settle，**勿**上 backlash / 勿恢复 Step7 |
+| 相对旧固件目视/尺量进纸终点 | 停边侧已从「有纸」改为「无纸」+ 无换向回差 → **`PANEL_FINAL_STEPS` 按 HIL 标定**（当前 **300**）；Step8 **纸边相对** `edge+FINAL`（hist 绝对补偿已撤销：晚采会不到位）；换纸后 **低电流保持**；采边防抖 **9/7 + LOST_STREAK=3** |
+| 对位后立刻失能目视回弹 | 串口应有 `Settle hold` → `Panel low-current hold`；写字期观察发热/蠕动；**勿**上 backlash / 勿恢复 Step7 / 勿 hist 钉 Step8 |
 | 短纸 / 人为 `EDGE_PASSED` | 非末次 backoff 重学或末次 `[PaperStatus] 3`；**不得**错位却报 0 |
 | 换纸中 feed-hold / USB `0x18` 中止后再换 | 下页全程重学（历史已清）；无脏快进 |
 | 烧录 `firmware_full_0x0.bin` @0x0 | 能起机；`$I` 正常（量产路径） |

@@ -65,10 +65,16 @@
 
 | 参数 | 默认 | 何时动 |
 |------|------|--------|
-| `PANEL_FINAL_STEPS` | 300 | 多页对位整体偏前/偏后时优先调（2026-07-24 HIL：320→300 减过头） |
+| `PANEL_FINAL_STEPS` | 300 | 自**当页边沿**再进量（纸边相对）。hist 只用于盲走。整体偏前/偏后优先调此值 |
 | `PANEL_FINAL_SETTLE_MS` | 200 | 对位后立刻失能若目视回弹，加大 settle（对齐 FluidNC settle/disable_delay；非 backlash） |
+| `PANEL_SPRINGBACK_COMP_STEPS` | 0（保持开时） | 仅 `PAPER_PANEL_HOLD_AFTER_CHANGE=0` 时用开环预冲 |
+| `PAPER_REF_DAC_PANEL_HOLD` | 40 | 换纸后低电流保持；仍回缩则加大，发烫/写字蠕动则减小 |
+| `PAPER_PANEL_HOLD_AFTER_CHANGE` | 1 | 0=退回失能 |
 | `PANEL_EDGE_APPROACH_STEPS` | 400（≈3.8mm） | 频繁 `EDGE_PASSED` 或慢窗耗尽时按纸长公差/磨损加大 |
 | `PANEL_LOCATE_*` | 1500/1500 µs | 仅当慢采噪声/延迟不足时 |
+| `PAPER_SENSOR_STABLE_SAMPLES` / `THRESHOLD` | 9 / 7 | 采边原点页间抖动大时优先加采样（HIL：5/4→9/7） |
+| `PAPER_SENSOR_LOST_STREAK` | 3 | Absent 连确认次数（HIL：2→3） |
+| 边沿历史写入 | 首次学到后**冻结** | 勿每页覆盖；HIL 曾见每页覆盖致盲走目标漂移 ~2 cm |
 
 **验证：** 连续 5–10 页 + `ACCEPTANCE_CHECKLIST` §1.9；改宏后 `agent_gate standard` 仍须绿。**禁止**无补偿恢复反向找边（P6）。
 

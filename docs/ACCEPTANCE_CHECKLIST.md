@@ -34,8 +34,8 @@ FluidNC 状态位说明见：[Serial Protocol — Bf 缓冲](https://wiki.fluidn
 | **1.7** | **Alarm / 非 Idle** 下发 **M721** 或 **`[ESP910]`** | **拒绝**（Idle 门禁）（P2） |
 | 1.8 | 换纸中发 feed-hold / 安全门字符 | 纸路急停中止换纸，不误显示 Hold 却电机仍转 |
 | **1.9** | **连续换纸 5–10 页（正向锚边 P6）** | 对位一致；首页 learn、后续页可走快进+慢采；**无**错位却 `[PaperStatus] 0` |
-| **1.9b** | **相对改前固件核对进纸终点** | 停边侧变更 + 无换向回差 → 若整体偏前/偏后，只调 `PANEL_FINAL_STEPS` / `PANEL_EDGE_APPROACH_STEPS` / `PANEL_FINAL_SETTLE_MS`（勿恢复 Step7、勿 backlash） |
-| **1.9b2** | **对位结束立刻失能回弹** | 串口有 `[PaperAuto-8] Settle hold`；失能后纸边无明显回退 |
+| **1.9b** | **相对改前固件核对进纸终点** | 停边侧变更 + 无换向回差 → 若整体偏前/偏后，只调 `PANEL_FINAL_STEPS` / `PANEL_EDGE_APPROACH_STEPS`（勿恢复 Step7、勿 backlash、勿 hist 绝对补偿） |
+| **1.9b2** | **对位后回弹 / 保持** | 串口有 `Settle hold` → `Panel low-current hold (REF=…)`；写字期无异常蠕动/过热；勿立刻失能导致回缩 |
 | **1.9c** | **短纸或历史偏长触发 EDGE_PASSED / Ambiguous** | 末次须 `[PaperStatus] 3` + cleanup；非末次可 backoff 重学 |
 | **1.9d** | **换纸中止（feed-hold）或软复位后再换一页** | 下页全程重学（边沿历史已清）；无脏快进冲边 |
 
