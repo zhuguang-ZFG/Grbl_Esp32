@@ -296,7 +296,7 @@ WebUI 剩余网络栈子代理审 + 主审手工审报告热路径。**产品路
 | `382ac2c` | Ambiguous 耗重试；仅 attempt==0 写历史；慢窗日志区分 |
 | `618b1fb` | cleanup / soft-reset 清 `paper_panel_edge_valid`；merge 缺段显式报错；文档对齐 |
 | `ae7f2d0` | 成功路径统一 Z=0 sync；对称 `PaperSensorLevel` + `PAPER_SENSOR_LOST_STREAK` 原地确认 Absent |
-| （本补丁） | 采边成功以循环内 `edge_confirmed` 为准，禁止确认后再采样误杀真边沿 |
+| `33be297` | 采边成功以循环内 `edge_confirmed` 为准，禁止确认后再采样误杀真边沿 |
 
 **不变量 P6**（§3）：勿无补偿恢复反向找边。Cursor/Bugbot/FluidNC#756 深审后：Z 同步 + 对称无纸确认 + 确认后不复采。`agent_gate standard` 须复绿。
 
