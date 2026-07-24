@@ -55,6 +55,9 @@ Error jog_execute(plan_line_data_t* pl_data, parser_block_t* gc_block, bool* can
 
     if (sys.state == State::Idle) {
         if (plan_get_current_block() != NULL) {  // Check if there is a block to execute.
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+            paper_release_panel_hold_for_xyz_motion();
+#endif
             sys.state = State::Jog;
             st_prep_buffer();
             st_wake_up();  // NOTE: Manual start. No state machine required.

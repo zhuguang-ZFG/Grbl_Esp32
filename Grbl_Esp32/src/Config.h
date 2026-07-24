@@ -504,15 +504,23 @@ const int DWELL_TIME_STEP = 50;  // Integer (1-255) (milliseconds)
 #endif
 
 #ifndef BT_LINK_SILENCE_TIMEOUT_MS
-#    define BT_LINK_SILENCE_TIMEOUT_MS 5000u  // SPP 连接/拥塞状态下无事件，视为假连接超时
+// 仅对「拥塞 / 有待发 TX」的静默做 soft-drop（disconnect）。
+// 纯空闲 rx 静默不拆链：奎享页间/停发可达数十秒（d26b4d05 能写；误拆会留下 PC 假 COM）。
+// 禁止 SerialBT.end()/begin()（会 IWDT）。
+#    define BT_LINK_SILENCE_TIMEOUT_MS 10000u
+#endif
+
+// 旧 IDLE 拆链 end/begin 已废除（会 IWDT）。此宏仅保留兼容，不再驱动行为。
+#ifndef BT_LINK_IDLE_TIMEOUT_MS
+#    define BT_LINK_IDLE_TIMEOUT_MS 120000u
 #endif
 
 #ifndef BT_RECOVERY_COOLDOWN_MS
-#    define BT_RECOVERY_COOLDOWN_MS 3000u  // 结束 SPP 后冷却再重启
+#    define BT_RECOVERY_COOLDOWN_MS 3000u  // soft-drop 冷却，避免连打 disconnect
 #endif
 
 #ifndef BT_RECOVERY_MAX_RETRIES
-#    define BT_RECOVERY_MAX_RETRIES 3  // 连续自动恢复失败上限，超限后保持 Idle
+#    define BT_RECOVERY_MAX_RETRIES 3  // soft-drop 连续次数上限
 #endif
 
 #ifndef BT_TX_RING_SIZE

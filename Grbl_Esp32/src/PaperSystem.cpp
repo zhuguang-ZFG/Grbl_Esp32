@@ -402,8 +402,12 @@ void paper_enable_drivers(void) {
 #endif
 }
 
+// 换纸成功后的面板低电流保持：写字/点动/回零开始前释放，减轻 I2S 595 与 BT SPP 串扰断流
+static volatile bool paper_panel_low_hold_active = false;
+
 // 内部辅助函数：禁用驱动
 void paper_disable_drivers(void) {
+    paper_panel_low_hold_active = false;
     digitalWrite(PAPER_ENABLE_PIN, HIGH);
 #ifdef PAPER_DRIVER_ENABLE_PIN
     digitalWrite(PAPER_DRIVER_ENABLE_PIN, HIGH);
@@ -413,7 +417,17 @@ void paper_disable_drivers(void) {
 #endif
 }
 
+// XYZ 运动即将开始：结束面板低电流保持（社区：BT 流式脆弱 + 本仓旧注释「失能防 595 串扰」）
+void paper_release_panel_hold_for_xyz_motion(void) {
+    if (!paper_panel_low_hold_active) {
+        return;
+    }
+    paper_disable_drivers();
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Panel hold released for XYZ motion");
+}
+
 // 换纸成功：仅面板低电流保持（FluidNC idle_ms=255 思路；本机用降 REF 降发热/595 误步进蠕动）
+// 保持到首次 Cycle/Jog/Homing，再由 paper_release_panel_hold_for_xyz_motion() 失能。
 static void paper_enter_panel_low_hold(void) {
     paper_ensure_i2s_passthrough();
     // STEP/DIR 置已知电平，减轻 I2S/595 毛刺当步进脉冲
@@ -435,9 +449,10 @@ static void paper_enter_panel_low_hold(void) {
 #ifdef USE_I2S_OUT
     i2s_out_delay();
 #endif
+    paper_panel_low_hold_active = true;
     grbl_msg_sendf(CLIENT_SERIAL,
                    MsgLevel::Info,
-                   "[PaperAuto] Panel low-current hold (REF=%u, clamp/feeder off)",
+                   "[PaperAuto] Panel low-current hold (REF=%u, clamp/feeder off; release on XYZ motion)",
 #ifdef PAPER_DRIVER_REF_PIN
                    (unsigned)PAPER_REF_DAC_PANEL_HOLD
 #else
@@ -1407,4 +1422,5 @@ bool paper_should_ignore_host_reset(uint8_t client) {
     (void)client;
     return false;
 }
+void paper_release_panel_hold_for_xyz_motion(void) {}
 #endif

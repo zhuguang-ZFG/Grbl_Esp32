@@ -33,19 +33,19 @@
 static std::atomic<BTState>  bt_state{BTState::Idle};
 static std::atomic<uint32_t> bt_last_event_ms{0};
 
-// Recovery state, driven by bt_state_update() in the main loop.
-static bool                 bt_recovery_active   = false;
-static uint8_t              bt_recovery_step     = 0;
-static uint32_t             bt_recovery_ts       = 0;
+// Soft-drop bookkeeping (no end()/begin() recovery — that path IWDT-panics).
+static uint32_t             bt_recovery_ts = 0;
 static std::atomic<uint8_t> bt_recovery_attempts{0};
 
 // Planner 饥饿阈值：与 Protocol.cpp 中的 PLANNER_STARVE_THRESHOLD 一致。
-// 当运动中 planner 可用块低于此值时，跳过所有可能阻塞的 BT TX 操作，
+// 当运动中 planner 排队块低于此值时，跳过所有可能阻塞的 BT TX 操作，
 // 避免 SerialBT.write() 的 xQueueSend 1000ms 超时导致段缓冲欠载。
 static const uint8_t BT_PLANNER_STARVE_THRESHOLD = 8;
 
 static bool bt_planner_is_starving(void) {
-    return sys.state == State::Cycle && plan_get_block_buffer_available() < BT_PLANNER_STARVE_THRESHOLD;
+    // 饥饿 = 排队块少。plan_get_block_buffer_available() 返回空闲槽数（(SIZE-1)-排队），
+    // 语义相反；必须用 plan_get_block_buffer_count()（真实排队块数）。
+    return sys.state == State::Cycle && plan_get_block_buffer_count() < BT_PLANNER_STARVE_THRESHOLD;
 }
 
 // TX ring buffer for congested-but-critical messages. Protected by bt_tx_mux.
@@ -61,9 +61,7 @@ static void bt_tx_ring_reset(void);
 void bt_state_init(void) {
     bt_state.store(BTState::Idle);
     bt_last_event_ms.store(0);
-    bt_recovery_active   = false;
-    bt_recovery_step     = 0;
-    bt_recovery_ts       = 0;
+    bt_recovery_ts = 0;
     bt_recovery_attempts.store(0);
     bt_tx_ring.initialize();
 }
@@ -185,16 +183,12 @@ bool bt_tx_send(const char* text, size_t len, bool critical) {
             return false;
         }
 
-        // 运动中 planner 即将饥饿时，不做可能阻塞的 SerialBT.write()——
-        // xQueueSend 的 1000ms 超时会让主循环停顿，导致段缓冲欠载、电机停转。
-        // 关键消息直接入环等待后续 flush，非关键消息丢弃。
-        if (bt_planner_is_starving()) {
-            if (critical) {
-                vTaskEnterCritical(&bt_tx_mux);
-                bool ok = bt_tx_ring_push(text, len);
-                vTaskExitCritical(&bt_tx_mux);
-                return ok;
-            }
+        // 运动中 planner 饥饿时丢弃非关键消息（调试/诊断 MSG），减少 BT 负载。
+        // 关键消息（ok/error/状态）绝不能因饥饿被抑制：它们是流式协议的流控 ACK，
+        // 上位机收到 ok 才会发下一行 G 代码来补给 planner。若饥饿时把 ok 压进环、
+        // 再被 flush 的饥饿门禁挡住，就会形成「饥饿→抑制 ok→上位机停发→更饥饿」
+        // 的死锁（表现为写不了字）。因此关键消息落到下面的直写路径，尽快发出。
+        if (bt_planner_is_starving() && !critical) {
             return false;
         }
 
@@ -226,11 +220,11 @@ void bt_tx_flush(void) {
     if (!WebUI::SerialBT.hasClient()) {
         return;
     }
-    // 运动中 planner 即将饥饿时，不做可能阻塞的 SerialBT.write()——
-    // xQueueSend 的 1000ms 超时会让主循环停顿，导致段缓冲欠载、电机停转。
-    if (bt_planner_is_starving()) {
-        return;
-    }
+    // 注意：不能因 planner 饥饿而跳过 flush。ring 里只装关键消息（push 仅在
+    // critical 时调用），其中包括流控 ACK（ok/error）。饥饿期恰恰是写字最密集、
+    // 上位机最需要 ok 来续发 G 代码的时候；跳过 flush 会让 ok 卡死在环里，
+    // 形成「饥饿→ok 不出→上位机停发→更饥饿」的死锁。flush 只在 Connected
+    // （非 Congested）态被调用，此时底层写队列有空间、SerialBT.write() 不阻塞。
 
     while (true) {
         vTaskEnterCritical(&bt_tx_mux);
@@ -264,63 +258,45 @@ void bt_tx_flush(void) {
     }
 }
 
-static void bt_execute_recovery(uint32_t now_ms) {
-    // 恢复期间回调可能把 bt_state 改回 Idle/Advertising；用 recovery_active 标志保证流程不被中断
-    bt_state_set(BTState::Recovering);
+// 假连接自救：只 disconnect()/降级状态，绝不 SerialBT.end()/begin()。
+// 实测 end→begin 会触发 rwbt.c ASSERT_PARAM + Interrupt WDT，整机重启后 PC 仍占着死 COM，
+// 上位机继续发 G92 却收不到 ok（双口日志 22:38–22:40）。
+static void bt_soft_drop_stale_link(uint32_t now_ms, uint32_t silent_ms, const char* reason) {
+    if (bt_recovery_attempts.load() >= BT_RECOVERY_MAX_RETRIES) {
+        bt_state_set(BTState::Advertising);
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[BTState] Soft-drop skipped: max retries (%u) exceeded (%s)",
+                       BT_RECOVERY_MAX_RETRIES,
+                       reason);
+        return;
+    }
+    if (bt_recovery_ts != 0 && (now_ms - bt_recovery_ts) < BT_RECOVERY_COOLDOWN_MS) {
+        return;
+    }
+    bt_recovery_ts = now_ms;
+    bt_recovery_attempts.fetch_add(1);
 
-    switch (bt_recovery_step) {
-        case 0:  // 结束 SPP
-            vTaskEnterCritical(&bt_tx_mux);
-            bt_tx_ring_reset();
-            vTaskExitCritical(&bt_tx_mux);
-            WebUI::SerialBT.end();
-            bt_recovery_step = 1;
-            bt_recovery_ts   = now_ms;
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[BTState] SPP ended for recovery");
-            break;
+    vTaskEnterCritical(&bt_tx_mux);
+    bt_tx_ring_reset();
+    vTaskExitCritical(&bt_tx_mux);
 
-        case 1:  // 冷却
-            if (now_ms - bt_recovery_ts < BT_RECOVERY_COOLDOWN_MS) {
-                return;
-            }
-            bt_recovery_step = 2;
-            bt_recovery_ts   = now_ms;
-            break;
-
-        case 2: {  // 重新启动 SPP
-            uint8_t attempts = bt_recovery_attempts.fetch_add(1) + 1;
-            String bt_name = WebUI::bt_config.BTname();
-            if (WebUI::SerialBT.begin(bt_name.c_str())) {
-                bt_recovery_attempts.store(0);
-                bt_recovery_active   = false;
-                // begin() 可能已触发 SRV_OPEN_EVT 回调（客户端在恢复窗口内重连），
-                // 此时 bt_state 已被回调设为 Connected；不要覆盖它。
-                BTState cur = bt_state_get();
-                if (cur != BTState::Connected && cur != BTState::Congested) {
-                    bt_state_set(BTState::Advertising);
-                }
-                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[BTState] SPP restarted, advertising as %s", bt_name.c_str());
-            } else if (attempts >= BT_RECOVERY_MAX_RETRIES) {
-                bt_recovery_active = false;
-                bt_state_set(BTState::Idle);
-                grbl_msg_sendf(CLIENT_SERIAL,
-                               MsgLevel::Info,
-                               "[BTState] SPP restart failed %u times, giving up",
-                               attempts);
-            } else {
-                // 重试：回到 step 0 重新 end/begin
-                bt_recovery_step = 0;
-                grbl_msg_sendf(CLIENT_SERIAL,
-                               MsgLevel::Info,
-                               "[BTState] SPP restart failed (attempt %u/%u), retrying",
-                               attempts,
-                               BT_RECOVERY_MAX_RETRIES);
-            }
-        } break;
-
-        default:
-            bt_recovery_step = 0;
-            break;
+    if (WebUI::SerialBT.hasClient()) {
+        WebUI::SerialBT.disconnect();
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[BTState] Soft-drop stale link (%s, silent=%u ms): disconnect()",
+                       reason,
+                       silent_ms);
+        // CLOSE_EVT 会清缓冲并置 Advertising；勿在此 end()/begin()
+    } else {
+        client_reset_read_buffer(CLIENT_BT);
+        bt_state_set(BTState::Advertising);
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[BTState] Soft-drop stale link (%s, silent=%u ms): demote (no client)",
+                       reason,
+                       silent_ms);
     }
 }
 
@@ -328,35 +304,26 @@ void bt_state_update(void) {
     uint32_t now_ms = millis();
     BTState  s      = bt_state_get();
 
-    // 1. 恢复流程优先级最高：即使回调改动了 bt_state，也要把恢复进行到底
-    if (bt_recovery_active) {
-        bt_execute_recovery(now_ms);
-        return;
-    }
-
-    // 2. 假连接检测
+    // 假连接自救：仅 Congested 或 TX ring 有积压且长时间无 SPP 事件 → soft-drop。
+    // 纯 Connected + 无待发（上位机停发/? 变稀）不拆——对齐 d26b4d05「能写」行为；
+    // 误拆后 PC 常仍占着死 COM，G92 永远无 ok（双口 23:19 COM5）。
+    // 换纸中也跳过。禁止 end()/begin()（IWDT）。
     if (s == BTState::Connected || s == BTState::Congested) {
-        if (now_ms - bt_last_event_ms.load() > BT_LINK_SILENCE_TIMEOUT_MS) {
-            if (bt_recovery_attempts.load() >= BT_RECOVERY_MAX_RETRIES) {
-                bt_state_set(BTState::Idle);
-                grbl_msg_sendf(CLIENT_SERIAL,
-                               MsgLevel::Info,
-                               "[BTState] Link silent, max recovery retries (%u) exceeded",
-                               BT_RECOVERY_MAX_RETRIES);
-                return;
+        uint32_t last      = bt_last_event_ms.load();
+        uint32_t silent_ms = (now_ms >= last) ? (now_ms - last) : 0u;
+        if (silent_ms > BT_LINK_SILENCE_TIMEOUT_MS && !paper_auto_change_is_running()) {
+            vTaskEnterCritical(&bt_tx_mux);
+            bool tx_pending = (bt_tx_ring.used() > 0);
+            vTaskExitCritical(&bt_tx_mux);
+            const bool stale = (s == BTState::Congested) || tx_pending;
+            if (stale) {
+                const char* reason = (s == BTState::Congested) ? "congested_silent" : "tx_pending_silent";
+                bt_soft_drop_stale_link(now_ms, silent_ms, reason);
             }
-            bt_recovery_active   = true;
-            bt_recovery_step     = 0;
-            bt_recovery_ts       = now_ms;
-            bt_state_set(BTState::Recovering);
-            grbl_msg_sendf(CLIENT_SERIAL,
-                           MsgLevel::Info,
-                           "[BTState] Link silent for %u ms, entering recovery",
-                           BT_LINK_SILENCE_TIMEOUT_MS);
         }
     }
 
-    // 3. 拥塞解除后刷出缓存的关键消息
+    // 拥塞解除后刷出缓存的关键消息
     if (bt_state_get() == BTState::Connected) {
         vTaskEnterCritical(&bt_tx_mux);
         bool need_flush = (bt_tx_ring.used() > 0);

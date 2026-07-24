@@ -100,7 +100,8 @@ bool can_park() {
         homing_enable->get() && !spindle->inLaserMode();
 }
 
-// 规划器接近断粮时优先吃 BT 队列里已到达的 G 代码（不依赖上位机降速）
+// 规划器接近断粮时优先吃 BT 队列里已到达的 G 代码（不依赖上位机降速）。
+// 阈值按「排队块数」：plan_get_block_buffer_count()；勿用 available()（空闲槽，语义相反）。
 static const uint8_t PLANNER_STARVE_THRESHOLD = 8;
 
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
@@ -315,7 +316,7 @@ void protocol_main_loop() {
         const bool bt_active = WebUI::SerialBT.hasClient();
         if (bt_active) {
             protocol_poll_client(CLIENT_BT);
-            if (sys.state == State::Cycle && plan_get_block_buffer_available() < PLANNER_STARVE_THRESHOLD) {
+            if (sys.state == State::Cycle && plan_get_block_buffer_count() < PLANNER_STARVE_THRESHOLD) {
                 for (uint8_t pass = 0; pass < 6; pass++) {
                     if (!protocol_poll_client(CLIENT_BT)) {
                         break;
@@ -323,7 +324,7 @@ void protocol_main_loop() {
                     if (sys.abort) {
                         return;
                     }
-                    if (plan_get_block_buffer_available() >= PLANNER_STARVE_THRESHOLD) {
+                    if (plan_get_block_buffer_count() >= PLANNER_STARVE_THRESHOLD) {
                         break;
                     }
                 }
@@ -388,6 +389,9 @@ void protocol_buffer_synchronize() {
 // execute calls a buffer sync, or the planner buffer is full and ready to go.
 void protocol_auto_cycle_start() {
     if (plan_get_current_block() != NULL) {       // Check if there are any blocks in the buffer.
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+        paper_release_panel_hold_for_xyz_motion();
+#endif
         system_rt_exec_set(EXEC_CYCLE_START);  // If so, execute them!
     }
 }

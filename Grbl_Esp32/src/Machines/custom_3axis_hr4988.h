@@ -56,9 +56,9 @@
 #define MACHINE_NAME "Custom 3-Axis HR4988"
 #define GRBL_PAPER_SYSTEM 1  /* æ¢çº¸ç³»ç» M701/M711/M712/M713 å?GCode.cpp ä¸­ç´åå®ç?*/
 
-// 蓝牙：每次 SPP 断开重连后，首条指令回完 ack 即执行 [ESP910]（不受换纸后按键冷却限制）；0=关闭
+// 蓝牙：SPP 重连后首条 ack 自动 [ESP910]。无纸/找纸耗时长时上位机会像“卡住”；写字联调先关，换纸用按键/ESP910/M30。
 #ifndef PAPER_AUTO_CHANGE_ON_BT_CONNECT
-#    define PAPER_AUTO_CHANGE_ON_BT_CONNECT 1
+#    define PAPER_AUTO_CHANGE_ON_BT_CONNECT 0
 #endif
 
 // Use custom machine code (Custom/paper_system.cpp)
@@ -119,12 +119,14 @@
 #ifndef PAPER_REF_DAC_PANEL
 #    define PAPER_REF_DAC_PANEL   90    // 面板电机
 #endif
-// 换纸成功后面板低电流保持（防失能回缩；写字期仍使能，REF 远低于运行值以降发热/蠕动）
+// 换纸成功后面板低电流保持。
+// d26b4d05 及更早：换纸后失能（0）——蓝牙写字时 I2S/595 与面板共总线，保持使能易蠕动/画歪。
+// 低电流保持（1）仅作「防失能回缩」实验；写字异常时必须回 0。
 #ifndef PAPER_REF_DAC_PANEL_HOLD
-#    define PAPER_REF_DAC_PANEL_HOLD  40  // ≈运行电流 44%；偏软加大，发烫/蠕动则减小
+#    define PAPER_REF_DAC_PANEL_HOLD  40  // ≈运行电流 44%；仅 PAPER_PANEL_HOLD_AFTER_CHANGE=1 时用
 #endif
 #ifndef PAPER_PANEL_HOLD_AFTER_CHANGE
-#    define PAPER_PANEL_HOLD_AFTER_CHANGE 1  // 1=换纸后低电流保持；0=失能（旧行为）
+#    define PAPER_PANEL_HOLD_AFTER_CHANGE 0  // 0=换纸后失能（与 d26b4d05 一致）；1=低电流保持至 XYZ
 #endif
 #ifndef PAPER_REF_DAC_FEEDER
 #    define PAPER_REF_DAC_FEEDER  110   // 进纸器电机
@@ -301,25 +303,36 @@
 // #define Y_LIMIT_PIN             GPIO_NUM_XX
 // #define Z_LIMIT_PIN             GPIO_NUM_XX
 
-// === Default Settings（仅覆盖与本机相关的项，其余用 Defaults.h）===
+// === Default Settings（对齐奎享 P100自动写字机.properties；$RST=$ 出厂值）===
 #ifndef STEP_PULSE_DELAY
 #    define STEP_PULSE_DELAY                15  // 方向建立延时 µs（可串口 $ Stepper/Direction/Delay 调）
 #endif
-#define DEFAULT_STEP_PULSE_MICROSECONDS     10  // 驱动可靠性，减轻 Z 轴卡顿
-// 避免 BT 断流导致空闲超过 $1=250ms 时电机失能又恢复，引发画圆“卡顿”
-// 先设为 255（保持使能），用于平滑验证；确认顺畅后再按需改回 200~255
-#define DEFAULT_STEPPER_IDLE_LOCK_TIME      255
-#define DEFAULT_STEPPING_INVERT_MASK        0
-#define DEFAULT_DIRECTION_INVERT_MASK       bit(Z_AXIS)  // Z 轴方向反相（抬笔/落笔与 GCode 一致）
-#define DEFAULT_INVERT_ST_ENABLE            0
+#define DEFAULT_STEP_PULSE_MICROSECONDS     3       // $0
+// $1：P100 properties 为 25，但 BT 等 ok 间隙常 >25ms；失能再使能会丢步/画歪。
+// 与 d26b4d05 一致保持 255（常使能）。运行中也请设 $1=255。
+#define DEFAULT_STEPPER_IDLE_LOCK_TIME      255     // $1
+#define DEFAULT_STEPPING_INVERT_MASK        0       // $2
+#define DEFAULT_DIRECTION_INVERT_MASK       7       // $3 = X|Y|Z
+#define DEFAULT_INVERT_ST_ENABLE            0       // $4
+#define DEFAULT_INVERT_LIMIT_PINS           1       // $5
+#define DEFAULT_INVERT_PROBE_PIN            0       // $6
+#define DEFAULT_STATUS_REPORT_MASK          3       // $10
+#define DEFAULT_JUNCTION_DEVIATION          0.01    // $11
+#define DEFAULT_ARC_TOLERANCE               0.002   // $12
+#define DEFAULT_REPORT_INCHES               0       // $13
 
-#define DEFAULT_SOFT_LIMIT_ENABLE           0
-#define DEFAULT_HARD_LIMIT_ENABLE           0
-#define DEFAULT_HOMING_ENABLE               0
+#define DEFAULT_SOFT_LIMIT_ENABLE           0       // $20
+#define DEFAULT_HARD_LIMIT_ENABLE           0       // $21
+#define DEFAULT_HOMING_ENABLE               0       // $22
+#define DEFAULT_HOMING_DIR_MASK             0       // $23
+#define DEFAULT_HOMING_FEED_RATE            500.0   // $24
+#define DEFAULT_HOMING_SEEK_RATE            500.0   // $25
+#define DEFAULT_HOMING_DEBOUNCE_DELAY       25      // $26
+#define DEFAULT_HOMING_PULLOFF              1.0     // $27
 
-#define DEFAULT_SPINDLE_RPM_MAX             1000.0
-#define DEFAULT_SPINDLE_RPM_MIN             0.0
-#define DEFAULT_LASER_MODE                  0
+#define DEFAULT_SPINDLE_RPM_MAX             1000.0  // $30
+#define DEFAULT_SPINDLE_RPM_MIN             0.0     // $31
+#define DEFAULT_LASER_MODE                  0       // $32
 
 // 写字机不需要任何主轴/激光类型，仅保留 NullSpindle，减少 Flash 占用
 #ifndef SPINDLE_TYPE
@@ -327,16 +340,16 @@
 #endif
 #define SPINDLE_TYPE_NONE_ONLY
 
-// 写字机/绘图机常用：步数、速度、加速度、行程
-#define DEFAULT_X_STEPS_PER_MM              200.0
-#define DEFAULT_Y_STEPS_PER_MM              200.0
-#define DEFAULT_Z_STEPS_PER_MM              400.0
-#define DEFAULT_X_MAX_RATE                  5000.0
-#define DEFAULT_Y_MAX_RATE                  5000.0
-#define DEFAULT_Z_MAX_RATE                  1000.0
-#define DEFAULT_X_ACCELERATION              500.0
-#define DEFAULT_Y_ACCELERATION              500.0
-#define DEFAULT_Z_ACCELERATION              400.0
-#define DEFAULT_X_MAX_TRAVEL                200.0
-#define DEFAULT_Y_MAX_TRAVEL                200.0
-#define DEFAULT_Z_MAX_TRAVEL                20.0
+// 步数 / 速度 / 加速度 / 行程（$100–$132）
+#define DEFAULT_X_STEPS_PER_MM              100.0   // $100
+#define DEFAULT_Y_STEPS_PER_MM              100.0   // $101
+#define DEFAULT_Z_STEPS_PER_MM              50.0    // $102
+#define DEFAULT_X_MAX_RATE                  12000.0 // $110
+#define DEFAULT_Y_MAX_RATE                  12000.0 // $111
+#define DEFAULT_Z_MAX_RATE                  10000.0 // $112
+#define DEFAULT_X_ACCELERATION              3000.0  // $120
+#define DEFAULT_Y_ACCELERATION              3000.0  // $121
+#define DEFAULT_Z_ACCELERATION              8000.0  // $122
+#define DEFAULT_X_MAX_TRAVEL                200.0   // $130
+#define DEFAULT_Y_MAX_TRAVEL                200.0   // $131
+#define DEFAULT_Z_MAX_TRAVEL                200.0   // $132
