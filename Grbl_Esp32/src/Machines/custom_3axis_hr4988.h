@@ -110,8 +110,12 @@
 #define PAPER_LED_PIN           I2SO(0)  // Q0: paper-change button LED (HIGH=off, LOW=on)
 #define PAPER_PANEL_ENABLE_PIN   I2SO(1)
 #define PAPER_DRIVER_ENABLE_PIN  GPIO_NUM_26
-#define PAPER_DRIVER_REF_PIN    GPIO_NUM_25   // DAC 直连 HR4988 REF，无分压；0–255 → 0–3.3V（三路纸路电机共用此脚，固件按当前运行的电机切换 DAC 值）
-#define PAPER_DRIVER_REF_DAC    70         // 未单独指定时使用的默认 REF（0–255）
+#define PAPER_DRIVER_REF_PIN    GPIO_NUM_25   // DAC1：纸路三电机 + Z 轴 HR4988 REF（硬件共脚）；0–255 → 0–3.3V
+#define PAPER_DRIVER_REF_DAC    70         // 纸路未单独指定时的默认 REF（0–255）
+// Z 轴电流（与纸路共 GPIO25 DAC）：空闲/写字期目标值；换纸跑纸路电机时仍按 PAPER_REF_DAC_* 临时切换
+#ifndef Z_REF_DAC
+#    define Z_REF_DAC             100  // 写字/空闲 Z 电流（原默认 70；偏软再加大，发烫则减小）
+#endif
 // 每个电机独立 REF（可选）：不定义则三路均用 PAPER_DRIVER_REF_DAC
 #ifndef PAPER_REF_DAC_CLAMP
 #    define PAPER_REF_DAC_CLAMP   155  // 拾落电机（加大扭矩；发烫则调小）
@@ -119,12 +123,15 @@
 #ifndef PAPER_REF_DAC_PANEL
 #    define PAPER_REF_DAC_PANEL   90    // 面板电机
 #endif
-// 换纸 Step8 对位后：低电流保持防失能回退；首次 XYZ Cycle/Jog/Homing 再失能（减写字期 595 串扰）
+// 换纸 Step8 对位后：面板低电流保持防回退；写字期间也保持（验证防回退/蠕动）
 #ifndef PAPER_REF_DAC_PANEL_HOLD
-#    define PAPER_REF_DAC_PANEL_HOLD  40  // ≈运行电流 44%；偏软加大，发烫/蠕动则减小
+#    define PAPER_REF_DAC_PANEL_HOLD  40  // 换纸后、写字前短保持；首次 XYZ 升到 Z_REF_DAC
 #endif
 #ifndef PAPER_PANEL_HOLD_AFTER_CHANGE
 #    define PAPER_PANEL_HOLD_AFTER_CHANGE 1  // 1=对位后低电流保持；0=立刻失能（旧行为）
+#endif
+#ifndef PAPER_PANEL_HOLD_DURING_WRITE
+#    define PAPER_PANEL_HOLD_DURING_WRITE 1  // 1=写字期面板继续使能（REF→Z_REF_DAC）；0=首次 XYZ 即失能
 #endif
 #ifndef PANEL_FINAL_SETTLE_MS
 #    define PANEL_FINAL_SETTLE_MS 200u  // 进入保持前短 settle

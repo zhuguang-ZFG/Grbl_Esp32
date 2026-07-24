@@ -295,10 +295,19 @@ static bool paper_i2s_setup = false;
 void paper_system_init(void) {
 #ifdef PAPER_DRIVER_REF_PIN
     pinMode((int)PAPER_DRIVER_REF_PIN, OUTPUT);
-    dacWrite((int)PAPER_DRIVER_REF_PIN, PAPER_DRIVER_REF_DAC);
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[Paper] DAC REF initialized: GPIO%u = %u (0-255), clamp/panel/feeder = %u/%u/%u",
-                   (unsigned)PAPER_DRIVER_REF_PIN, (unsigned)PAPER_DRIVER_REF_DAC,
-                   (unsigned)PAPER_REF_DAC_CLAMP, (unsigned)PAPER_REF_DAC_PANEL, (unsigned)PAPER_REF_DAC_FEEDER);
+#    ifndef Z_REF_DAC
+#        define Z_REF_DAC PAPER_DRIVER_REF_DAC
+#    endif
+    // 上电给 Z/共脚 REF 写字电流；纸路动作时再按电机切换
+    dacWrite((int)PAPER_DRIVER_REF_PIN, (int)Z_REF_DAC);
+    grbl_msg_sendf(CLIENT_SERIAL,
+                   MsgLevel::Info,
+                   "[Paper] DAC REF initialized: GPIO%u Z=%u (0-255), clamp/panel/feeder = %u/%u/%u",
+                   (unsigned)PAPER_DRIVER_REF_PIN,
+                   (unsigned)Z_REF_DAC,
+                   (unsigned)PAPER_REF_DAC_CLAMP,
+                   (unsigned)PAPER_REF_DAC_PANEL,
+                   (unsigned)PAPER_REF_DAC_FEEDER);
 #endif
     // 默认关闭所有纸路电机使能（互斥两组的初始状态：全部失能）
     pinMode((int)PAPER_ENABLE_PIN, OUTPUT);
@@ -339,7 +348,12 @@ void paper_get_status_str(char* buf, size_t len) {
 #ifdef PAPER_DRIVER_ENABLE_PIN
     en_ok = en_ok || !digitalRead(PAPER_DRIVER_ENABLE_PIN);
 #endif
-    snprintf(buf, len, "Paper=%s MotorEn=%s", paper_ok ? "OK" : "No", en_ok ? "On" : "Off");
+    snprintf(buf,
+             len,
+             "Paper=%s MotorEn=%s PanelHold=%s",
+             paper_ok ? "OK" : "No",
+             en_ok ? "On" : "Off",
+             paper_panel_low_hold_active ? "On" : "Off");
 }
 
 // 内部辅助函数：确保 I2S 处于 passthrough 模式（仅首次做长延时，避免主循环反复阻塞/锁存 595）
@@ -374,18 +388,52 @@ void paper_disable_drivers(void) {
 #ifdef PAPER_DRIVER_ENABLE_PIN
     digitalWrite(PAPER_DRIVER_ENABLE_PIN, HIGH);
 #endif
+#ifdef PAPER_DRIVER_REF_PIN
+#    ifndef Z_REF_DAC
+#        define Z_REF_DAC PAPER_DRIVER_REF_DAC
+#    endif
+    // 纸路失能后恢复共脚 Z 电流，避免 REF 停在纸路电机值上
+    paper_set_ref_dac((uint8_t)Z_REF_DAC);
+#endif
 }
 
-// XYZ 运动即将开始：结束面板低电流保持（避免写字期 I2S/595 与面板共总线蠕动）
-void paper_release_panel_hold_for_xyz_motion(void) {
+// 纸路点动/使能前强制结束 hold（与写字期保持无关）
+static void paper_force_release_panel_hold(const char* reason) {
     if (!paper_panel_low_hold_active) {
         return;
     }
     paper_disable_drivers();
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Panel hold released for XYZ motion");
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Panel hold released (%s)", reason);
 }
 
-// 换纸成功：仅面板低电流保持，顶住失能回退；保持到首次 Cycle/Jog/Homing
+// XYZ 运动即将开始：是否结束面板低电流保持。
+// PAPER_PANEL_HOLD_DURING_WRITE=1：面板继续使能，但把共脚 REF 升到 Z_REF_DAC（写字 Z 扭矩）。
+// 纸路点动/软复位仍走 paper_force_release_panel_hold。
+void paper_release_panel_hold_for_xyz_motion(void) {
+#if defined(PAPER_PANEL_HOLD_DURING_WRITE) && PAPER_PANEL_HOLD_DURING_WRITE
+    if (!paper_panel_low_hold_active) {
+        return;
+    }
+#    ifdef PAPER_DRIVER_REF_PIN
+#        ifndef Z_REF_DAC
+#            define Z_REF_DAC PAPER_DRIVER_REF_DAC
+#        endif
+    paper_set_ref_dac((uint8_t)Z_REF_DAC);
+    static bool z_ref_logged = false;
+    if (!z_ref_logged) {
+        z_ref_logged = true;
+        grbl_msg_sendf(CLIENT_SERIAL,
+                       MsgLevel::Info,
+                       "[PaperAuto] Panel hold keep + Z REF=%u for write",
+                       (unsigned)Z_REF_DAC);
+    }
+#    endif
+#else
+    paper_force_release_panel_hold("XYZ motion");
+#endif
+}
+
+// 换纸成功：仅面板低电流保持；写字期默认继续保持（PAPER_PANEL_HOLD_DURING_WRITE）
 static void paper_enter_panel_low_hold(void) {
     paper_ensure_i2s_passthrough();
     digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
@@ -409,9 +457,14 @@ static void paper_enter_panel_low_hold(void) {
     paper_panel_low_hold_active = true;
     grbl_msg_sendf(CLIENT_SERIAL,
                    MsgLevel::Info,
-                   "[PaperAuto] Panel low-current hold (REF=%u, clamp/feeder off; release on XYZ motion)",
+                   "[PaperAuto] Panel low-current hold (REF=%u, clamp/feeder off; during_write=%u)",
 #ifdef PAPER_DRIVER_REF_PIN
-                   (unsigned)PAPER_REF_DAC_PANEL_HOLD
+                   (unsigned)PAPER_REF_DAC_PANEL_HOLD,
+#else
+                   0u,
+#endif
+#if defined(PAPER_PANEL_HOLD_DURING_WRITE) && PAPER_PANEL_HOLD_DURING_WRITE
+                   1u
 #else
                    0u
 #endif
@@ -561,7 +614,7 @@ Error paper_run_motor(uint8_t motor_ix, uint16_t steps) {
         return Error::GcodeUnsupportedCommand;
     }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperMotor] %s: jog start (%u steps)", motor_name, (unsigned)steps);
-    paper_release_panel_hold_for_xyz_motion();
+    paper_force_release_panel_hold("paper motor jog");
     if (motor_ix == 0) {
         paper_enable_clamp_feeder_only();
 #ifdef PAPER_DRIVER_REF_PIN
@@ -580,7 +633,7 @@ Error paper_run_motor(uint8_t motor_ix, uint16_t steps) {
 
 // 仅使能换纸驱动（I2S passthrough + 拉低 EN），不动作；便于用 M64/M65 设方向后单独点动调试
 void paper_enable_drivers_only(void) {
-    paper_release_panel_hold_for_xyz_motion();
+    paper_force_release_panel_hold("paper enable drivers");
     paper_enable_drivers();
 }
 
@@ -925,7 +978,7 @@ Error paper_auto_change(void) {
     }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Done");
 
-    // 9. settle → 面板低电流保持（防失能回退）；写字开始时再失能
+    // 9. settle → 面板低电流保持（防失能回退）；写字期是否保持见 PAPER_PANEL_HOLD_DURING_WRITE
 #ifndef PANEL_FINAL_SETTLE_MS
 #    define PANEL_FINAL_SETTLE_MS 200u
 #endif
@@ -1097,7 +1150,7 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
             uint8_t step_pin = (code == 711) ? CLAMP_MOTOR_STEP_PIN : (code == 712) ? PANEL_MOTOR_STEP_PIN : FEEDER_MOTOR_STEP_PIN;
             
             grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "M%u (%s): jog start (%u steps)", (unsigned)code, motor_name, (unsigned)nsteps);
-            paper_release_panel_hold_for_xyz_motion();
+            paper_force_release_panel_hold("M71x jog");
             paper_enable_drivers();
             paper_step_pulses(step_pin, nsteps);
             paper_disable_drivers();
@@ -1121,7 +1174,7 @@ Error paper_system_mcode(uint16_t code, uint16_t steps, int8_t clamp_dir) {
                            do_clamp ? "CLAMP(Q0)" : "RELEASE(Q1)",
                            (unsigned)nsteps,
                            (int)clamp_dir);
-            paper_release_panel_hold_for_xyz_motion();
+            paper_force_release_panel_hold("M716 jog");
             paper_enable_drivers();
 #ifdef PAPER_DRIVER_REF_PIN
             paper_set_ref_dac(PAPER_REF_DAC_CLAMP);  // 【Superpowers-主动控制】确保拾落电机使用优化后的电流
