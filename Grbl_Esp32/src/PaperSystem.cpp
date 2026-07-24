@@ -914,6 +914,18 @@ Error paper_auto_change(void) {
                 return paper_auto_change_abort_cleanup("during edge locate");
             }
             sensor_lost = !paper_sensor_stable();
+            if (sensor_lost && steps == 0) {
+                // 采边段第 0 步即"看不到纸"：本 attempt 起步前纸尾已越过传感器
+                // （EDGE_PASSED 后回退不足/纸长突变 >回退量）。此"成功"不可信——不作历史，
+                // fail-closed（与旧 Step 7 找不到边的最终行为一致），不把错误对位报成成功
+                paper_panel_edge_valid = false;
+                paper_change_cleanup_common();
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
+                               "[PaperAuto-6] EDGE_AMBIGUOUS: sensor already lost at search start (attempt=%u), not learned",
+                               (unsigned)attempt);
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_SENSOR_NOT_FOUND);
+                return Error::MessageFailed;
+            }
             if (sensor_lost) {
                 paper_panel_edge_steps = steps;
                 paper_panel_edge_valid = true;

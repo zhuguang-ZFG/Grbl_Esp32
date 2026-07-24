@@ -36,6 +36,8 @@ def _merge_full_image(source, target, env):
     for offset, path in segments:
         with open(path, "rb") as f:
             seg = f.read()
+        if offset + len(seg) > size_bytes:
+            raise RuntimeError("%s at 0x%x exceeds flash size %d" % (path, offset, size_bytes))
         image[offset:offset + len(seg)] = seg
 
     out = os.path.join(build_dir, "firmware_full_0x0.bin")
