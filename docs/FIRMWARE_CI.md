@@ -54,6 +54,7 @@ git push origin v1.0.0
   `.pio/build/release/firmware_full_0x0.bin`（4MB，从 **0x0** 开始：bootloader@0x1000 + partitions@0x8000 + app@0x10000，0xFF 填充）→  
   `esptool write_flash 0x0 firmware_full_0x0.bin`。不含 SPIFFS 数据区。缺 bootloader/partitions/firmware 段时 post 脚本显式 `RuntimeError`（路径+offset），勿当运行时报错。
   构建日志可见：`Full flash image from 0x0 (4194304 bytes): ...`
+  **坑：** `merge_firmware.py` 必须是 **UTF-8**；若被写成 UTF-16，post 脚本不跑，旧 `firmware_full_0x0.bin` 时间戳不会更新。检查：`python -c "print(open('merge_firmware.py','rb').read(4))"` → 应为 `b'# me'`。
 - 或本机：`pio run -e release -t upload`
 - GitHub **不能**直接写你电脑上的串口；只负责出 bin。
 

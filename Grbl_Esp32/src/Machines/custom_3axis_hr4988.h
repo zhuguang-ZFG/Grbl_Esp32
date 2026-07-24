@@ -304,36 +304,45 @@
 // #define Y_LIMIT_PIN             GPIO_NUM_XX
 // #define Z_LIMIT_PIN             GPIO_NUM_XX
 
-// === Default Settings（仅覆盖与本机相关的项，其余用 Defaults.h）===
+// === Default Settings（对齐桌面「P100自动写字机.properties」）===
 #ifndef STEP_PULSE_DELAY
 #    define STEP_PULSE_DELAY                15  // 方向建立延时 µs（可串口 $ Stepper/Direction/Delay 调）
 #endif
-#define DEFAULT_STEP_PULSE_MICROSECONDS     10  // 驱动可靠性，减轻 Z 轴卡顿
-// 避免 BT 断流导致空闲超过 $1=250ms 时电机失能又恢复，引发画圆“卡顿”
-// 先设为 255（保持使能），用于平滑验证；确认顺畅后再按需改回 200~255
-#define DEFAULT_STEPPER_IDLE_LOCK_TIME      255
-#define DEFAULT_STEPPING_INVERT_MASK        0
-#define DEFAULT_DIRECTION_INVERT_MASK       bit(Z_AXIS)  // Z 轴方向反相（抬笔/落笔与 GCode 一致）
-#define DEFAULT_INVERT_ST_ENABLE            0
+#define DEFAULT_STEP_PULSE_MICROSECONDS     3     // $0
+#define DEFAULT_STEPPER_IDLE_LOCK_TIME      25    // $1
+#define DEFAULT_STEPPING_INVERT_MASK        0     // $2
+#define DEFAULT_DIRECTION_INVERT_MASK       7     // $3 = XYZ 全反相
+#define DEFAULT_INVERT_ST_ENABLE            0     // $4
+#define DEFAULT_INVERT_LIMIT_PINS           1     // $5
+#define DEFAULT_INVERT_PROBE_PIN            0     // $6
+#define DEFAULT_STATUS_REPORT_MASK          3     // $10
+#define DEFAULT_JUNCTION_DEVIATION          0.01  // $11
+#define DEFAULT_ARC_TOLERANCE               0.002 // $12
+#define DEFAULT_REPORT_INCHES               0     // $13
 
-#define DEFAULT_SOFT_LIMIT_ENABLE           0
-#define DEFAULT_HARD_LIMIT_ENABLE           0
-#define DEFAULT_HOMING_ENABLE               0
+#define DEFAULT_SOFT_LIMIT_ENABLE           0     // $20
+#define DEFAULT_HARD_LIMIT_ENABLE           0     // $21
+#define DEFAULT_HOMING_ENABLE               0     // $22
+#define DEFAULT_HOMING_DIR_MASK             0     // $23
+#define DEFAULT_HOMING_FEED_RATE            500.0 // $24
+#define DEFAULT_HOMING_SEEK_RATE            500.0 // $25
+#define DEFAULT_HOMING_DEBOUNCE_DELAY       25    // $26
+#define DEFAULT_HOMING_PULLOFF              1.0   // $27
 
-#define DEFAULT_SPINDLE_RPM_MAX             1000.0
-#define DEFAULT_SPINDLE_RPM_MIN             0.0
-#define DEFAULT_LASER_MODE                  0
+#define DEFAULT_SPINDLE_RPM_MAX             1000.0 // $30
+#define DEFAULT_SPINDLE_RPM_MIN             0.0    // $31
+#define DEFAULT_LASER_MODE                  0      // $32
 
-// 写字机/绘图机常用：步数、速度、加速度、行程
-#define DEFAULT_X_STEPS_PER_MM              200.0
-#define DEFAULT_Y_STEPS_PER_MM              200.0
-#define DEFAULT_Z_STEPS_PER_MM              400.0
-#define DEFAULT_X_MAX_RATE                  5000.0
-#define DEFAULT_Y_MAX_RATE                  5000.0
-#define DEFAULT_Z_MAX_RATE                  1000.0
-#define DEFAULT_X_ACCELERATION              500.0
-#define DEFAULT_Y_ACCELERATION              500.0
-#define DEFAULT_Z_ACCELERATION              400.0
+// $100–$132（P100）
+#define DEFAULT_X_STEPS_PER_MM              100.0
+#define DEFAULT_Y_STEPS_PER_MM              100.0
+#define DEFAULT_Z_STEPS_PER_MM              50.0
+#define DEFAULT_X_MAX_RATE                  12000.0
+#define DEFAULT_Y_MAX_RATE                  12000.0
+#define DEFAULT_Z_MAX_RATE                  10000.0
+#define DEFAULT_X_ACCELERATION              3000.0
+#define DEFAULT_Y_ACCELERATION              3000.0
+#define DEFAULT_Z_ACCELERATION              8000.0
 #define DEFAULT_X_MAX_TRAVEL                200.0
 #define DEFAULT_Y_MAX_TRAVEL                200.0
-#define DEFAULT_Z_MAX_TRAVEL                20.0
+#define DEFAULT_Z_MAX_TRAVEL                200.0

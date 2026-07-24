@@ -29,10 +29,14 @@ def _resolve_build_dir(target, source, env):
         if base == "firmware.bin":
             return os.path.dirname(ap)
     # Fallbacks when PIOENV/BUILD_DIR are empty in post-action env
-    for key in ("", ""):
-        d = env.subst(key)
-        if d and os.path.isdir(d) and os.path.isfile(os.path.join(d, "firmware.bin")):
-            return os.path.abspath(d)
+    env_name = env.subst("$PIOENV")
+    if env_name:
+        cand = os.path.join(".pio", "build", env_name)
+        if os.path.isfile(os.path.join(cand, "firmware.bin")):
+            return os.path.abspath(cand)
+    build_dir = env.subst("$BUILD_DIR")
+    if build_dir and os.path.isdir(build_dir) and os.path.isfile(os.path.join(build_dir, "firmware.bin")):
+        return os.path.abspath(build_dir)
     rel = os.path.join(".pio", "build", "release")
     if os.path.isfile(os.path.join(rel, "firmware.bin")):
         return os.path.abspath(rel)
