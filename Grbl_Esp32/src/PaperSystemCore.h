@@ -71,6 +71,43 @@ inline bool paper_sensor_stable_core(uint32_t low_samples, uint32_t sample_count
     return sample_count > 0 && threshold > 0 && threshold <= sample_count && low_samples >= threshold;
 }
 
+// Symmetric present/absent for edge locate: transitional mid-counts stay Uncertain so
+// Step 6 does not treat "3/5 low" as paper-lost (P6 has no reverse re-find to recover).
+enum class PaperSensorLevel : uint8_t {
+    Present,
+    Absent,
+    Uncertain,
+};
+
+inline PaperSensorLevel paper_sensor_level_core(uint32_t low_samples, uint32_t sample_count, uint32_t present_threshold) {
+    if (sample_count == 0 || present_threshold == 0 || present_threshold > sample_count) {
+        return PaperSensorLevel::Uncertain;
+    }
+    if (low_samples >= present_threshold) {
+        return PaperSensorLevel::Present;
+    }
+    const uint32_t high_samples = sample_count - low_samples;
+    if (high_samples >= present_threshold) {
+        return PaperSensorLevel::Absent;
+    }
+    return PaperSensorLevel::Uncertain;
+}
+
+// Consecutive Absent samples confirm paper-lost; Present/Uncertain reset the streak.
+inline bool paper_sensor_lost_streak_update(PaperSensorLevel level, uint32_t* streak, uint32_t need) {
+    if (streak == nullptr || need == 0) {
+        return false;
+    }
+    if (level != PaperSensorLevel::Absent) {
+        *streak = 0;
+        return false;
+    }
+    if (*streak < need) {
+        (*streak)++;
+    }
+    return *streak >= need;
+}
+
 inline bool paper_deadline_active(uint32_t now_ms, uint32_t deadline_ms) {
     return deadline_ms != 0 && static_cast<int32_t>(deadline_ms - now_ms) > 0;
 }

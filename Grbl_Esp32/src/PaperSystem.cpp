@@ -313,6 +313,9 @@ static bool     paper_panel_edge_valid = false;
 #ifndef PAPER_SENSOR_STABLE_INTERVAL_US
 #    define PAPER_SENSOR_STABLE_INTERVAL_US 500u  // 采样间隔 us
 #endif
+#ifndef PAPER_SENSOR_LOST_STREAK
+#    define PAPER_SENSOR_LOST_STREAK 2u  // 连续 Absent 次数才确认纸尾离开（P6 无反向回找）
+#endif
 
 // 标记I2S是否已初始化（延迟到第一次需要时）
 static bool paper_i2s_setup = false;
@@ -551,6 +554,18 @@ static inline bool paper_sensor_stable() {
         delayMicroseconds(PAPER_SENSOR_STABLE_INTERVAL_US);
     }
     return paper_sensor_stable_core(count_low, PAPER_SENSOR_STABLE_SAMPLES, PAPER_SENSOR_STABLE_THRESHOLD);
+}
+
+// 对称 Present/Absent：过渡区（如 2–3/5 LOW）为 Uncertain，采边不得把过渡当「无纸」
+static inline PaperSensorLevel paper_sensor_level() {
+    int count_low = 0;
+    for (int i = 0; i < PAPER_SENSOR_STABLE_SAMPLES; i++) {
+        if (digitalRead(PAPER_SENSOR_PIN) == 0) {
+            count_low++;
+        }
+        delayMicroseconds(PAPER_SENSOR_STABLE_INTERVAL_US);
+    }
+    return paper_sensor_level_core((uint32_t)count_low, PAPER_SENSOR_STABLE_SAMPLES, PAPER_SENSOR_STABLE_THRESHOLD);
 }
 
 // 设定方向并发送 N 步脉冲（DIR 先稳定再 STEP，避免丢步）
@@ -860,8 +875,8 @@ Error paper_auto_change(void) {
                     return paper_auto_change_abort_cleanup("during fast approach to paper edge");
                 }
                 steps = fast_steps;
-                if (!paper_sensor_stable()) {
-                    // 快进段结束时纸尾已过传感器：实际边沿早于历史值（纸张变短/磨损漂移超预期）。
+                if (paper_sensor_level() == PaperSensorLevel::Absent) {
+                    // 快进段结束时纸尾已明确离开传感器：实际边沿早于历史值（纸张变短/磨损漂移超预期）。
                     // 无法正向回找——作废历史并重学（fail-closed，不把错误位置当成功）
                     paper_panel_edge_valid = false;
                     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
@@ -878,14 +893,24 @@ Error paper_auto_change(void) {
                 learn_mode = true;  // 无历史，或历史值不足一个减速窗口：全程采边
             }
             {
-                // 采边段：逐 step 采样，正向采到“看不到纸”即停。
-                // 学习模式用快速档（误差≈防抖延迟，仅上电第一页）；精确定位用慢速档（检测延迟 <1 step）
-                uint32_t slow_steps = 0;
-                uint32_t slow_max   = learn_mode ? PANEL_FAST_STEPS_MAX : (2u * PANEL_EDGE_APPROACH_STEPS);
+                // 采边段：逐 step 采样；仅连续 PAPER_SENSOR_LOST_STREAK 次 Absent 才确认纸尾离开。
+                // 学习模式：远距仍用快速档；一旦进入丢失候选（streak>0）改慢速精采（检测延迟 <1 step）。
+                uint32_t slow_steps  = 0;
+                uint32_t slow_max    = learn_mode ? PANEL_FAST_STEPS_MAX : (2u * PANEL_EDGE_APPROACH_STEPS);
+                uint32_t lost_streak = 0;
                 while (true) {
+                    PaperSensorLevel level = paper_sensor_level();
+                    bool             lost_confirmed =
+                        paper_sensor_lost_streak_update(level, &lost_streak, PAPER_SENSOR_LOST_STREAK);
+                    // edge_decide 的 sensor_active：仅明确 Present 当「有纸」；Uncertain/Absent 不当有纸
                     PaperSearchDecision search = paper_sensor_edge_decide(
-                        paper_sensor_stable(), false, millis() - t0_ms, steps, PANEL_FAST_STEPS_MAX, PAPER_SENSOR_TIMEOUT_MS);
-                    if (search == PaperSearchDecision::Found) {
+                        level == PaperSensorLevel::Present,
+                        false,
+                        millis() - t0_ms,
+                        steps,
+                        PANEL_FAST_STEPS_MAX,
+                        PAPER_SENSOR_TIMEOUT_MS);
+                    if (lost_confirmed) {
                         break;
                     }
                     if (search == PaperSearchDecision::TimedOut) {
@@ -899,11 +924,15 @@ Error paper_auto_change(void) {
                         window_missed = true;
                         break;  // 减速窗口内未找到边沿：按卡纸处理（fail-closed）
                     }
+                    // Absent 候选：原地复采确认，不前进（避免已过边时多走一步却报成功）
+                    if (level == PaperSensorLevel::Absent) {
+                        continue;
+                    }
                     uint32_t hi_us, lo_us;
-                    if (learn_mode) {
-                        paper_profile_timing(PaperPulsePanelFast, slow_steps, &hi_us, &lo_us);  // 学习阶段：快速采边
+                    if (learn_mode && level == PaperSensorLevel::Present) {
+                        paper_profile_timing(PaperPulsePanelFast, slow_steps, &hi_us, &lo_us);  // 学习远距：仍有纸时快速
                     } else {
-                        hi_us = PANEL_LOCATE_HI_US;
+                        hi_us = PANEL_LOCATE_HI_US;  // Uncertain 过渡区 / 精定位：慢速
                         lo_us = PANEL_LOCATE_LO_US;
                     }
                     paper_pulse_us(PANEL_MOTOR_STEP_PIN, PAPER_DISABLED, hi_us, lo_us);
@@ -919,7 +948,7 @@ Error paper_auto_change(void) {
             if (paper_should_abort_change()) {
                 return paper_auto_change_abort_cleanup("during edge locate");
             }
-            sensor_lost = !paper_sensor_stable();
+            sensor_lost = (paper_sensor_level() == PaperSensorLevel::Absent);
             if (sensor_lost && steps == 0) {
                 // 采边段第 0 步即"看不到纸"：本 attempt 起步前纸尾已越过传感器
                 // （EDGE_PASSED 后回退不足/纸长突变 >回退量）。此"成功"不可信——不作历史；
@@ -997,6 +1026,10 @@ Error paper_auto_change(void) {
     paper_btn_arm_post_change_cooldown();
     // Any successful auto-change (M30/M721/ESP910/BT) skips later first-page G0 X0Y0Z0 trigger.
     paper_mark_first_page_change_done();
+    // 机械 Z 已在抬笔极限：统一写 sys Z=0（覆盖 M30/BT/ESP910/M721/按键，避免入口漏同步）
+    sys_position[Z_AXIS] = 0;
+    plan_sync_position();
+    gc_sync_position();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] All steps completed successfully!");
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_OK);
     return Error::Ok;
@@ -1097,10 +1130,7 @@ void paper_poll_bt_connect_auto_change(void) {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtConnect] Running auto paper change...");
     Error e = paper_auto_change();
     if (e == Error::Ok) {
-        sys_position[Z_AXIS] = 0;
-        plan_sync_position();
-        gc_sync_position();
-        // first-page mark + post-change cooldown already inside paper_auto_change() success path
+        // Z=0 sync + first-page mark + cooldown already inside paper_auto_change() success path
         paper_btn_arm_bt_suppress();  // SPP just connected: suppress Macro0 RF glitches
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperBtConnect] Auto paper change completed.");
     } else {

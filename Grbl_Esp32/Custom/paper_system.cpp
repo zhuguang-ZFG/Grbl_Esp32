@@ -315,11 +315,8 @@ void user_m30() {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperM30] End of page (M30) detected, starting auto paper change...");
     Error e = paper_auto_change();
     if (e == Error::Ok) {
-        // 换纸完成后机械上 Z 已在抬笔极限（原点），将系统 Z 设为 0，避免下一页首条指令再让 Z 往“上”走
+        // Z=0 sync 已在 paper_auto_change() 成功路径统一完成（勿在此重复）。
         // 仅 Error::Ok 视为成功：Busy / SENSOR_NOT_FOUND 等不得置 last_ok，否则会错误 arm M30 skip。
-        sys_position[Z_AXIS] = 0;
-        plan_sync_position();
-        gc_sync_position();
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperM30] Auto paper change completed.");
         paper_change_last_ok = true;
         // Cooldown + first-page mark already done inside paper_auto_change() on success.

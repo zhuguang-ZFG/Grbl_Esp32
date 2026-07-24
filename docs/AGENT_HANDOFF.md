@@ -51,7 +51,7 @@ python $env:FZ_ROOT\scripts\agent_gate.py --profile standard
 | M30 成功跳过下一原点换纸 | `paper_m30_just_completed` 不在 `line_begin` 清；仅 consume / 非原点 seek / parser_reset | `Custom/paper_system.cpp` |
 | Busy 重入 | 已在 running 时返回 **非 Ok**（`AnotherInterfaceBusy`） | `PaperSystem.cpp` |
 | Sensor fail-closed | Step2/6 失败走 cleanup + `MessageFailed` + `[PaperStatus]` | `PaperSystem.cpp` |
-| **P6** | 换纸 Step 6 采纸尾边沿后**全程正向不换向**（正向锚边，2026-07-24 起）：原 Step 7 反向回找已移除——换向会把机械回差引入 Step 8 最终对位。禁止在无回差补偿前提下恢复"反向找边"；边沿历史仅 RAM（`paper_panel_edge_steps/valid`），快进段停 `PANEL_EDGE_APPROACH_STEPS` 前转慢速采边；仅 attempt==0 成功写入历史，重试成功 deferred；失败/中止/`paper_on_soft_reset_restart` 清 `valid` | `PaperSystem.cpp` Step 6、`Machines/custom_3axis_hr4988.h` |
+| **P6** | 换纸 Step 6 采纸尾边沿后**全程正向不换向**（正向锚边，2026-07-24 起）：原 Step 7 反向回找已移除——换向会把机械回差引入 Step 8 最终对位。禁止在无回差补偿前提下恢复"反向找边"；边沿历史仅 RAM（`paper_panel_edge_steps/valid`），快进段停 `PANEL_EDGE_APPROACH_STEPS` 前转慢速采边；仅 attempt==0 成功写入历史，重试成功 deferred；失败/中止/`paper_on_soft_reset_restart` 清 `valid`；采边用对称 `PaperSensorLevel` + 连续 `PAPER_SENSOR_LOST_STREAK` Absent（过渡区不当前沿）；**成功路径统一 `sys_position[Z]=0` sync**（ESP910/M721/按键与 M30/BT 一致） | `PaperSystem.cpp` Step 6、`PaperSystemCore.h`、`Machines/custom_3axis_hr4988.h` |
 
 ### 设置 / 步进
 
@@ -286,7 +286,7 @@ WebUI 剩余网络栈子代理审 + 主审手工审报告热路径。**产品路
 | Cycle 中抓 `?` 状态流 | WCO/Ov 出现频率回落到 busy 档（W1 修复） |
 | 多行连续写字（回归） | 步进无异常卡顿（验证段缓冲屏障无副作用；W9） |
 
-### 6i. 正向锚边 + 量产镜像（2026-07-24，`31db6d8`…`618b1fb`）
+### 6i. 正向锚边 + 量产镜像（2026-07-24，`31db6d8`…`618b1fb` + 深审加固）
 
 | Commit | 内容 |
 |--------|------|
@@ -295,8 +295,9 @@ WebUI 剩余网络栈子代理审 + 主审手工审报告热路径。**产品路
 | `180c2e7` | `EDGE_AMBIGUOUS`（steps==0）fail-closed；merge 越界检查 |
 | `382ac2c` | Ambiguous 耗重试；仅 attempt==0 写历史；慢窗日志区分 |
 | `618b1fb` | cleanup / soft-reset 清 `paper_panel_edge_valid`；merge 缺段显式报错；文档对齐 |
+| （深审） | 成功路径统一 Z=0 sync；对称 `PaperSensorLevel` + `PAPER_SENSOR_LOST_STREAK` 原地确认 Absent（对照 FluidNC #756 / Bugbot） |
 
-**不变量 P6**（§3）：勿无补偿恢复反向找边。Cursor 审查（工单 `a2a_workorder_cursor_paper_review.md`，只审不改后落地可选）：**无阻塞项**；`agent_gate standard` pass @ `618b1fb`。
+**不变量 P6**（§3）：勿无补偿恢复反向找边。Cursor 审查（工单 `a2a_workorder_cursor_paper_review.md`，只审不改后落地可选）：**无阻塞项**；深审结合 FluidNC/GitHub 后落地 Z 同步 + 对称无纸确认。`agent_gate standard` 须复绿。
 
 **初始化不会因 P6 报错：** `grbl_init` / 首次 `run_once` 不调边沿清理；软复位仅静默清 `valid`（无 `[PaperStatus]`）。I2S/bootloader 约束仍以 `配置.md` 为准（init 不早拉 passthrough）——与边沿历史无关。
 
