@@ -49,7 +49,8 @@ python $env:FZ_ROOT\scripts\agent_gate.py --profile standard
 | **B2** | `pending_m_code`（M700-721/M800 延迟执行标志）必须在 `gc_execute_line` **入口**与 `gc_init()` 复位。STEP2 置位后若该行 FAIL 会残留，下一行任意 G 码用**本行 P/Q** 误触发纸路/授权，且软复位清不掉。STEP3 执行仅凭该 static 值，无 command_words 门控 | `GCode.cpp` |
 | M30 成功跳过下一原点换纸 | `paper_m30_just_completed` 不在 `line_begin` 清；仅 consume / 非原点 seek / parser_reset | `Custom/paper_system.cpp` |
 | Busy 重入 | 已在 running 时返回 **非 Ok**（`AnotherInterfaceBusy`） | `PaperSystem.cpp` |
-| Sensor fail-closed | Step2/6/7 失败走 cleanup + `MessageFailed` + `[PaperStatus]` | `PaperSystem.cpp` |
+| Sensor fail-closed | Step2/6 失败走 cleanup + `MessageFailed` + `[PaperStatus]` | `PaperSystem.cpp` |
+| **P6** | 换纸 Step 6 采纸尾边沿后**全程正向不换向**（正向锚边，2026-07-24 起）：原 Step 7 反向回找已移除——换向会把机械回差引入 Step 8 最终对位。禁止在无回差补偿前提下恢复"反向找边"；边沿历史仅 RAM（`paper_panel_edge_steps/valid`），快进段停 `PANEL_EDGE_APPROACH_STEPS` 前转慢速采边 | `PaperSystem.cpp` Step 6、`Machines/custom_3axis_hr4988.h` |
 
 ### 设置 / 步进
 

@@ -16,7 +16,7 @@
 #define PAPER_STATUS_OK                0
 #define PAPER_STATUS_PAPER_PRESENT     1  // 开始时传感器仍有纸，无法弹旧纸
 #define PAPER_STATUS_FEEDER_TIMEOUT   2  // 进纸阶段超时未触发传感器
-#define PAPER_STATUS_SENSOR_NOT_FOUND 3  // 第7步回找后传感器未稳定（纸可能未到位）
+#define PAPER_STATUS_SENSOR_NOT_FOUND 3  // 第6步边沿定位失败（纸可能未到位/边沿早于历史值）
 #define PAPER_STATUS_JAM_TIMEOUT      4  // 传感器持续有纸超时（卡纸）
 #define PAPER_STATUS_OUT_OF_PAPER     5  // 进纸超时无纸（缺纸）
 
@@ -296,6 +296,12 @@ static void paper_step_pulses(uint8_t step_pin, uint32_t steps) {
 #ifndef PANEL_RETRY_BACKOFF_STEPS
 #    define PANEL_RETRY_BACKOFF_STEPS 500u  // Step 6 失败后回退步数
 #endif
+
+// Step 6 正向锚边（Grbl homing 同侧定位路线）：历史纸尾边沿位置（自 Step 6 起点的步数），仅本次上电有效。
+// 有历史时快进段盲走到 边沿-PANEL_EDGE_APPROACH_STEPS，再慢速逐 step 采边（检测延迟 <1 step）；
+// 无历史（上电第一页/上次失败）退回全程快速采边，成功后重新学习。全程正向不换向，回差不进测量链。
+static uint32_t paper_panel_edge_steps = 0;
+static bool     paper_panel_edge_valid = false;
 
 // 纸张传感器防抖参数：100+ 页后灰尘/纸屑/EMI 干扰增大，提高采样次数和间隔
 #ifndef PAPER_SENSOR_STABLE_SAMPLES
@@ -589,8 +595,9 @@ static Error paper_auto_change_abort_cleanup(const char* reason) {
 }
 
 // 一键自动换纸流程（[ESP910] / M30 调用）
-// 步骤：1 弹旧纸 → 2 进纸器找纸 → 3 松夹 → 4 面板+进纸器同速送纸 → 5 夹紧 → 6 面板快送直到脱传感器 → 7 回找传感器 → 8 最终对位 → 9 失能
-// 结束时会发送 [PaperStatus] N（0=成功，2=进纸超时，3=第7步未找到传感器→Error 非 Ok；1 保留）
+// 步骤：1 弹旧纸 → 2 进纸器找纸 → 3 松夹 → 4 面板+进纸器同速送纸 → 5 夹紧 → 6 面板正向采纸尾边沿（快进转慢进，不换向） → 8 最终对位 → 9 失能
+// （原 Step 7 反向回找已移除：换向会把机械回差引入最终对位；现全程正向，回差不进测量链）
+// 结束时会发送 [PaperStatus] N（0=成功，2=进纸超时，3=边沿定位失败→Error 非 Ok；1 保留）
 Error paper_auto_change(void) {
     if (PAPER_SENSOR_PIN == PAPER_DISABLED) {
         return Error::GcodeUnsupportedCommand;
@@ -805,16 +812,19 @@ Error paper_auto_change(void) {
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-4/5] Done (feeder stops at %.1fcm)", (float)PAPER_ADVANCE_CM);
     paper_enable_panel_only();
 
-    // 6. 仅面板电机快速送纸，直到传感器“看不到纸”为止或达到上限（支持重试）
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Panel fast feed until sensor loses paper (max %u steps, retries=%u)...", (unsigned)PANEL_FAST_STEPS_MAX, (unsigned)PAPER_MAX_RETRIES);
+    // 6. 仅面板电机正向送纸，直到传感器“看不到纸”（纸尾离开传感器）。正向锚边设计（Grbl homing 同侧定位路线）：
+    //    全程不换向，回差不进测量链。有历史边沿（本次上电内学习）时：快进盲走到 边沿-PANEL_EDGE_APPROACH_STEPS，
+    //    再慢速（PANEL_LOCATE_*）逐 step 采边，检测延迟 <1 step；无历史（上电第一页/上次失败）退回全程快速采边，
+    //    成功后记录边沿供后续页使用。（原 Step 7 反向回找已移除——换向会把机械回差引入最终对位）
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Panel forward edge locate (max %u steps, retries=%u)...", (unsigned)PANEL_FAST_STEPS_MAX, (unsigned)PAPER_MAX_RETRIES);
     {
         bool sensor_lost = false;
         for (uint8_t attempt = 0; attempt <= PAPER_MAX_RETRIES && !sensor_lost; attempt++) {
             if (attempt > 0) {
                 grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info,
-                               "[PaperAuto-6] Retry #%u: backoff %u steps then fast feed again",
+                               "[PaperAuto-6] Retry #%u: backoff %u steps then search again",
                                (unsigned)attempt, (unsigned)PANEL_RETRY_BACKOFF_STEPS);
-                // 反向回退一点，让被遮挡的传感器有机会脱开
+                // 反向回退一点，让被遮挡的传感器有机会脱开（仅错误恢复路径，不参与定位）
                 paper_enable_panel_only();
                 digitalWrite(PANEL_MOTOR_DIR_PIN, !PANEL_DIR_FEED);
 #ifdef USE_I2S_OUT
@@ -827,48 +837,90 @@ Error paper_auto_change(void) {
                 }
             }
 
-            uint32_t steps = 0;
+            uint32_t steps       = 0;
             bool     jam_timeout = false;
-            uint32_t t0_ms = millis();
+            uint32_t t0_ms       = millis();
             paper_enable_panel_only();
             digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_FEED);
 #ifdef USE_I2S_OUT
             i2s_out_delay();
             delay(2);
 #endif
-            while (true) {
-                PaperSearchDecision search = paper_sensor_edge_decide(
-                    paper_sensor_stable(), false, millis() - t0_ms, steps, PANEL_FAST_STEPS_MAX, PAPER_SENSOR_TIMEOUT_MS);
-                if (search == PaperSearchDecision::Found) {
-                    break;
+            bool learn_mode = !paper_panel_edge_valid;
+            if (!learn_mode && paper_panel_edge_steps > PANEL_EDGE_APPROACH_STEPS) {
+                // 快进段：按历史边沿盲走，停在减速窗口前；不采传感器（慢速段负责精确定位）
+                uint32_t fast_steps = paper_panel_edge_steps - PANEL_EDGE_APPROACH_STEPS;
+                paper_pulses(PANEL_MOTOR_STEP_PIN, PAPER_DISABLED, fast_steps, PaperPulsePanelFast);
+                if (paper_should_abort_change()) {
+                    return paper_auto_change_abort_cleanup("during fast approach to paper edge");
                 }
-                if (search == PaperSearchDecision::TimedOut) {
-                    jam_timeout = true;
-                    break;
+                steps = fast_steps;
+                if (!paper_sensor_stable()) {
+                    // 快进段结束时纸尾已过传感器：实际边沿早于历史值（纸张变短/磨损漂移超预期）。
+                    // 无法正向回找——作废历史并重学（fail-closed，不把错误位置当成功）
+                    paper_panel_edge_valid = false;
+                    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
+                                   "[PaperAuto-6] EDGE_PASSED: edge before history (fast=%u), history cleared, re-learning",
+                                   (unsigned)fast_steps);
+                    if (attempt == PAPER_MAX_RETRIES) {
+                        paper_change_cleanup_common();
+                        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_SENSOR_NOT_FOUND);
+                        return Error::MessageFailed;
+                    }
+                    continue;
                 }
-                if (search == PaperSearchDecision::StepLimit) {
-                    break;
-                }
-                {
+            } else {
+                learn_mode = true;  // 无历史，或历史值不足一个减速窗口：全程采边
+            }
+            {
+                // 采边段：逐 step 采样，正向采到“看不到纸”即停。
+                // 学习模式用快速档（误差≈防抖延迟，仅上电第一页）；精确定位用慢速档（检测延迟 <1 step）
+                uint32_t slow_steps = 0;
+                uint32_t slow_max   = learn_mode ? PANEL_FAST_STEPS_MAX : (2u * PANEL_EDGE_APPROACH_STEPS);
+                while (true) {
+                    PaperSearchDecision search = paper_sensor_edge_decide(
+                        paper_sensor_stable(), false, millis() - t0_ms, steps, PANEL_FAST_STEPS_MAX, PAPER_SENSOR_TIMEOUT_MS);
+                    if (search == PaperSearchDecision::Found) {
+                        break;
+                    }
+                    if (search == PaperSearchDecision::TimedOut) {
+                        jam_timeout = true;
+                        break;
+                    }
+                    if (search == PaperSearchDecision::StepLimit) {
+                        break;
+                    }
+                    if (slow_steps >= slow_max) {
+                        break;  // 减速窗口内未找到边沿：按卡纸处理（fail-closed）
+                    }
                     uint32_t hi_us, lo_us;
-                    paper_profile_timing(PaperPulsePanelFast, steps, &hi_us, &lo_us);
+                    if (learn_mode) {
+                        paper_profile_timing(PaperPulsePanelFast, slow_steps, &hi_us, &lo_us);  // 学习阶段：快速采边
+                    } else {
+                        hi_us = PANEL_LOCATE_HI_US;
+                        lo_us = PANEL_LOCATE_LO_US;
+                    }
                     paper_pulse_us(PANEL_MOTOR_STEP_PIN, PAPER_DISABLED, hi_us, lo_us);
-                }  // 夹紧后面板进纸速度加倍
-                steps++;
-                if (steps % PAPER_YIELD_STEPS == 0) {
-                    if (paper_refill_segment_buffer_during_blocking()) {
-                        return paper_auto_change_abort_cleanup("during fast feed");
+                    steps++;
+                    slow_steps++;
+                    if (steps % PAPER_YIELD_STEPS == 0) {
+                        if (paper_refill_segment_buffer_during_blocking()) {
+                            return paper_auto_change_abort_cleanup("during edge locate");
+                        }
                     }
                 }
             }
             if (paper_should_abort_change()) {
-                return paper_auto_change_abort_cleanup("during fast feed");
+                return paper_auto_change_abort_cleanup("during edge locate");
             }
             sensor_lost = !paper_sensor_stable();
             if (sensor_lost) {
-                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Sensor lost at attempt %u step %u", (unsigned)attempt, (unsigned)steps);
+                paper_panel_edge_steps = steps;
+                paper_panel_edge_valid = true;
+                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Sensor lost at attempt %u step %u (edge learned)", (unsigned)attempt, (unsigned)steps);
                 break;
             }
+            paper_panel_edge_valid = false;  // 本次失败，作废历史，重试走全程采边
             // 最后一次尝试仍失败，走下面的错误处理
             if (attempt == PAPER_MAX_RETRIES) {
                     paper_change_cleanup_common();
@@ -887,60 +939,8 @@ Error paper_auto_change(void) {
         }
     }
 
-    // 7. 面板电机“回找传感器”，直到再次“感应到纸”或达到上限（回找定位点）
-    bool step7_sensor_ok = true;
-    paper_enable_panel_only();
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel reverse to find paper again (max %u steps)...", (unsigned)PANEL_BACK_STEPS_MAX);
-    {
-        uint32_t steps  = 0;
-        bool     timeout_15s = false;
-        uint32_t t0_ms = millis();
-        digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_REVERSE);
-#ifdef USE_I2S_OUT
-        i2s_out_delay();
-        delay(2);
-#endif
-        while (true) {
-            PaperSearchDecision search = paper_sensor_edge_decide(
-                paper_sensor_stable(), true, millis() - t0_ms, steps, PANEL_BACK_STEPS_MAX, PAPER_SENSOR_TIMEOUT_MS);
-            if (search == PaperSearchDecision::Found) {
-                break;
-            }
-            if (search == PaperSearchDecision::TimedOut) {
-                timeout_15s = true;
-                break;
-            }
-            if (search == PaperSearchDecision::StepLimit) {
-                break;
-            }
-            paper_step_pulses(PANEL_MOTOR_STEP_PIN, 1);
-            steps++;
-            if (steps % PAPER_YIELD_STEPS == 0) {
-                if (paper_refill_segment_buffer_during_blocking()) {
-                    return paper_auto_change_abort_cleanup("during panel re-search");
-                }
-            }
-        }
-        if (paper_should_abort_change()) {
-            return paper_auto_change_abort_cleanup("during panel re-search");
-        }
-        step7_sensor_ok = paper_sensor_stable();
-        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-7] Panel re-search completed (%u steps, sensor=%s%s)",
-                       (unsigned)steps, step7_sensor_ok ? "found" : "NOT_found",
-                       timeout_15s ? ", timeout" : "");
-        if (!step7_sensor_ok) {
-            // 定位失败必须非 Ok：否则 user_m30 会 last_ok=true 并 arm paper_m30_just_completed，
-            // 下一原点跳过换纸，主机却以为成功。与 Step2/6 超时路径一致走 cleanup + MessageFailed。
-            paper_change_cleanup_common();
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
-                           "[PaperAuto-7] SENSOR_NOT_FOUND: reverse search failed (timeout=%u), paper may be misaligned",
-                           (unsigned)timeout_15s);
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_SENSOR_NOT_FOUND);
-            return Error::MessageFailed;
-        }
-    }
-
-    // 8. 面板电机再向送纸方向走固定步数，作为最终对位（夹紧后速度加倍）
+    // （原 Step 7 反向回找已移除：换向会把机械回差引入最终对位；现 Step 6 正向采边后全程同向）
+    // 8. 面板电机再向送纸方向走固定步数，作为最终对位（夹紧后速度加倍；与 Step 6 同向，无回差事件）
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Final alignment (%u steps)...", (unsigned)PANEL_FINAL_STEPS);
     digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_FEED);
 #ifdef USE_I2S_OUT

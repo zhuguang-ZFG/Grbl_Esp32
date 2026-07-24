@@ -139,12 +139,15 @@
 
 // 面板电机：弹出旧纸（A4 长度 + 余量）
 #define PANEL_EJECT_STEPS       8000u
-// 面板电机：快速送纸阶段的最大步数上限（防止传感器异常时跑飞）
+// 面板电机：送纸采边阶段的最大步数上限（防止传感器异常时跑飞）
 // 100+ 页后滚轮磨损/阻力变大，留更大余量避免误判卡纸
 #define PANEL_FAST_STEPS_MAX    20000u
-// 面板电机：反向找感应点的最大步数（需覆盖第6步快进的最远位置）
-// 与 PANEL_FAST_STEPS_MAX 同步扩大，确保能退回到感应点
-#define PANEL_BACK_STEPS_MAX    12000u
+// 面板电机：正向锚边减速窗口——快进段停在历史边沿前此步数，慢速采边窗口上限为 2×此值
+// （需覆盖纸张长度公差与滚轮磨损逐页漂移；400 步 ≈ 3.8mm @1062 步/cm）
+#define PANEL_EDGE_APPROACH_STEPS 400u
+// 面板电机：慢速采边脉宽（μs）。采边速度决定边沿检测延迟：1500/1500 ≈ 333 步/s，延迟 <1 步
+#define PANEL_LOCATE_HI_US    1500u
+#define PANEL_LOCATE_LO_US    1500u
 // 面板电机：最终微调到位的步数
 #define PANEL_FINAL_STEPS     320u
 
@@ -212,13 +215,12 @@
 #    define PAPER_EJECT_NORMAL_LO_US  38u
 #endif
 
-// 面板电机方向：三个独立宏，只改需要反的那一个即可
-// - PANEL_DIR_FEED:    第6步快速进纸、第8步最终对位（送新纸方向）
+// 面板电机方向：两个独立宏，只改需要反的那一个即可
+// - PANEL_DIR_FEED:    第6步正向采边进纸、第8步最终对位（送新纸方向）
 // - PANEL_DIR_EJECT:   第1步弹出旧纸
-// - PANEL_DIR_REVERSE: 第7步回找传感器（与 FEED 同向）
-#define PANEL_DIR_FEED          false  // 送新纸 / 快速进纸 / 最终对位（你反馈进纸反了，只改此项）
+// （原 PANEL_DIR_REVERSE 已随 Step 7 反向回找一并移除：全程正向，回差不进定位链）
+#define PANEL_DIR_FEED          false  // 送新纸 / 采边进纸 / 最终对位（你反馈进纸反了，只改此项）
 #define PANEL_DIR_EJECT         false  // 弹出旧纸（单独调，不动）
-#define PANEL_DIR_REVERSE       true   // 回找传感器（你反馈此方向反了，单独取反）
 #define FEEDER_DIR_FORWARD      false  // 进纸器“送纸进入机器”方向（反向）
 #define CLAMP_DIR_RELEASE       true   // 拾落电机“松开纸张”方向（再次反向）
 #define CLAMP_DIR_CLAMP         false  // 拾落电机“压紧纸张”方向
