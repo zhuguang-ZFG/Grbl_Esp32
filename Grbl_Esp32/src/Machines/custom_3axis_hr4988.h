@@ -162,7 +162,7 @@
 // 快进约 8.5k 步时脱离传感器，这里给到 9000 步保证能退回到感应点
 #define PANEL_BACK_STEPS_MAX    9000u
 // 面板电机：最终微调到位的步数
-#define PANEL_FINAL_STEPS     320u
+#define PANEL_FINAL_STEPS     350u  // Step8 最终对位步数（HIL 调参：320→350）
 
 // 进纸器电机：寻找新纸到感应器的最大步数（超时时间，可根据实际距离调大）
 #define FEEDER_FIND_STEPS_MAX   12000u
