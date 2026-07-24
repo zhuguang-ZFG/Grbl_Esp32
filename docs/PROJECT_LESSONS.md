@@ -4,10 +4,25 @@
 
 ---
 
+## 2026-07-25 — 当日汇总（P100 默认 + 0x0 合包）
+
+| 做了什么 | 结果 / 要点 |
+|----------|-------------|
+| 桌面 `P100自动写字机.properties` → 机头 `DEFAULT_*` | `$RST=$` 后 `$$` 与表一致；提交 `dce1426` |
+| 每次 `platformio run -e release` | **自动**生成 `.pio/build/release/firmware_full_0x0.bin`（4MB@0x0） |
+| 烧录后 NVS | **不会**被 `DEFAULT_*` 覆盖，必须 `$RST=$`（或逐项 `$` + `$S`） |
+| USB 口 | 烧录/软复位后 CH340 可能短暂消失再回 COM3；COM4/5 常为蓝牙，别误连 |
+| `merge_firmware.py` | 必须 UTF-8；坏了按下方「合包脚本坏了怎么办」处理 |
+
+详见下列分节；口令与面板 hold 仍见「面板保持…」一节。
+
+---
+
 ## 2026-07-25 — P100 默认 `$` 参数入机头
 
 **来源：** 桌面 `P100自动写字机.properties` → `custom_3axis_hr4988.h` 的 `DEFAULT_*`。  
-**已验证：** 烧录后 `$RST=$`，`$$` 与 P100 表一致（`$100/101/102=100/100/50`，`$3=7`，`$1=25` 等）。
+**已验证：** 烧录后 `$RST=$`，`$$` 与 P100 表一致（`$100/101/102=100/100/50`，`$3=7`，`$1=25` 等）。  
+**提交：** `dce1426`（分支 `fix/panel-hold-after-align-116687e`）。
 
 | 注意 | 说明 |
 |------|------|
@@ -16,7 +31,54 @@
 | `$1=25` | 相对旧 `$1=255`，BT 断流空闲可能再失能 XYZ；面板 hold 管不了 XYZ |
 | `$3=7` | XYZ 全反相；与旧「仅 Z 反相」不同，方向不对先查 `$3` |
 
-整片产物仍是 `.pio/build/release/firmware_full_0x0.bin`（见下节）。
+整片产物仍是 `.pio/build/release/firmware_full_0x0.bin`（见下节）。`配置.md`「可调参数汇总」已同步要点。
+
+---
+
+## 2026-07-25 — 0x0 合包：每次编译自动生成；脚本坏了怎么办
+
+### 正常行为（省事）
+
+- `platformio.ini`：`extra_scripts = post:merge_firmware.py`
+- **每次** release 成功编完 `buildprog`，都会合并出：  
+  `.pio/build/release/firmware_full_0x0.bin`（4MB：boot@0x1000 + part@0x8000 + app@0x10000，0xFF 垫满）
+- 成功日志必有：`Full flash image from 0x0 (4194304 bytes): ...`
+- 烧录：`esptool write_flash 0x0 firmware_full_0x0.bin`（不含 SPIFFS）
+- **不必**每次手工合包；没看到上面那行再查。
+
+### 怎么判断合包没跑 / 脚本坏了
+
+1. 编译日志**没有** `Full flash image from 0x0 ...`
+2. 或 `firmware_full_0x0.bin` 的修改时间停在旧构建，而 `firmware.bin` 已是新的
+3. 或 post 报错，例如找不到 `bootloader_qio_80.0.bin`（频率写成了 `80.0` 而不是 `80m`）
+
+编码自检：
+
+```powershell
+python -c "print(open(r'D:\Users\Grbl_Esp32\merge_firmware.py','rb').read(8))"
+```
+
+| 输出 | 含义 |
+|------|------|
+| `b'# merge_'` | UTF-8，正常 |
+| `b'#\x00 m\x00e...'` / 含 `\x00` | **UTF-16**，脚本坏了 |
+
+### 怎么修（推荐顺序）
+
+```powershell
+cd D:\Users\Grbl_Esp32
+git checkout HEAD -- merge_firmware.py
+python -c "print(open('merge_firmware.py','rb').read(8))"   # 确认 b'# merge_'
+platformio run -e release                                   # 日志应出现 Full flash image from 0x0
+```
+
+仍失败时核对脚本内 bootloader 名应为 `bootloader_%s_%sm.bin`（`// 1000000` 取整），且 build 目录能从 `firmware.bin` 节点反推（`$PIOENV`/`$BUILD_DIR` 在 post 里可能为空）。
+
+### 为何会再坏
+
+- Windows 下部分编辑器/工具把 `.py` 存成 **UTF-16 LE**（Cursor Write 曾踩过）。
+- 改 `merge_firmware.py` 后看右下角编码：**UTF-8**，不要 UTF-16。
+- 说明亦见 `docs/FIRMWARE_CI.md` 烧录提示。
 
 ---
 
@@ -24,7 +86,7 @@
 
 **基线：** `116687e`（确认可写字夹紧 160）  
 **分支：** `fix/panel-hold-after-align-116687e`  
-**关键提交：** `709ad31` → `49a3500` → `30c6fb9` → `fa59ac6`
+**关键提交：** `709ad31` → `49a3500` → `30c6fb9` → `fa59ac6` →（P100/合包）`dce1426`
 
 ### 1. 换纸对位后失能会回退
 
@@ -63,26 +125,17 @@ Step8「纸到位后再走固定步」是开环对位，**无仿真可证明最�
 - 串口确认：`[PaperAuto-8] Final alignment (N steps)...`
 - 改宏后务必 **重编 PaperSystem**（必要时删 `.o`），避免只链了旧目标。
 
-### 5. 整片 0x0 固件（`firmware_full_0x0.bin`）
+### 5. 整片 0x0 固件（摘要）
 
-- `platformio.ini`：`extra_scripts = post:merge_firmware.py`
-- 产物：`.pio/build/release/firmware_full_0x0.bin`（4MB，boot@0x1000 + part@0x8000 + app@0x10000，0xFF 垫满）
-- 烧录：`esptool write_flash 0x0 firmware_full_0x0.bin`（不含 SPIFFS）
-
-**踩坑：**
-
-1. 脚本须 **UTF-8/ASCII**，UTF-16 会 `SyntaxError: null bytes`。
-2. SCons post 形参是 `(target, source, env)`；`buildprog` 时 `$PIOENV` / `$BUILD_DIR` 可能为空——**从 `firmware.bin` 节点反推 build 目录**。
-3. 成功日志：`Full flash image from 0x0 (4194304 bytes): ...`
-4. 说明见 `docs/FIRMWARE_CI.md`。
+完整排查/修复步骤见上文 **「0x0 合包：每次编译自动生成；脚本坏了怎么办」**。要点：每次 release 自动出包；脚本须 UTF-8；bootloader 文件名 `…_80m.bin`。
 
 ### 6. 烧录与联调习惯
 
 - COM3 常被奎享/监视器占用 → 先杀占用再 `upload`。
+- 烧录/复位后 USB 可能短暂丢口再枚举回 **COM3（CH340）**；**COM4/COM5** 多为蓝牙 SPP，串口脚本勿绑错。
 - 产品诊断日志多在 **USB**；蓝牙口看不到 `[PaperAuto*]`，双口抓包更有效。
 - NVS `$` 会被上位机 properties 盖回；机头 `DEFAULT_*` ≠ 板上当前值；改默认后要 `$RST=$`。
 - 当前默认 `$1=25`（P100）；若 BT 断流又出现画圆卡顿，可试把 `$1` 调回 `255` 再 `$S`（与面板 hold 是两件事）。
-- **`merge_firmware.py` 必须 UTF-8**：Windows 下若写成 UTF-16，post 脚本静默失败，`firmware_full_0x0.bin` 不会更新（时间戳停在旧构建）。用 `python -c "print(open('merge_firmware.py','rb').read(4))"` 检查，应看到 `b'# me'` 而非 `b'#\\x00 '`。
 
 ### 7. 勿回归清单（本轮相关）
 
