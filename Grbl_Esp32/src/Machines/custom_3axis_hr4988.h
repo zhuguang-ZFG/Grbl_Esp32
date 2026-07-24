@@ -179,7 +179,10 @@
 #define FEEDER_EXTRA_STEPS      ((uint32_t)(PAPER_ADVANCE_CM) * (uint32_t)(PAPER_STEPS_PER_CM))
 
 // 拾落电机：压纸 / 抬纸的步数（一次完整动作）
-#define CLAMP_TOGGLE_STEPS      160u
+// 可用 -DCLAMP_TOGGLE_STEPS=100u 覆盖（见 env:release_clamp160 / release_clamp100）
+#ifndef CLAMP_TOGGLE_STEPS
+#    define CLAMP_TOGGLE_STEPS  160u
+#endif
 
 // 步进脉冲时序（μs）：在 PaperSystem.cpp 的 paper_step_pulses 中使用
 // 面板/进纸器：起步阶段用较慢脉宽减小冲击，之后切换为正常速度

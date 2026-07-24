@@ -71,7 +71,20 @@ def _merge_full_image(target, source, env):
             raise RuntimeError("%s at 0x%x exceeds flash size %d" % (path, offset, size_bytes))
         image[offset:offset + len(seg)] = seg
 
-    out = os.path.join(build_dir, "firmware_full_0x0.bin")
+    env_name = env.subst("$PIOENV")
+    _FULL_NAMES = {
+        "release_clamp160": ("firmware_clamp160.bin", "firmware_clamp160_full_0x0.bin"),
+        "release_clamp100": ("firmware_clamp100.bin", "firmware_clamp100_full_0x0.bin"),
+    }
+    app_name, out_name = _FULL_NAMES.get(env_name, (None, "firmware_full_0x0.bin"))
+    if app_name:
+        app_src = os.path.join(build_dir, "firmware.bin")
+        app_dst = os.path.join(build_dir, app_name)
+        if os.path.isfile(app_src):
+            import shutil
+            shutil.copy2(app_src, app_dst)
+            print("App firmware copy: %s" % app_dst)
+    out = os.path.join(build_dir, out_name)
     with open(out, "wb") as f:
         f.write(image)
     print("Full flash image from 0x0 (%d bytes): %s" % (len(image), out))
