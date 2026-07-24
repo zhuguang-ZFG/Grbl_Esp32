@@ -71,8 +71,9 @@
 | `PAPER_REF_DAC_PANEL_HOLD` | 40 | 换纸后低电流保持；仍回缩则加大，发烫/写字蠕动则减小 |
 | `PAPER_PANEL_HOLD_AFTER_CHANGE` | 1 | 0=退回失能 |
 | `PANEL_EDGE_APPROACH_STEPS` | 400（≈3.8mm） | 频繁 `EDGE_PASSED` 或慢窗耗尽时按纸长公差/磨损加大 |
-| `PANEL_LOCATE_*` | 1500/1500 µs | 仅当慢采噪声/延迟不足时 |
+| `PANEL_LOCATE_*` | 400/400 µs | 近边慢采；再慢优先查 `PAPER_SENSOR_STABLE_INTERVAL_US`（每步采样才是主耗时） |
 | `PAPER_SENSOR_STABLE_SAMPLES` / `THRESHOLD` | 9 / 7 | 采边原点页间抖动大时优先加采样（HIL：5/4→9/7） |
+| `PAPER_SENSOR_STABLE_INTERVAL_US` | 100 | 每步采样间隔（HIL：500→100，面板采边提速主因）；抖大再升 |
 | `PAPER_SENSOR_LOST_STREAK` | 3 | Absent 连确认次数（HIL：2→3） |
 | 边沿历史写入 | 首次学到后**冻结** | 勿每页覆盖；HIL 曾见每页覆盖致盲走目标漂移 ~2 cm |
 

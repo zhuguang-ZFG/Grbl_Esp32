@@ -312,7 +312,7 @@ static bool     paper_panel_edge_valid = false;
 #    define PAPER_SENSOR_STABLE_THRESHOLD 7  // ≥7/9 LOW=Present；≥7/9 HIGH=Absent；中间 Uncertain
 #endif
 #ifndef PAPER_SENSOR_STABLE_INTERVAL_US
-#    define PAPER_SENSOR_STABLE_INTERVAL_US 500u  // 采样间隔 us
+#    define PAPER_SENSOR_STABLE_INTERVAL_US 100u  // 采样间隔 us（HIL：500→100；每步省 ~3.6ms，提速主因）
 #endif
 #ifndef PAPER_SENSOR_LOST_STREAK
 #    define PAPER_SENSOR_LOST_STREAK 3u  // 连续 Absent 次数才确认纸尾离开（P6 无反向回找）

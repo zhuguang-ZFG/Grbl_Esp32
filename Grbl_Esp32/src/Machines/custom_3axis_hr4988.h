@@ -152,9 +152,9 @@
 // 面板电机：正向锚边减速窗口——快进段停在历史边沿前此步数，慢速采边窗口上限为 2×此值
 // （需覆盖纸张长度公差与滚轮磨损逐页漂移；400 步 ≈ 3.8mm @1062 步/cm）
 #define PANEL_EDGE_APPROACH_STEPS 400u
-// 面板电机：慢速采边脉宽（μs）。采边速度决定边沿检测延迟：1500/1500 ≈ 333 步/s，延迟 <1 步
-#define PANEL_LOCATE_HI_US    1500u
-#define PANEL_LOCATE_LO_US    1500u
+// 面板电机：慢速采边脉宽（μs）。采边速度决定边沿检测延迟：400/400 ≈ 1.25k 步/s
+#define PANEL_LOCATE_HI_US    400u   // 近边慢采；HIL 1500→400；抖大再升回
+#define PANEL_LOCATE_LO_US    400u
 // 面板电机：最终微调到位的步数（HIL：320 过头 → 300）
 #define PANEL_FINAL_STEPS     300u  // 纸边相对再进量；保持开启后按 HIL 标（曾 250 偏短）
 // Step8 末尾改慢速的步数（降动能，减轻硬停弹性）
