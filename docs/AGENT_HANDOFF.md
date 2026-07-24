@@ -50,7 +50,7 @@ python $env:FZ_ROOT\scripts\agent_gate.py --profile standard
 | M30 成功跳过下一原点换纸 | `paper_m30_just_completed` 不在 `line_begin` 清；仅 consume / 非原点 seek / parser_reset | `Custom/paper_system.cpp` |
 | Busy 重入 | 已在 running 时返回 **非 Ok**（`AnotherInterfaceBusy`） | `PaperSystem.cpp` |
 | Sensor fail-closed | Step2/6 失败走 cleanup + `MessageFailed` + `[PaperStatus]` | `PaperSystem.cpp` |
-| **P6** | 换纸 Step 6 采纸尾边沿后**全程正向不换向**（正向锚边，2026-07-24 起）：原 Step 7 反向回找已移除——换向会把机械回差引入 Step 8 最终对位。禁止在无回差补偿前提下恢复"反向找边"；边沿历史仅 RAM（`paper_panel_edge_steps/valid`），快进段停 `PANEL_EDGE_APPROACH_STEPS` 前转慢速采边 | `PaperSystem.cpp` Step 6、`Machines/custom_3axis_hr4988.h` |
+| **P6** | 换纸 Step 6 采纸尾边沿后**全程正向不换向**（正向锚边，2026-07-24 起）：原 Step 7 反向回找已移除——换向会把机械回差引入 Step 8 最终对位。禁止在无回差补偿前提下恢复"反向找边"；边沿历史仅 RAM（`paper_panel_edge_steps/valid`），快进段停 `PANEL_EDGE_APPROACH_STEPS` 前转慢速采边；仅 attempt==0 成功写入历史，重试成功 deferred；失败/中止/`paper_on_soft_reset_restart` 清 `valid` | `PaperSystem.cpp` Step 6、`Machines/custom_3axis_hr4988.h` |
 
 ### 设置 / 步进
 

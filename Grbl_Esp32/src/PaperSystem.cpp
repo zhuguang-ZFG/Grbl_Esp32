@@ -568,6 +568,8 @@ static void paper_change_cleanup_common(void) {
     paper_auto_change_running = false;
     paper_user_stop_requested = false;
     paper_ignore_host_reset_until_ms = 0;
+    // 失败/中止后作废边沿历史：半程移位或未完成采边会使步数原点不可信；下页全程重学
+    paper_panel_edge_valid = false;
     paper_btn_arm_post_change_cooldown();
     st_go_idle();
     motors_set_disable(true);
@@ -1006,6 +1008,8 @@ void paper_on_soft_reset_restart(void) {
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Soft reset during paper change, clearing running flag");
         paper_auto_change_running = false;
     }
+    // 软复位后机构/纸位可能已偏，边沿历史作废，下页全程重学（与 cleanup_common 一致）
+    paper_panel_edge_valid = false;
     // 仅取消已预约；保留 SPP 连上后的 after_ack_armed（连接后上位机常发 0x18）
     portENTER_CRITICAL(&paper_bt_auto_mux);
     paper_bt_connect_auto_change_pending = false;

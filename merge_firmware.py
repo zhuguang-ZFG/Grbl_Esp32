@@ -34,6 +34,8 @@ def _merge_full_image(source, target, env):
 
     image = bytearray(b"\xff" * size_bytes)
     for offset, path in segments:
+        if not os.path.isfile(path):
+            raise RuntimeError("missing flash segment for merge: %s (offset 0x%x)" % (path, offset))
         with open(path, "rb") as f:
             seg = f.read()
         if offset + len(seg) > size_bytes:
