@@ -892,9 +892,10 @@ Error paper_auto_change(void) {
             } else {
                 learn_mode = true;  // 无历史，或历史值不足一个减速窗口：全程采边
             }
+            bool edge_confirmed = false;
             {
                 // 采边段：逐 step 采样；仅连续 PAPER_SENSOR_LOST_STREAK 次 Absent 才确认纸尾离开。
-                // 学习模式：远距仍用快速档；一旦进入丢失候选（streak>0）改慢速精采（检测延迟 <1 step）。
+                // 学习模式：有纸时快速；Uncertain 过渡区慢采；Absent 原地复采不前进。
                 uint32_t slow_steps  = 0;
                 uint32_t slow_max    = learn_mode ? PANEL_FAST_STEPS_MAX : (2u * PANEL_EDGE_APPROACH_STEPS);
                 uint32_t lost_streak = 0;
@@ -911,6 +912,7 @@ Error paper_auto_change(void) {
                         PANEL_FAST_STEPS_MAX,
                         PAPER_SENSOR_TIMEOUT_MS);
                     if (lost_confirmed) {
+                        edge_confirmed = true;
                         break;
                     }
                     if (search == PaperSearchDecision::TimedOut) {
@@ -948,7 +950,8 @@ Error paper_auto_change(void) {
             if (paper_should_abort_change()) {
                 return paper_auto_change_abort_cleanup("during edge locate");
             }
-            sensor_lost = (paper_sensor_level() == PaperSensorLevel::Absent);
+            // 信任循环内连续 Absent 确认，勿再采样——复采落到 Uncertain 会误杀刚确认的真边沿
+            sensor_lost = edge_confirmed;
             if (sensor_lost && steps == 0) {
                 // 采边段第 0 步即"看不到纸"：本 attempt 起步前纸尾已越过传感器
                 // （EDGE_PASSED 后回退不足/纸长突变 >回退量）。此"成功"不可信——不作历史；

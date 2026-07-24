@@ -295,9 +295,10 @@ WebUI 剩余网络栈子代理审 + 主审手工审报告热路径。**产品路
 | `180c2e7` | `EDGE_AMBIGUOUS`（steps==0）fail-closed；merge 越界检查 |
 | `382ac2c` | Ambiguous 耗重试；仅 attempt==0 写历史；慢窗日志区分 |
 | `618b1fb` | cleanup / soft-reset 清 `paper_panel_edge_valid`；merge 缺段显式报错；文档对齐 |
-| （深审） | 成功路径统一 Z=0 sync；对称 `PaperSensorLevel` + `PAPER_SENSOR_LOST_STREAK` 原地确认 Absent（对照 FluidNC #756 / Bugbot） |
+| `ae7f2d0` | 成功路径统一 Z=0 sync；对称 `PaperSensorLevel` + `PAPER_SENSOR_LOST_STREAK` 原地确认 Absent |
+| （本补丁） | 采边成功以循环内 `edge_confirmed` 为准，禁止确认后再采样误杀真边沿 |
 
-**不变量 P6**（§3）：勿无补偿恢复反向找边。Cursor 审查（工单 `a2a_workorder_cursor_paper_review.md`，只审不改后落地可选）：**无阻塞项**；深审结合 FluidNC/GitHub 后落地 Z 同步 + 对称无纸确认。`agent_gate standard` 须复绿。
+**不变量 P6**（§3）：勿无补偿恢复反向找边。Cursor/Bugbot/FluidNC#756 深审后：Z 同步 + 对称无纸确认 + 确认后不复采。`agent_gate standard` 须复绿。
 
 **初始化不会因 P6 报错：** `grbl_init` / 首次 `run_once` 不调边沿清理；软复位仅静默清 `valid`（无 `[PaperStatus]`）。I2S/bootloader 约束仍以 `配置.md` 为准（init 不早拉 passthrough）——与边沿历史无关。
 
