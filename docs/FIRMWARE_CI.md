@@ -52,7 +52,7 @@ git push origin v1.0.0
   （具体 offset 以本仓 `min_spiffs.csv` 的 `app0` 为准，默认 **0x10000**）
 - 整片量产（本地构建产物，非 CI artifact）：每次 `pio run`（release）都会由 `merge_firmware.py` 生成  
   `.pio/build/release/firmware_full_0x0.bin`（4MB，从 **0x0** 开始：bootloader@0x1000 + partitions@0x8000 + app@0x10000，0xFF 填充）→  
-  `esptool write_flash 0x0 firmware_full_0x0.bin`。不含 SPIFFS 数据区。
+  `esptool write_flash 0x0 firmware_full_0x0.bin`。不含 SPIFFS 数据区。缺 bootloader/partitions/firmware 段时 post 脚本显式 `RuntimeError`（路径+offset），勿当运行时报错。
 - 或本机：`pio run -e release -t upload`
 - GitHub **不能**直接写你电脑上的串口；只负责出 bin。
 

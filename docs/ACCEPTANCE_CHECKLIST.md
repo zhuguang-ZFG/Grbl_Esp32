@@ -8,6 +8,7 @@ FluidNC 状态位说明见：[Serial Protocol — Bf 缓冲](https://wiki.fluidn
 | 分支 | `Branch_736afa70` |
 | 深度审查修复 | **`801761e`**（S1–M3；host SIL standard 已绿） |
 | 二轮 / 三轮修复 | `ad4d1a6`+`59f4304`（F1/F3/M1/M5/N2）；**`ed1089d`**（B1–B4 Blocker + 内存安全 + 段缓冲屏障，见 §7b） |
+| 正向锚边 P6 | **`31db6d8`…`618b1fb`**（见 §1.9；交接 `AGENT_HANDOFF` §6i） |
 | 更早相关 | `b036c81` M30 后跳过原点二次换纸；`468d302` parser reset 清标志；`6f44dce` SD 路径穿越 |
 | Agent 交接 | **`docs/AGENT_HANDOFF.md`**（不变量 / 勿回退表） |
 | SIL | fz 仓 `agent_gate` — **≠** 本清单真机项 |
@@ -32,6 +33,10 @@ FluidNC 状态位说明见：[Serial Protocol — Bf 缓冲](https://wiki.fluidn
 | **1.6** | 换纸进行中灌 **G28** 或 **`$H`**（或探针 G38） | **拒绝/defer**（IdleError 类），XYZ 不与纸路并发（P1） |
 | **1.7** | **Alarm / 非 Idle** 下发 **M721** 或 **`[ESP910]`** | **拒绝**（Idle 门禁）（P2） |
 | 1.8 | 换纸中发 feed-hold / 安全门字符 | 纸路急停中止换纸，不误显示 Hold 却电机仍转 |
+| **1.9** | **连续换纸 5–10 页（正向锚边 P6）** | 对位一致；首页 learn、后续页可走快进+慢采；**无**错位却 `[PaperStatus] 0` |
+| **1.9b** | **相对改前固件核对进纸终点** | 停边侧变更 + 无换向回差 → 若整体偏前/偏后，只调 `PANEL_FINAL_STEPS` / `PANEL_EDGE_APPROACH_STEPS`（勿恢复 Step7） |
+| **1.9c** | **短纸或历史偏长触发 EDGE_PASSED / Ambiguous** | 末次须 `[PaperStatus] 3` + cleanup；非末次可 backoff 重学 |
+| **1.9d** | **换纸中止（feed-hold）或软复位后再换一页** | 下页全程重学（边沿历史已清）；无脏快进冲边 |
 
 ## 2. 物理键
 
@@ -125,6 +130,7 @@ FluidNC 状态位说明见：[Serial Protocol — Bf 缓冲](https://wiki.fluidn
 | `ad4d1a6` + `59f4304` | 二轮：M1 强化 / F1 busy 临界区 / F3 0x18 仅 BT / M5 / N2 / W-N1 / W-N2 / CI |
 | `ed1089d` | 三轮：B1 report_gcode_comment 栈溢出 / B2 pending_m_code 复位 / B3 $RST 启动行 / B4 split_params 越界 / W1 WCO-OVR break / 内存安全 + 解析加固 / W9 段缓冲屏障 |
 | `4b29822` | 四轮（错误逻辑）：L1 $G 探针标签 G38.2-38.5 / L2 全局禁用尊重掩码 / L3 map 反区间守卫 / L4 jog cancelledInflight；非产品 Trinamic 编译/VFD/Dynamixel/10v/Dac |
+| `31db6d8`…`618b1fb` | **P6 正向锚边** + `firmware_full_0x0.bin`；Ambiguous/history-deferred/cleanup 清边沿；见 `AGENT_HANDOFF` §6i |
 | fz `e01c263` | SIL 期望对齐 G38/`$H` defer |
 
 Host SIL 复验：

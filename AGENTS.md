@@ -252,6 +252,7 @@ Key conventions (from `CodingStyle.md` and `.clang-format`):
 | M30 paper fail | Always clear `program_flow` to `Running` before error return |
 | Paper running | Defer G0–G3 **and** G28/G30/G38 / `$H`/`$J` via `should_defer_motion` |
 | `paper_auto_change` | Require `State::Idle` at entry |
+| Paper Step 6 (**P6**) | Forward edge only — no uncompensated reverse re-find; edge history RAM-only, attempt==0 learn, clear `valid` on fail/abort/soft-reset |
 | Settings NVS | Call `nvs_commit` after every successful set/erase |
 | Stepper ISR | Never leave step timer disarmed on busy collision; recover overruns |
 | `$21` hard limits | POST must call `limits_init()` |
@@ -264,7 +265,8 @@ Key conventions (from `CodingStyle.md` and `.clang-format`):
 - `VisualStudio.md` — how to set up Visual Studio (not VS Code).
 - `doc/Commands.txt` — reference for `[ESP...]` commands.
 - `doc/csv/` — error codes, alarm codes, setting codes, build-option codes.
-- `配置.md` — Chinese hardware/firmware configuration notes for the default `custom_3axis_hr4988.h` plotter/writer setup.
+- `配置.md` — Chinese hardware/firmware configuration notes for the default `custom_3axis_hr4988.h` plotter/writer setup (product “wiki”: paper flow, init/I2S bootloader constraints, troubleshooting).
+- `doc/变更说明_正向锚边与量产镜像_2026-07-24.md` — P6 forward-edge + `firmware_full_0x0.bin` change note.
 - `Grbl_Esp32/Custom/custom_code_template.cpp` — template for machine-specific code.
 - `tools/SIMULATION.md` — pointer to fz host SIL (source of truth for sim).
 

@@ -10,8 +10,9 @@
 | 二轮审查落地 | `ad4d1a6` + `59f4304`（2026-07-19）· 已 push（M1 强化 / F1 / F3 / M5 / N2 / W-N1 / W-N2 / CI） |
 | 三轮审查落地 | `ed1089d`（2026-07-20）· 已 push（B1–B4 Blocker + 内存安全 + 解析加固 + 段缓冲屏障） |
 | 四轮审查落地 | `4b29822`（2026-07-20）· 已 push（错误逻辑专项：$G 探针标签 / 全局禁用掩码 / map 反区间 / Trinamic 编译 / VFD 等） |
+| 正向锚边 + 量产镜像 | `31db6d8`…`618b1fb`（2026-07-24）· 已 push（P6；见 §6i） |
 | 配套 SIL 测试 | fz `e01c263`（G28/G38/`$H` 换纸 defer 期望） |
-| 验收 HIL | `docs/ACCEPTANCE_CHECKLIST.md` · 本文件 §8（F1/F3/M1 专项） |
+| 验收 HIL | `docs/ACCEPTANCE_CHECKLIST.md` · 本文件 §8（F1/F3/M1 专项）· §6i P6 对位 |
 
 ## 1. 产品形态（不要当通用 CNC 想）
 
@@ -142,7 +143,7 @@ Host SIL `agent_gate quick` 仍绿；下列为**残余真实问题**，非「已
 | Warning | pen plotter 上 `PARKING_ENABLE`，安全门事件可能驱动 Z 到 -5.0 而非纯 hold | `Config.h:599` | 纸路 e-stop（`paper_request_user_stop`）是否抑制 parking 需 HIL 确认 |
 | Design | 硬限位 ISR 调 `grbl_msg_sendf`/`mc_reset` **对产品不可触**：`custom_3axis_hr4988.h:81` 定义 `ENABLE_SOFTWARE_DEBOUNCE` → 走 `xQueueSendFromISR`。仅 Config.h 默认构建（其它机器）潜伏 | `Limits.cpp` | 其它机器若关软件去抖需修 |
 | Design | BT 无配对 PIN；RF 范围内可触发 ESP910 换纸/motion | `BTConfig.cpp` | BT 写字机固有取舍，需产品签署 |
-| ~~待验证~~ | ~~`paper_system_init` 早于 `settings_init`~~ | `Grbl.cpp:43/45` | **已核实无依赖**：`PaperSystem.cpp:314-346` 只做 GPIO/DAC/I2S passthrough + 日志，不读任何 `Setting*`/NVS。非 bug，勿再标记 |
+| ~~待验证~~ | ~~`paper_system_init` 早于 `settings_init`~~ | `Grbl.cpp` | **已核实无依赖**：init 只做传感器 GPIO/DAC（**不**早拉 I2S passthrough——过早 passthrough 会干扰 bootloader，见 `配置.md` §I2S），不读 `Setting*`/NVS。非 bug，勿再标记 |
 
 **已确认仍成立（勿回退）：** S1 program_flow 清零；P1 G28/G38/`$H` defer；P2 Idle 门；F1 busy 单临界区；F3 0x18 仅 BT；B1/B2/B3/B4 三轮 Blocker 修复；W1 登录；W3/W4；M1 nvs_commit；M2 re-arm；M3 `$21`→`limits_init`；M5/N2 主轴；W9 段缓冲屏障。
 
@@ -172,7 +173,7 @@ Host SIL `agent_gate quick` 仍绿；下列为**残余真实问题**，非「已
 | **L5** | `user_defined_macro` 的 `toCharArray(line, sizeof(line)-1, 0)` 给尾部 `strcat("\r")` 留位；否则 254 字符宏 → `line[255]` 越界 | `System.cpp` |
 | **L6** | `sys_calc_pwm_precision` 守卫 `freq==0`（除零）；`sys_set_analog` 用 `constrain_float(percent,0,100)`（防 uint32 转换溢出） | `System.cpp` |
 
-**自审确认干净（无 bug）：** rt_exec 七个 bit 置位/消费/清除配对完整；`GrblCommand::action` 的 `_cmdChecker` 状态门禁正确；`do_command_or_setting` auth 检查；`doJog`/`report_gcode_modes` 缓冲有界；I2S 产品 passthrough 路径（原子 port_data + single_data）正确，STEPPING/DMA 为产品不编译的 dead code；CoreXY 正逆变换数学互逆一致。`paper_system_init` 早于 `settings_init` **确认无依赖**（只做 GPIO/DAC/I2S，不读 Setting）。
+**自审确认干净（无 bug）：** rt_exec 七个 bit 置位/消费/清除配对完整；`GrblCommand::action` 的 `_cmdChecker` 状态门禁正确；`do_command_or_setting` auth 检查；`doJog`/`report_gcode_modes` 缓冲有界；I2S 产品路径正确（passthrough **延迟到首次电机操作**，init 不早拉——见 `配置.md`）；CoreXY 正逆变换数学互逆一致。`paper_system_init` 早于 `settings_init` **确认无依赖**（只做传感器 GPIO/DAC，不读 Setting）。
 
 **评估后未改（待验证 / 非产品）：** polar_coaster `motors_to_cartesian` 的 X 轴 `*-1` 与逆变换 `atan2(Y,X)` 疑似符号不一致（涉机械装配约定，产品不用 polar，不盲改）。
 
@@ -285,6 +286,32 @@ WebUI 剩余网络栈子代理审 + 主审手工审报告热路径。**产品路
 | Cycle 中抓 `?` 状态流 | WCO/Ov 出现频率回落到 busy 档（W1 修复） |
 | 多行连续写字（回归） | 步进无异常卡顿（验证段缓冲屏障无副作用；W9） |
 
+### 6i. 正向锚边 + 量产镜像（2026-07-24，`31db6d8`…`618b1fb`）
+
+| Commit | 内容 |
+|--------|------|
+| `31db6d8` | Step 6 正向锚边；移除 Step 7 / `PANEL_DIR_REVERSE` / `PANEL_BACK_STEPS_MAX`；引入 `PANEL_EDGE_APPROACH_STEPS` + `PANEL_LOCATE_*` |
+| `41cd186` | `merge_firmware.py` → `firmware_full_0x0.bin`（release post） |
+| `180c2e7` | `EDGE_AMBIGUOUS`（steps==0）fail-closed；merge 越界检查 |
+| `382ac2c` | Ambiguous 耗重试；仅 attempt==0 写历史；慢窗日志区分 |
+| `618b1fb` | cleanup / soft-reset 清 `paper_panel_edge_valid`；merge 缺段显式报错；文档对齐 |
+
+**不变量 P6**（§3）：勿无补偿恢复反向找边。Cursor 审查（工单 `a2a_workorder_cursor_paper_review.md`，只审不改后落地可选）：**无阻塞项**；`agent_gate standard` pass @ `618b1fb`。
+
+**初始化不会因 P6 报错：** `grbl_init` / 首次 `run_once` 不调边沿清理；软复位仅静默清 `valid`（无 `[PaperStatus]`）。I2S/bootloader 约束仍以 `配置.md` 为准（init 不早拉 passthrough）——与边沿历史无关。
+
+**HIL 必做（SIL 不覆盖）：**
+
+| 步骤 | 期望 |
+|------|------|
+| 连续换纸 5–10 页 | 对位一致；串口可见首页 learn、后续页 fast approach |
+| 相对旧固件目视/尺量进纸终点 | 停边侧已从「有纸」改为「无纸」+ 无换向回差 → **`PANEL_FINAL_STEPS` 可能需重标定**（默认仍 320） |
+| 短纸 / 人为 `EDGE_PASSED` | 非末次 backoff 重学或末次 `[PaperStatus] 3`；**不得**错位却报 0 |
+| 换纸中 feed-hold / USB `0x18` 中止后再换 | 下页全程重学（历史已清）；无脏快进 |
+| 烧录 `firmware_full_0x0.bin` @0x0 | 能起机；`$I` 正常（量产路径） |
+
+详变：`doc/变更说明_正向锚边与量产镜像_2026-07-24.md`；调参路线：`docs/HIL_TUNING_ROADMAP.md` 项 4。
+
 ## 9. 相关文档
 
 | 文档 | 用途 |
@@ -292,9 +319,11 @@ WebUI 剩余网络栈子代理审 + 主审手工审报告热路径。**产品路
 | `Agents.md` | 架构、构建、门禁总则 |
 | `docs/ACCEPTANCE_CHECKLIST.md` | 真机验收勾选 |
 | `docs/FIRMWARE_CI.md` | **GitHub 自动编译 / Artifacts / Release 下载** |
+| `docs/HIL_TUNING_ROADMAP.md` | HIL 调参（B1 / Uart0 / 运动 / **P6 对位**） |
 | `tools/SIMULATION.md` | fz 入口 |
-| `配置.md` | 默认机硬件/引脚中文说明 |
+| `配置.md` | 默认机硬件/引脚/**换纸流程与 init 禁忌**（产品侧「wiki」） |
+| `doc/变更说明_正向锚边与量产镜像_2026-07-24.md` | P6 + 量产镜像变更说明 |
 | `doc/Commands.txt` | `[ESP…]` 命令 |
 | fz `docs/AGENT_VIBE_CODING.md` | 仿真 vibe 手册 |
 
-历史审查草稿（`.omk/`、`*-review-*.md`）**不是**源码真相；以本文件 + git 历史为准。
+历史审查草稿（`.omk/`、`*-review-*.md`、`a2a_workorder_*.md`）**不是**源码真相；以本文件 + git 历史为准。产品操作说明以 **`配置.md`** 为准（fork 无独立 GitHub Wiki 内容仓）。
