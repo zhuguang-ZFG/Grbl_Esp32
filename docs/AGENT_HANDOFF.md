@@ -51,7 +51,7 @@ python $env:FZ_ROOT\scripts\agent_gate.py --profile standard
 | M30 成功跳过下一原点换纸 | `paper_m30_just_completed` 不在 `line_begin` 清；仅 consume / 非原点 seek / parser_reset | `Custom/paper_system.cpp` |
 | Busy 重入 | 已在 running 时返回 **非 Ok**（`AnotherInterfaceBusy`） | `PaperSystem.cpp` |
 | Sensor fail-closed | Step2/6 失败走 cleanup + `MessageFailed` + `[PaperStatus]` | `PaperSystem.cpp` |
-| **P6** | 换纸 Step 6 采纸尾边沿后**全程正向不换向**（正向锚边，2026-07-24 起）：原 Step 7 反向回找已移除——换向会把机械回差引入 Step 8 最终对位。禁止在无回差补偿前提下恢复"反向找边"；边沿历史仅 RAM（`paper_panel_edge_steps/valid`），快进段停 `PANEL_EDGE_APPROACH_STEPS` 前转慢速采边；仅 attempt==0 成功写入历史，重试成功 deferred；失败/中止/`paper_on_soft_reset_restart` 清 `valid`；采边用对称 `PaperSensorLevel` + 连续 `PAPER_SENSOR_LOST_STREAK` Absent（过渡区不当前沿）；**成功路径统一 `sys_position[Z]=0` sync**（ESP910/M721/按键与 M30/BT 一致） | `PaperSystem.cpp` Step 6、`PaperSystemCore.h`、`Machines/custom_3axis_hr4988.h` |
+| **P6** | 换纸 Step 6 采纸尾边沿后**全程正向不换向**（正向锚边，2026-07-24 起）：原 Step 7 反向回找已移除——换向会把机械回差引入 Step 8 最终对位。禁止在无回差补偿前提下恢复"反向找边"；边沿历史仅 RAM（`paper_panel_edge_steps/valid`），快进段停 `PANEL_EDGE_APPROACH_STEPS` 前转慢速采边；仅 attempt==0 成功写入历史，重试成功 deferred；失败/中止/`paper_on_soft_reset_restart` 清 `valid`；采边用对称 `PaperSensorLevel` + 连续 `PAPER_SENSOR_LOST_STREAK` Absent（过渡区不当前沿）；**成功路径统一 `sys_position[Z]=0` sync**（ESP910/M721/按键与 M30/BT 一致）；Step 8 后 **`PANEL_FINAL_SETTLE_MS` 保持使能再失能**（防弹性回弹，非 backlash） | `PaperSystem.cpp` Step 6/8、`PaperSystemCore.h`、`Machines/custom_3axis_hr4988.h` |
 
 ### 设置 / 步进
 
@@ -307,7 +307,8 @@ WebUI 剩余网络栈子代理审 + 主审手工审报告热路径。**产品路
 | 步骤 | 期望 |
 |------|------|
 | 连续换纸 5–10 页 | 对位一致；串口可见首页 learn、后续页 fast approach |
-| 相对旧固件目视/尺量进纸终点 | 停边侧已从「有纸」改为「无纸」+ 无换向回差 → **`PANEL_FINAL_STEPS` 可能需重标定**（默认仍 320） |
+| 相对旧固件目视/尺量进纸终点 | 停边侧已从「有纸」改为「无纸」+ 无换向回差 → **`PANEL_FINAL_STEPS` 按 HIL 标定**（当前 **300**，由 320 减 20 防过头）；失能前 **`PANEL_FINAL_SETTLE_MS=200`** 保持力矩（防回弹） |
+| 对位后立刻失能目视回弹 | 串口应有 `Settle hold`；仍回弹则加大 settle，**勿**上 backlash / 勿恢复 Step7 |
 | 短纸 / 人为 `EDGE_PASSED` | 非末次 backoff 重学或末次 `[PaperStatus] 3`；**不得**错位却报 0 |
 | 换纸中 feed-hold / USB `0x18` 中止后再换 | 下页全程重学（历史已清）；无脏快进 |
 | 烧录 `firmware_full_0x0.bin` @0x0 | 能起机；`$I` 正常（量产路径） |

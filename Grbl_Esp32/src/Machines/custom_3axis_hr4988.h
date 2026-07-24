@@ -148,8 +148,10 @@
 // 面板电机：慢速采边脉宽（μs）。采边速度决定边沿检测延迟：1500/1500 ≈ 333 步/s，延迟 <1 步
 #define PANEL_LOCATE_HI_US    1500u
 #define PANEL_LOCATE_LO_US    1500u
-// 面板电机：最终微调到位的步数
-#define PANEL_FINAL_STEPS     320u
+// 面板电机：最终微调到位的步数（HIL：320 过头 → 300）
+#define PANEL_FINAL_STEPS     300u
+// 对位完成后、失能前保持使能的毫秒数（防弹性/间隙回弹；对齐 FluidNC settle / disable_delay 思路）
+#define PANEL_FINAL_SETTLE_MS 200u
 
 // 进纸器电机：寻找新纸到感应器的最大步数（超时时间，可根据实际距离调大）
 // 100+ 页后进纸阻力增加，放宽上限配合 PAPER_SENSOR_TIMEOUT_MS 使用

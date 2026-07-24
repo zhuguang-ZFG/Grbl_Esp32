@@ -65,7 +65,8 @@
 
 | 参数 | 默认 | 何时动 |
 |------|------|--------|
-| `PANEL_FINAL_STEPS` | 320 | 多页对位整体偏前/偏后时优先调 |
+| `PANEL_FINAL_STEPS` | 300 | 多页对位整体偏前/偏后时优先调（2026-07-24 HIL：320→300 减过头） |
+| `PANEL_FINAL_SETTLE_MS` | 200 | 对位后立刻失能若目视回弹，加大 settle（对齐 FluidNC settle/disable_delay；非 backlash） |
 | `PANEL_EDGE_APPROACH_STEPS` | 400（≈3.8mm） | 频繁 `EDGE_PASSED` 或慢窗耗尽时按纸长公差/磨损加大 |
 | `PANEL_LOCATE_*` | 1500/1500 µs | 仅当慢采噪声/延迟不足时 |
 

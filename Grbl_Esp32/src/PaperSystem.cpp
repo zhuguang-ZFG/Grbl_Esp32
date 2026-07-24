@@ -1019,9 +1019,20 @@ Error paper_auto_change(void) {
     }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Done");
 
-    // 9. 换纸流程完成后关闭全部纸路使能（含面板），避免发热与蓝牙雕刻时 595 串扰
+    // 9. 到位后短时保持面板力矩，再关纸路使能——立刻失能会让弹性/间隙把纸拽回，对位偏短
+    // （社区：FluidNC settle_ms / idle_ms·disable_delay；非 backlash 软件补偿，见 #756）
+#ifndef PANEL_FINAL_SETTLE_MS
+#    define PANEL_FINAL_SETTLE_MS 200u
+#endif
+    if (PANEL_FINAL_SETTLE_MS > 0) {
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Settle hold %u ms...", (unsigned)PANEL_FINAL_SETTLE_MS);
+        delay(PANEL_FINAL_SETTLE_MS);
+        if (paper_should_abort_change()) {
+            return paper_auto_change_abort_cleanup("during settle hold");
+        }
+    }
     paper_disable_drivers();
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Paper drivers disabled (no panel hold)");
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Paper drivers disabled (after settle hold)");
 
     // 成功路径故意不调用 paper_change_cleanup_common()：不做 plan_reset / 失能 XYZ，
     // 纸路已在上面 paper_disable_drivers()，sys.state 保持 Idle 供后续 M 指令使用。
