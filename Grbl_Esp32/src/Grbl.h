@@ -144,4 +144,5 @@ void  paper_btn_arm_bt_suppress(void);     // 蓝牙启动/连接后抑制换纸
 bool  paper_btn_bt_suppress_active(void);
 void  paper_btn_notify_macro_released(void);  // 去抖任务检测到 Macro0 松开
 bool  paper_btn_ignore_control_events(void);  // 换纸后冷却或蓝牙抑制期内忽略换纸键
+void  paper_release_panel_hold_for_xyz_motion(void);  // Cycle/Jog/Homing 前结束面板低电流保持
 #endif

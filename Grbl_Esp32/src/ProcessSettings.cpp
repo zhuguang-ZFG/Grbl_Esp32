@@ -227,6 +227,9 @@ Error home(int cycle) {
     if (system_check_safety_door_ajar()) {
         return Error::CheckDoor;  // Block if safety door is ajar.
     }
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+    paper_release_panel_hold_for_xyz_motion();
+#endif
     sys.state = State::Homing;  // Set system state variable
 #ifdef USE_I2S_STEPS
     stepper_id_t save_stepper = current_stepper;

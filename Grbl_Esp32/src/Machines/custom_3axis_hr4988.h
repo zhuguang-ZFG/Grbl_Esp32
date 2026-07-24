@@ -119,6 +119,16 @@
 #ifndef PAPER_REF_DAC_PANEL
 #    define PAPER_REF_DAC_PANEL   90    // 面板电机
 #endif
+// 换纸 Step8 对位后：低电流保持防失能回退；首次 XYZ Cycle/Jog/Homing 再失能（减写字期 595 串扰）
+#ifndef PAPER_REF_DAC_PANEL_HOLD
+#    define PAPER_REF_DAC_PANEL_HOLD  40  // ≈运行电流 44%；偏软加大，发烫/蠕动则减小
+#endif
+#ifndef PAPER_PANEL_HOLD_AFTER_CHANGE
+#    define PAPER_PANEL_HOLD_AFTER_CHANGE 1  // 1=对位后低电流保持；0=立刻失能（旧行为）
+#endif
+#ifndef PANEL_FINAL_SETTLE_MS
+#    define PANEL_FINAL_SETTLE_MS 200u  // 进入保持前短 settle
+#endif
 #ifndef PAPER_REF_DAC_FEEDER
 #    define PAPER_REF_DAC_FEEDER  110   // 进纸器电机
 #endif

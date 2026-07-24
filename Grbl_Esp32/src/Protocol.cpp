@@ -619,7 +619,10 @@ void protocol_exec_rt_system() {
                         sys.step_control = {};  // Restore step control to normal operation
                         if (plan_get_current_block() && !sys.suspend.bit.motionCancel) {
                             sys.suspend.value = 0;  // Break suspend state.
-                            sys.state         = State::Cycle;
+#if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+                            paper_release_panel_hold_for_xyz_motion();
+#endif
+                            sys.state = State::Cycle;
                             st_prep_buffer();  // Initialize step segment buffer before beginning cycle.
                             st_wake_up();
                         } else {                    // Otherwise, do nothing. Set and resume IDLE state.

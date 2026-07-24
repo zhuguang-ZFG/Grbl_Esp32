@@ -351,6 +351,9 @@ static void paper_ensure_i2s_passthrough(void) {
 #endif
 }
 
+// 换纸成功后的面板低电流保持：写字/点动/回零开始前释放
+static volatile bool paper_panel_low_hold_active = false;
+
 // 内部辅助函数：启用所有纸路驱动（面板 + 拾落 + 进纸器）
 static void paper_enable_drivers(void) {
     paper_ensure_i2s_passthrough();
@@ -366,10 +369,53 @@ static void paper_enable_drivers(void) {
 
 // 内部辅助函数：禁用驱动
 void paper_disable_drivers(void) {
+    paper_panel_low_hold_active = false;
     digitalWrite(PAPER_ENABLE_PIN, HIGH);
 #ifdef PAPER_DRIVER_ENABLE_PIN
     digitalWrite(PAPER_DRIVER_ENABLE_PIN, HIGH);
 #endif
+}
+
+// XYZ 运动即将开始：结束面板低电流保持（避免写字期 I2S/595 与面板共总线蠕动）
+void paper_release_panel_hold_for_xyz_motion(void) {
+    if (!paper_panel_low_hold_active) {
+        return;
+    }
+    paper_disable_drivers();
+    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Panel hold released for XYZ motion");
+}
+
+// 换纸成功：仅面板低电流保持，顶住失能回退；保持到首次 Cycle/Jog/Homing
+static void paper_enter_panel_low_hold(void) {
+    paper_ensure_i2s_passthrough();
+    digitalWrite(PANEL_MOTOR_STEP_PIN, LOW);
+    digitalWrite(PANEL_MOTOR_DIR_PIN, PANEL_DIR_FEED);
+#ifdef USE_I2S_OUT
+    i2s_out_delay();
+#endif
+#ifdef PAPER_DRIVER_REF_PIN
+#    ifndef PAPER_REF_DAC_PANEL_HOLD
+#        define PAPER_REF_DAC_PANEL_HOLD ((PAPER_REF_DAC_PANEL) / 2)
+#    endif
+    paper_set_ref_dac((uint8_t)PAPER_REF_DAC_PANEL_HOLD);
+#endif
+    digitalWrite(PAPER_ENABLE_PIN, LOW);
+#ifdef PAPER_DRIVER_ENABLE_PIN
+    digitalWrite(PAPER_DRIVER_ENABLE_PIN, HIGH);  // 拾落/进纸器关
+#endif
+#ifdef USE_I2S_OUT
+    i2s_out_delay();
+#endif
+    paper_panel_low_hold_active = true;
+    grbl_msg_sendf(CLIENT_SERIAL,
+                   MsgLevel::Info,
+                   "[PaperAuto] Panel low-current hold (REF=%u, clamp/feeder off; release on XYZ motion)",
+#ifdef PAPER_DRIVER_REF_PIN
+                   (unsigned)PAPER_REF_DAC_PANEL_HOLD
+#else
+                   0u
+#endif
+    );
 }
 
 #ifdef PAPER_DRIVER_REF_PIN
@@ -873,9 +919,26 @@ Error paper_auto_change(void) {
     }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Done");
 
-    // 9. 换纸流程完成后关闭全部纸路使能（含面板），避免发热与蓝牙雕刻时 595 串扰
+    // 9. settle → 面板低电流保持（防失能回退）；写字开始时再失能
+#ifndef PANEL_FINAL_SETTLE_MS
+#    define PANEL_FINAL_SETTLE_MS 200u
+#endif
+#ifndef PAPER_PANEL_HOLD_AFTER_CHANGE
+#    define PAPER_PANEL_HOLD_AFTER_CHANGE 1
+#endif
+    if (PANEL_FINAL_SETTLE_MS > 0) {
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-8] Settle hold %u ms...", (unsigned)PANEL_FINAL_SETTLE_MS);
+        delay(PANEL_FINAL_SETTLE_MS);
+        if (sys.abort) {
+            return paper_auto_change_abort_cleanup("during settle hold");
+        }
+    }
+#if PAPER_PANEL_HOLD_AFTER_CHANGE
+    paper_enter_panel_low_hold();
+#else
     paper_disable_drivers();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Paper drivers disabled (no panel hold)");
+#endif
 
     paper_auto_change_running        = false;
     paper_ignore_host_reset_until_ms = 0;
