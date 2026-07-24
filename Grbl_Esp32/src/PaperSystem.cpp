@@ -714,8 +714,10 @@ Error paper_auto_change(void) {
             delay(2);
 #endif
             while (true) {
+                // 远距只做单次读脚；完整防抖仅在疑似有纸时跑（否则每步 ~2.5ms 把进纸器卡在 ~400 步/s）
+                const bool present = paper_sensor_active() && paper_sensor_stable();
                 PaperSearchDecision search = paper_sensor_edge_decide(
-                    paper_sensor_stable(), true, millis() - t0_ms, steps, FEEDER_FIND_STEPS_MAX, PAPER_SENSOR_TIMEOUT_MS);
+                    present, true, millis() - t0_ms, steps, FEEDER_FIND_STEPS_MAX, PAPER_SENSOR_TIMEOUT_MS);
                 if (search == PaperSearchDecision::Found) {
                     found = true;
                     break;
