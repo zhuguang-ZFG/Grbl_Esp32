@@ -27,6 +27,7 @@
 #    include "TelnetServer.h"
 #    include "WifiConfig.h"
 #    include <WiFi.h>
+#    include <lwip/sockets.h>
 
 namespace WebUI {
     Telnet_Server telnet_server;
@@ -90,6 +91,18 @@ namespace WebUI {
                         _telnetClients[i].stop();
                     }
                     _telnetClients[i] = _telnetserver->available();
+                    // hutuji §9-A：半开死连接回收（只开 SO_KEEPALIVE 无效，须显式三参数）
+                    // ~KEEPIDLE 10 + 3×KEEPINTVL ≈ 19s 发现对端掉电/NAT 超时
+                    {
+                        int keepalive = 1;
+                        int keepidle  = 10;
+                        int keepintvl = 3;
+                        int keepcnt   = 3;
+                        _telnetClients[i].setSocketOption(SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive));
+                        _telnetClients[i].setSocketOption(IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
+                        _telnetClients[i].setSocketOption(IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
+                        _telnetClients[i].setSocketOption(IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt));
+                    }
                     break;
                 }
             }

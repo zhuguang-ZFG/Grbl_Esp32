@@ -348,12 +348,14 @@ void paper_get_status_str(char* buf, size_t len) {
 #ifdef PAPER_DRIVER_ENABLE_PIN
     en_ok = en_ok || !digitalRead(PAPER_DRIVER_ENABLE_PIN);
 #endif
+    // hutuji §9-B2′：Changing 供 S3 经 [ESP901] 跨 session 判换纸中（abort/断连分流）
     snprintf(buf,
              len,
-             "Paper=%s MotorEn=%s PanelHold=%s",
+             "Paper=%s MotorEn=%s PanelHold=%s Changing=%s",
              paper_ok ? "OK" : "No",
              en_ok ? "On" : "Off",
-             paper_panel_low_hold_active ? "On" : "Off");
+             paper_panel_low_hold_active ? "On" : "Off",
+             paper_auto_change_is_running() ? "On" : "Off");
 }
 
 // 内部辅助函数：确保 I2S 处于 passthrough 模式（仅首次做长延时，避免主循环反复阻塞/锁存 595）
@@ -799,12 +801,12 @@ Error paper_auto_change(void) {
                 grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
                                "[PaperAuto-2] OUT_OF_PAPER: no paper detected within %u ms (steps=%u), stop and reset to Step1",
                                (unsigned)PAPER_SENSOR_TIMEOUT_MS, (unsigned)steps);
-                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_OUT_OF_PAPER);
+                grbl_msg_sendf(CLIENT_ALL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_OUT_OF_PAPER);  // hutuji §9-B1′
             } else {
                 grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
                                "[PaperAuto-2] ERROR: Feeder timeout - sensor not triggered after %u steps",
                                (unsigned)steps);
-                grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_FEEDER_TIMEOUT);
+                grbl_msg_sendf(CLIENT_ALL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_FEEDER_TIMEOUT);  // hutuji §9-B1′
             }
             return Error::MessageFailed;  // 返回非OK，避免上层误判“Auto paper change completed”
         }
@@ -926,7 +928,7 @@ Error paper_auto_change(void) {
                                "[PaperAuto-6] JAM: sensor still active after max steps=%u (actual=%u), stop and reset to Step1",
                                (unsigned)PANEL_FAST_STEPS_MAX, (unsigned)steps);
             }
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_JAM_TIMEOUT);
+            grbl_msg_sendf(CLIENT_ALL, MsgLevel::Info, "[PaperStatus] %d", PAPER_STATUS_JAM_TIMEOUT);  // hutuji §9-B1′
             return Error::MessageFailed;
         }
         grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto-6] Fast feed completed (%u steps, sensor=%s)", 
@@ -1003,7 +1005,7 @@ Error paper_auto_change(void) {
     paper_ignore_host_reset_until_ms = 0;
     paper_btn_arm_post_change_cooldown();
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] All steps completed successfully!");
-    grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperStatus] %d", step7_sensor_ok ? PAPER_STATUS_OK : PAPER_STATUS_SENSOR_NOT_FOUND);
+    grbl_msg_sendf(CLIENT_ALL, MsgLevel::Info, "[PaperStatus] %d", step7_sensor_ok ? PAPER_STATUS_OK : PAPER_STATUS_SENSOR_NOT_FOUND);  // hutuji §9-B1′
     return Error::Ok;
 }
 
