@@ -42,6 +42,12 @@
 | §9 完成 | 上表 **且** 烧录 + `hutuji/docs/bringup-sop.md` 阶段 2 实机判据 |
 | 可出货 | 仅看 hutuji `release-readiness.md`（本仓绿不够） |
 
+## 硬件资料（MK38）
+
+- 对照文档：`D:/Users/hutuji/docs/hardware/mk38-board.md` + `MK38-总图.pdf`  
+- 机型头：`Grbl_Esp32/src/Machines/custom_3axis_hr4988.h`  
+- **脚位以现役 `#define` 为准，默认禁止改 GPIO/I2S/步进/595；文档只对照，不为对齐去改固件。**
+
 ## 路径
 
 | 用途 | 路径 |
