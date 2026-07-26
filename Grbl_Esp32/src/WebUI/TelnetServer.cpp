@@ -98,10 +98,11 @@ namespace WebUI {
                         int keepidle  = 10;
                         int keepintvl = 3;
                         int keepcnt   = 3;
-                        _telnetClients[i].setSocketOption(SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive));
-                        _telnetClients[i].setSocketOption(IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
-                        _telnetClients[i].setSocketOption(IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
-                        _telnetClients[i].setSocketOption(IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt));
+                        int s = _telnetClients[i].fd();
+                        setsockopt(s, SOL_SOCKET,  SO_KEEPALIVE, &keepalive, sizeof(keepalive));
+                        setsockopt(s, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle,  sizeof(keepidle));
+                        setsockopt(s, IPPROTO_TCP, TCP_KEEPINTVL,&keepintvl, sizeof(keepintvl));
+                        setsockopt(s, IPPROTO_TCP, TCP_KEEPCNT,  &keepcnt,   sizeof(keepcnt));
                     }
                     break;
                 }
