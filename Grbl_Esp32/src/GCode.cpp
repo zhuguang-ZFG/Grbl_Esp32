@@ -1491,10 +1491,9 @@ Error gc_execute_line(char* line, uint8_t client) {
         pen_pl_data.spindle           = SpindleState::Disable;
         pen_pl_data.coolant           = gc_state.modal.coolant;
         mc_line(pen_target, &pen_pl_data);
+        protocol_buffer_synchronize();
         gc_state.position[Z_AXIS] = pen_target[Z_AXIS];
 #endif
-        // 在“抬笔/落笔= M3/M5”模式下，避免 spindle->sync 内部的 protocol_buffer_synchronize() 阻塞 planner，
-        // 否则在蓝牙流式发送时容易触发 segment buffer underflow 与绘制卡顿。
 #ifdef USE_M3_M5_AS_PEN_UP_DOWN
         spindle->set_state(gc_block.modal.spindle, (uint32_t)pl_data->spindle_speed);
 #else

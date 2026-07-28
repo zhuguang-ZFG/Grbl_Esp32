@@ -346,6 +346,6 @@
 #define DEFAULT_X_ACCELERATION              3000.0
 #define DEFAULT_Y_ACCELERATION              3000.0
 #define DEFAULT_Z_ACCELERATION              8000.0
-#define DEFAULT_X_MAX_TRAVEL                200.0
-#define DEFAULT_Y_MAX_TRAVEL                200.0
+#define DEFAULT_X_MAX_TRAVEL                210.0  // A4 短边
+#define DEFAULT_Y_MAX_TRAVEL                297.0  // A4 长边
 #define DEFAULT_Z_MAX_TRAVEL                200.0

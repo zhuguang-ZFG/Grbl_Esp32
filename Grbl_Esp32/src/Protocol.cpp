@@ -737,35 +737,23 @@ void protocol_exec_rt_system() {
     // 调用点打印一次（包含 mc_line 等待循环中的调用），用于定位卡顿来源。
     if (segment_buffer_underflow) {
         segment_buffer_underflow = false;
-        
-        uint8_t planner_free = plan_get_block_buffer_available();
-        
-        // 【优化】区分换页场景和真正的 underflow
-        // 换页场景：planner 有大量数据（B > 70），但 segment buffer 被耗尽
-        // 这是正常现象，因为上位机已停止发送，等待换纸完成
-        if (planner_free > 70) {
-            // 换页场景：静默处理，不打印警告
-            grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, 
-                           "[BT] Page end detected, waiting for next page...");
-        } else {
-            // 真正的 underflow：打印警告
-            // 附带 program_flow，便于判断是否是 M30/程序流切换导致的段缓冲耗尽。
+
+        // planner 仍有未执行 block 才是真正的 underflow（流式断供或 segment 生成跟不上）。
+        // planner 空 = 运动正常完成（M3/M5 笔控、G0 短移动等），不需要打印任何消息。
+        if (plan_get_current_block() != NULL) {
+            uint8_t planner_free = plan_get_block_buffer_available();
             grbl_sendf(CLIENT_SERIAL,
                        "[SEG underflow] B=%u st=%u progflow=%u execSys=%u\r\n",
                        (unsigned)planner_free,
                        (unsigned)sys.state,
                        (unsigned)gc_state.modal.program_flow,
                        (unsigned)sys.step_control.executeSysMotion);
-        }
 
-        // 若 planner 仍有可执行块，但 stepper 因 segment buffer 空而停下，
-        // 立刻重装载 segment buffer 并启动 cycle，避免蓝牙流式发送时出现停顿卡顿。
-        if (sys.state == State::Idle && plan_get_current_block() != NULL) {
-            // 注意：避免强行篡改 sys.state / sys.suspend 以免造成状态机不一致。
-            // 只清除可能阻止续料的 endMotion 标志，然后让 stepper 重新开始工作。
-            sys.step_control.endMotion = false;
-            st_prep_buffer();
-            st_wake_up();
+            if (sys.state == State::Idle) {
+                sys.step_control.endMotion = false;
+                st_prep_buffer();
+                st_wake_up();
+            }
         }
     }
 
