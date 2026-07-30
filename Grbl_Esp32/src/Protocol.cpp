@@ -750,6 +750,7 @@ void protocol_exec_rt_system() {
                        (unsigned)sys.step_control.executeSysMotion);
 
             if (sys.state == State::Idle) {
+                sys.state = State::Cycle;  // §9-C′: 与 cycle-start(:625) 对齐，避免恢复期误报 Idle
                 sys.step_control.endMotion = false;
                 st_prep_buffer();
                 st_wake_up();
