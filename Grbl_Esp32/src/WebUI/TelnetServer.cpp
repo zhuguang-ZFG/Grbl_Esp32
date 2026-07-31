@@ -40,12 +40,46 @@ namespace WebUI {
     IPAddress Telnet_Server::_telnetClientsIP[MAX_TLNT_CLIENTS];
 #    endif
 
+    // hutuji §9-A2：Telnet client 跨任务互斥（只加锁，不改协议/不改换纸/不改运动）。
+    // 竞态：loopTask（run_once -> grbl_sendf -> client_write -> Telnet_Server::write）
+    // 与 clientCheckTask（wifi_config.handle -> WiFiServices::handle -> Telnet_Server::handle）
+    // 同优先级、同核并发操作同一个 WiFiClient 与同一个 slot：
+    //   1) write() 内 WiFiClient::write() 遇到非 EAGAIN 错误会调 stop()，stop() 把
+    //      _rxBuffer 置空并释放（arduino-esp32 WiFiClient.cpp）；此刻读侧正在
+    //      available()/read() 里走 WiFiClientRxBuffer::fillBuffer -> lwip_recv ->
+    //      pbuf_free，命中 assert "pbuf_free: p->ref > 0"（上游 bdring/Grbl_Esp32#1364）。
+    //   2) clearClients() 在两个任务里并发 available() 并对同一 slot 先 stop() 再赋值，
+    //      等于在读侧脚下换掉 _rxBuffer 智能指针。
+    // 递归锁而非普通锁：handle() 内 report_init_message(CLIENT_TELNET) 会回到 write()，
+    // 同一任务必须能重入。
+    // 权衡：write() 在 TCP 窗口关闭时最坏阻塞约 10s（select 1s × 10 retry），期间
+    // clientCheckTask 收不到数据。abort 时延不因此变差——`!`/0x18 的**执行**本就在
+    // loopTask 的 protocol_execute_realtime 里，而 loopTask 正是被 write() 阻塞的那个。
+    static SemaphoreHandle_t telnetClientMutex = xSemaphoreCreateRecursiveMutex();
+
+    class TelnetClientLock {
+    public:
+        TelnetClientLock() {
+            if (telnetClientMutex != nullptr) {
+                xSemaphoreTakeRecursive(telnetClientMutex, portMAX_DELAY);
+            }
+        }
+        ~TelnetClientLock() {
+            if (telnetClientMutex != nullptr) {
+                xSemaphoreGiveRecursive(telnetClientMutex);
+            }
+        }
+        TelnetClientLock(const TelnetClientLock&) = delete;
+        TelnetClientLock& operator=(const TelnetClientLock&) = delete;
+    };
+
     Telnet_Server::Telnet_Server() {
         _RXbufferSize = 0;
         _RXbufferpos  = 0;
     }
 
     bool Telnet_Server::begin() {
+        TelnetClientLock lock;
         bool no_error = true;
         end();
         _RXbufferSize = 0;
@@ -68,6 +102,7 @@ namespace WebUI {
     }
 
     void Telnet_Server::end() {
+        TelnetClientLock lock;
         _setupdone    = false;
         _RXbufferSize = 0;
         _RXbufferpos  = 0;
@@ -115,6 +150,7 @@ namespace WebUI {
     }
 
     size_t Telnet_Server::write(const uint8_t* buffer, size_t size) {
+        TelnetClientLock lock;
         size_t wsize = 0;
         if (!_setupdone || _telnetserver == NULL) {
             log_d("[TELNET out blocked]");
@@ -136,6 +172,7 @@ namespace WebUI {
     }
 
     void Telnet_Server::handle() {
+        TelnetClientLock lock;
         COMMANDS::wait(0);
         //check if can read
         if (!_setupdone || _telnetserver == NULL) {
