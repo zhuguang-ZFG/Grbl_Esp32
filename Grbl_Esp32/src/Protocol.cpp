@@ -467,6 +467,82 @@ void protocol_execute_realtime() {
     }
 }
 
+namespace {
+struct ProtocolCycleStopOps {
+    void reinitialize_cycle_plan() {
+        plan_cycle_reinitialize();
+    }
+
+    void set_hold_complete() {
+        sys.suspend.bit.holdComplete = true;
+    }
+
+    void clear_execute_hold() {
+        sys.step_control.executeHold = false;
+    }
+
+    void clear_execute_sys_motion() {
+        sys.step_control.executeSysMotion = false;
+    }
+
+    void clear_end_motion() {
+        sys.step_control.endMotion = false;
+    }
+
+    void set_cycle_state() {
+        sys.state = State::Cycle;
+    }
+
+    void prep_buffer() {
+        st_prep_buffer();
+    }
+
+    void wake_up() {
+        st_wake_up();
+    }
+
+    void clear_step_control() {
+        sys.step_control = {};
+    }
+
+    void reset_plan() {
+        plan_reset();
+    }
+
+    void reset_stepper() {
+        st_reset();
+    }
+
+    void sync_gcode_position() {
+        gc_sync_position();
+    }
+
+    void sync_plan_position() {
+        plan_sync_position();
+    }
+
+    void clear_jog_cancel() {
+        sys.suspend.bit.jogCancel = false;
+    }
+
+    void set_safety_door_state() {
+        sys.state = State::SafetyDoor;
+    }
+
+    void clear_suspend() {
+        sys.suspend.value = 0;
+    }
+
+    void set_idle_state() {
+        sys.state = State::Idle;
+    }
+
+    void clear_cycle_stop() {
+        cycle_stop = false;
+    }
+};
+}  // namespace
+
 // Executes run-time commands, when required. This function primarily operates as Grbl's state
 // machine and controls the various real-time features Grbl has to offer.
 // NOTE: Do not alter this unless you know exactly what you are doing!
@@ -638,58 +714,22 @@ void protocol_exec_rt_system() {
         }
         if (cycle_stop) {
             // ISR 同时报告停止和段缓存耗尽。先保存本次停止的状态与意图，因为下方正常完成分支会清 suspend。
-            const bool underflow         = segment_buffer_underflow;
-            const bool planner_has_block = plan_get_current_block() != NULL;
-            const bool was_cycle        = sys.state == State::Cycle;
-            const bool end_motion       = sys.step_control.endMotion;
-            const bool execute_hold     = sys.step_control.executeHold;
-            const bool motion_cancel    = sys.suspend.bit.motionCancel;
-            const bool soft_limit       = sys.soft_limit;
+            ProtocolDecisionCore::CycleStopInput input;
+            input.underflow             = segment_buffer_underflow;
+            input.cycle_stopped         = cycle_stop;
+            input.planner_has_block     = plan_get_current_block() != NULL;
+            input.was_cycle            = sys.state == State::Cycle;
+            input.end_motion           = sys.step_control.endMotion;
+            input.execute_hold          = sys.step_control.executeHold;
+            input.motion_cancel         = sys.suspend.bit.motionCancel;
+            input.soft_limit            = sys.soft_limit;
+            input.hold_completion_state =
+                sys.state == State::Hold || sys.state == State::SafetyDoor || sys.state == State::Sleep;
+            input.jog_cancel            = sys.suspend.bit.jogCancel;
+            input.safety_door_ajar      = sys.suspend.bit.safetyDoorAjar;
 
-            resumed_segment_underflow = ProtocolDecisionCore::should_resume_segment_underflow(
-                underflow, cycle_stop, planner_has_block, was_cycle, end_motion, execute_hold, motion_cancel, soft_limit);
-
-            // Reinitializes the cycle plan and stepper system after a feed hold for a resume. Called by
-            // realtime command execution in the main program, ensuring that the planner re-plans safely.
-            // NOTE: Bresenham algorithm variables are still maintained through both the planner and stepper
-            // cycle reinitializations. The stepper path should continue exactly as if nothing has happened.
-            // NOTE: cycle_stop is set by the stepper subsystem when a cycle or feed hold completes.
-            if ((sys.state == State::Hold || sys.state == State::SafetyDoor || sys.state == State::Sleep) && !(sys.soft_limit) &&
-                !(sys.suspend.bit.jogCancel)) {
-                // Hold complete. Set to indicate ready to resume.  Remain in HOLD or DOOR states until user
-                // has issued a resume command or reset.
-                plan_cycle_reinitialize();
-                if (sys.step_control.executeHold) {
-                    sys.suspend.bit.holdComplete = true;
-                }
-                sys.step_control.executeHold      = false;
-                sys.step_control.executeSysMotion = false;
-            } else if (resumed_segment_underflow) {
-                // 正常 Cycle 的真实断粮：保持 Cycle，先补段再唤醒，绝不发布瞬态 Idle。
-                sys.step_control.endMotion = false;
-                sys.state                  = State::Cycle;
-                st_prep_buffer();
-                st_wake_up();
-            } else {
-                // Motion complete. Includes CYCLE/JOG/HOMING states and jog cancel/motion cancel/soft limit events.
-                // NOTE: Motion and jog cancel both immediately return to idle after the hold completes.
-                if (sys.suspend.bit.jogCancel) {  // For jog cancel, flush buffers and sync positions.
-                    sys.step_control = {};
-                    plan_reset();
-                    st_reset();
-                    gc_sync_position();
-                    plan_sync_position();
-                }
-                if (sys.suspend.bit.safetyDoorAjar) {  // Only occurs when safety door opens during jog.
-                    sys.suspend.bit.jogCancel    = false;
-                    sys.suspend.bit.holdComplete = true;
-                    sys.state                    = State::SafetyDoor;
-                } else {
-                    sys.suspend.value = 0;
-                    sys.state         = State::Idle;
-                }
-            }
-            cycle_stop = false;
+            ProtocolCycleStopOps ops;
+            resumed_segment_underflow = ProtocolDecisionCore::apply_cycle_stop_transition(input, ops);
         }
     }
     // Execute overrides.

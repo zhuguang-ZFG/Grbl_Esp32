@@ -292,6 +292,65 @@ public:
                !motion_cancel && !soft_limit;
     }
 
+    struct CycleStopInput {
+        bool underflow             = false;
+        bool cycle_stopped         = false;
+        bool planner_has_block     = false;
+        bool was_cycle            = false;
+        bool end_motion           = false;
+        bool execute_hold          = false;
+        bool motion_cancel         = false;
+        bool soft_limit            = false;
+        bool hold_completion_state = false;
+        bool jog_cancel            = false;
+        bool safety_door_ajar      = false;
+    };
+
+    // 把分支优先级与 prep/wake/清理顺序固定在可由产品和 host 共用的执行器中。
+    template <typename Ops>
+    static bool apply_cycle_stop_transition(const CycleStopInput& input, Ops& ops) {
+        if (!input.cycle_stopped) {
+            return false;
+        }
+
+        bool resumed_segment_underflow = false;
+        if (input.hold_completion_state && !input.soft_limit && !input.jog_cancel) {
+            ops.reinitialize_cycle_plan();
+            if (input.execute_hold) {
+                ops.set_hold_complete();
+            }
+            ops.clear_execute_hold();
+            ops.clear_execute_sys_motion();
+        } else if (should_resume_segment_underflow(input.underflow, input.cycle_stopped,
+                                                    input.planner_has_block, input.was_cycle,
+                                                    input.end_motion, input.execute_hold,
+                                                    input.motion_cancel, input.soft_limit)) {
+            ops.clear_end_motion();
+            ops.set_cycle_state();
+            ops.prep_buffer();
+            ops.wake_up();
+            resumed_segment_underflow = true;
+        } else {
+            if (input.jog_cancel) {
+                ops.clear_step_control();
+                ops.reset_plan();
+                ops.reset_stepper();
+                ops.sync_gcode_position();
+                ops.sync_plan_position();
+            }
+            if (input.safety_door_ajar) {
+                ops.clear_jog_cancel();
+                ops.set_hold_complete();
+                ops.set_safety_door_state();
+            } else {
+                ops.clear_suspend();
+                ops.set_idle_state();
+            }
+        }
+        ops.clear_cycle_stop();
+        return resumed_segment_underflow;
+    }
+
     static bool defer_notice_due(uint32_t now_ms, uint32_t last_notice_ms, uint32_t interval_ms = 3000u) {
         return last_notice_ms == 0 || static_cast<uint32_t>(now_ms - last_notice_ms) >= interval_ms;
     }
