@@ -284,6 +284,14 @@ public:
         return false;
     }
 
+    // 仅恢复正常 Cycle 的段缓存断粮；所有有意停止意图都必须继续走原停止分支。
+    static bool should_resume_segment_underflow(bool underflow, bool cycle_stopped, bool planner_has_block,
+                                                bool was_cycle, bool end_motion, bool execute_hold,
+                                                bool motion_cancel, bool soft_limit) {
+        return underflow && cycle_stopped && planner_has_block && was_cycle && !end_motion && !execute_hold &&
+               !motion_cancel && !soft_limit;
+    }
+
     static bool defer_notice_due(uint32_t now_ms, uint32_t last_notice_ms, uint32_t interval_ms = 3000u) {
         return last_notice_ms == 0 || static_cast<uint32_t>(now_ms - last_notice_ms) >= interval_ms;
     }

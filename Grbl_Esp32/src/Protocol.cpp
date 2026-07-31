@@ -23,6 +23,7 @@
 */
 
 #include "Grbl.h"
+#include "ProtocolDecisionCore.h"
 
 static void protocol_exec_rt_suspend();
 
@@ -493,6 +494,7 @@ void protocol_exec_rt_system() {
     }
     ExecState rt_exec_state;
     rt_exec_state.value = sys_rt_exec_state.value;  // Copy volatile sys_rt_exec_state.
+    bool resumed_segment_underflow = false;
     if (rt_exec_state.value != 0 || cycle_stop) {   // Test if any bits are on
         // Execute system abort.
         if (rt_exec_state.bit.reset) {
@@ -635,6 +637,18 @@ void protocol_exec_rt_system() {
             sys_rt_exec_state.bit.cycleStart = false;
         }
         if (cycle_stop) {
+            // ISR 同时报告停止和段缓存耗尽。先保存本次停止的状态与意图，因为下方正常完成分支会清 suspend。
+            const bool underflow         = segment_buffer_underflow;
+            const bool planner_has_block = plan_get_current_block() != NULL;
+            const bool was_cycle        = sys.state == State::Cycle;
+            const bool end_motion       = sys.step_control.endMotion;
+            const bool execute_hold     = sys.step_control.executeHold;
+            const bool motion_cancel    = sys.suspend.bit.motionCancel;
+            const bool soft_limit       = sys.soft_limit;
+
+            resumed_segment_underflow = ProtocolDecisionCore::should_resume_segment_underflow(
+                underflow, cycle_stop, planner_has_block, was_cycle, end_motion, execute_hold, motion_cancel, soft_limit);
+
             // Reinitializes the cycle plan and stepper system after a feed hold for a resume. Called by
             // realtime command execution in the main program, ensuring that the planner re-plans safely.
             // NOTE: Bresenham algorithm variables are still maintained through both the planner and stepper
@@ -650,6 +664,12 @@ void protocol_exec_rt_system() {
                 }
                 sys.step_control.executeHold      = false;
                 sys.step_control.executeSysMotion = false;
+            } else if (resumed_segment_underflow) {
+                // 正常 Cycle 的真实断粮：保持 Cycle，先补段再唤醒，绝不发布瞬态 Idle。
+                sys.step_control.endMotion = false;
+                sys.state                  = State::Cycle;
+                st_prep_buffer();
+                st_wake_up();
             } else {
                 // Motion complete. Includes CYCLE/JOG/HOMING states and jog cancel/motion cancel/soft limit events.
                 // NOTE: Motion and jog cancel both immediately return to idle after the hold completes.
@@ -740,7 +760,7 @@ void protocol_exec_rt_system() {
 
         // planner 仍有未执行 block 才是真正的 underflow（流式断供或 segment 生成跟不上）。
         // planner 空 = 运动正常完成（M3/M5 笔控、G0 短移动等），不需要打印任何消息。
-        if (plan_get_current_block() != NULL) {
+        if (resumed_segment_underflow || plan_get_current_block() != NULL) {
             uint8_t planner_free = plan_get_block_buffer_available();
             grbl_sendf(CLIENT_SERIAL,
                        "[SEG underflow] B=%u st=%u progflow=%u execSys=%u\r\n",
@@ -748,19 +768,16 @@ void protocol_exec_rt_system() {
                        (unsigned)sys.state,
                        (unsigned)gc_state.modal.program_flow,
                        (unsigned)sys.step_control.executeSysMotion);
-
-            if (sys.state == State::Idle) {
-                sys.state = State::Cycle;  // §9-C′: 与 cycle-start(:625) 对齐，避免恢复期误报 Idle
-                sys.step_control.endMotion = false;
-                st_prep_buffer();
-                st_wake_up();
-            }
         }
     }
 
     // Reload step segment buffer
     switch (sys.state) {
         case State::Cycle:
+            if (!resumed_segment_underflow) {
+                st_prep_buffer();
+            }
+            break;
         case State::Hold:
         case State::SafetyDoor:
         case State::Homing:
