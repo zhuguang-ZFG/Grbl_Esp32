@@ -52,11 +52,10 @@ namespace WebUI {
     //      等于在读侧脚下换掉 _rxBuffer 智能指针。
     // 递归锁而非普通锁：handle() 内 report_init_message(CLIENT_TELNET) 会回到 write()，
     // 同一任务必须能重入。
-    // 权衡：write() 在 TCP 窗口关闭时最坏阻塞约 10s（select 1s × 10 retry），期间
-    // clientCheckTask 收不到数据。abort 时延不因此变差——`!`/0x18 的**执行**本就在
-    // loopTask 的 protocol_execute_realtime 里，而 loopTask 正是被 write() 阻塞的那个。
+    // write() 不得在 TCP 背压下长占 loopTask/clientCheckTask。下方改用非阻塞 send +
+    // 绝对 deadline：完整写出或关闭该 session，避免静默少 `ok`，也给实时输入留出上界。
+    static constexpr TickType_t TELNET_WRITE_TIMEOUT_TICKS = pdMS_TO_TICKS(1000);
     static SemaphoreHandle_t telnetClientMutex = xSemaphoreCreateRecursiveMutex();
-
     class TelnetClientLock {
     public:
         TelnetClientLock() {
@@ -159,13 +158,41 @@ namespace WebUI {
 
         clearClients();
 
-        //log_d("[TELNET out]");
-        //push UART data to all connected telnet clients
+        // 可靠语义是「整段写出或明确断链」，不能在背压时静默截断 ok/状态行。
         for (uint8_t i = 0; i < MAX_TLNT_CLIENTS; i++) {
-            if (_telnetClients[i] && _telnetClients[i].connected()) {
-                //log_d("[TELNET out connected]");
-                wsize = _telnetClients[i].write(buffer, size);
-                COMMANDS::wait(0);
+            if (!_telnetClients[i] || !_telnetClients[i].connected()) {
+                continue;
+            }
+            const int socket = _telnetClients[i].fd();
+            if (socket < 0) {
+                continue;
+            }
+            const TickType_t began = xTaskGetTickCount();
+            int send_errno = 0;
+            while (wsize < size) {
+                // 绝对 deadline 覆盖每次正 partial write；不能只在 EAGAIN 分支看时间，
+                // 否则对端每轮接一小段就能无限占住 loopTask。
+                if ((xTaskGetTickCount() - began) >= TELNET_WRITE_TIMEOUT_TICKS) {
+                    log_w("[TELNET] write timeout sent=%u/%u", static_cast<unsigned>(wsize),
+                          static_cast<unsigned>(size));
+                    _telnetClients[i].stop();
+                    return 0;
+                }
+                const int written = send(socket, buffer + wsize, size - wsize, MSG_DONTWAIT);
+                send_errno = written < 0 ? errno : 0;
+                if (written > 0) {
+                    wsize += static_cast<size_t>(written);
+                    continue;
+                }
+                if (written < 0 && (send_errno == EAGAIN || send_errno == EWOULDBLOCK)) {
+                    COMMANDS::wait(0);
+                    vTaskDelay(1);
+                    continue;
+                }
+                log_w("[TELNET] write failed n=%d errno=%d sent=%u/%u", written, send_errno,
+                      static_cast<unsigned>(wsize), static_cast<unsigned>(size));
+                _telnetClients[i].stop();
+                return 0;
             }
         }
         return wsize;
