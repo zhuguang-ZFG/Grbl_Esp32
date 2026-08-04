@@ -720,8 +720,11 @@ void protocol_exec_rt_system() {
             input.planner_has_block     = plan_get_current_block() != NULL;
             // 注意顺序：本分支在同一轮 cycleStart 分支之后执行。若两个标志同轮到达，
             // 上面 :703 刚把 sys.state 置为 Cycle，此处 was_cycle 读到的是「刚启动」而非
-            // 「ISR 报停时确实在跑」。后续判定靠 planner_has_block（:720）区分：新周期
-            // planner 必有块，走不到 underflow 分支，故不引入误判。
+            // 「ISR 报停时确实在跑」。planner_has_block（:720）不是互斥条件：
+            // should_resume_segment_underflow 本身就要求它为真——若同轮 underflow 也成立，
+            // 会再走一次 underflow 分支重复置 Cycle/prep/wake；这些操作幂等，无副作用。
+            // 真正排除有意停止（hold/取消/限位/门）的是 endMotion/executeHold/motionCancel/
+            // soft_limit 及 hold_completion_state 优先级，不靠 planner 无块。
             input.was_cycle            = sys.state == State::Cycle;
             input.end_motion           = sys.step_control.endMotion;
             input.execute_hold          = sys.step_control.executeHold;

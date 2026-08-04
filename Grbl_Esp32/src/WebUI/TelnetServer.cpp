@@ -167,6 +167,8 @@ namespace WebUI {
             if (socket < 0) {
                 continue;
             }
+            // 每个有效客户端从 0 开始写整段（MAX_TLNT_CLIENTS>1 时不得沿用上一客户端的进度）。
+            wsize = 0;
             const TickType_t began = xTaskGetTickCount();
             int send_errno = 0;
             while (wsize < size) {
