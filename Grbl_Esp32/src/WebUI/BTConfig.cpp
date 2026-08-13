@@ -22,6 +22,7 @@
 
 #ifdef ENABLE_BLUETOOTH
 #    include <BluetoothSerial.h>
+#    include <esp_bt.h>
 #    include "BTConfig.h"
 
 namespace WebUI {
@@ -35,8 +36,15 @@ namespace WebUI {
     }
 #    endif
 
-    String BTConfig::_btname   = "";
-    String BTConfig::_btclient = "";
+    String BTConfig::_btname       = "";
+    char   BTConfig::_btclient[18] = "";
+
+    // SPP 回调运行在蓝牙协议栈任务（core 0），只允许记录事件、置标志；
+    // 消息发送和 _btclient 更新推迟到 handle()（clientCheckTask，core 1）执行，
+    // 避免在回调里写 SPP 造成死锁、以及跨核并发操作 String 导致堆损坏。
+    static volatile bool s_bt_connected_evt    = false;
+    static volatile bool s_bt_disconnected_evt = false;
+    static char          s_bt_client_addr[18]  = "";
 
     BTConfig::BTConfig() {}
 
@@ -51,23 +59,28 @@ namespace WebUI {
     static void my_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t* param) {
         switch (event) {
             case ESP_SPP_SRV_OPEN_EVT: {  //Server connection open
-                char str[18];
-                str[17]       = '\0';
                 uint8_t* addr = param->srv_open.rem_bda;
-                sprintf(str, "%02X:%02X:%02X:%02X:%02X:%02X", addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
-                BTConfig::_btclient = str;
+                snprintf(s_bt_client_addr,
+                         sizeof(s_bt_client_addr),
+                         "%02X:%02X:%02X:%02X:%02X:%02X",
+                         addr[0],
+                         addr[1],
+                         addr[2],
+                         addr[3],
+                         addr[4],
+                         addr[5]);
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+                // 仅置标志位，EMI 抑制窗口需要在连接瞬间立即生效
                 paper_btn_arm_bt_suppress();
                 paper_bt_on_spp_connected();
 #endif
-                grbl_sendf(CLIENT_ALL, "[MSG:BT Connected with %s]\r\n", str);
+                s_bt_connected_evt = true;
             } break;
             case ESP_SPP_CLOSE_EVT:  //Client connection closed
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
                 paper_bt_on_spp_disconnected();
 #endif
-                grbl_send(CLIENT_ALL, "[MSG:BT Disconnected]\r\n");
-                BTConfig::_btclient = "";
+                s_bt_disconnected_evt = true;
                 break;
             default:
                 break;
@@ -85,7 +98,8 @@ namespace WebUI {
             result += device_address();
             result += "):Status=";
             if (SerialBT.hasClient()) {
-                result += "Connected with " + _btclient;
+                result += "Connected with ";
+                result += _btclient;
             } else {
                 result += "Not connected";
             }
@@ -136,6 +150,11 @@ namespace WebUI {
             if (!SerialBT.begin(_btname)) {
                 report_status_message(Error::BtFailBegin, CLIENT_ALL);
             } else {
+                // 默认 BR/EDR 发射功率仅 +3dBm，拉满到 +9dBm 改善信号强度
+                esp_err_t pwr_err = esp_bredr_tx_power_set(ESP_PWR_LVL_P9, ESP_PWR_LVL_P9);
+                if (pwr_err != ESP_OK) {
+                    grbl_sendf(CLIENT_ALL, "[MSG:BT tx power set failed %d]\r\n", (int)pwr_err);
+                }
                 SerialBT.register_callback(&my_spp_cb);
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
                 paper_btn_arm_bt_suppress();
@@ -170,7 +189,18 @@ namespace WebUI {
      * Handle not critical actions that must be done in sync environement
      */
     void BTConfig::handle() {
-        //If needed
+        // 消费 SPP 回调置的事件标志（见 my_spp_cb 注释）
+        if (s_bt_connected_evt) {
+            s_bt_connected_evt = false;
+            strncpy(_btclient, s_bt_client_addr, sizeof(_btclient) - 1);
+            _btclient[sizeof(_btclient) - 1] = '\0';
+            grbl_sendf(CLIENT_ALL, "[MSG:BT Connected with %s]\r\n", _btclient);
+        }
+        if (s_bt_disconnected_evt) {
+            s_bt_disconnected_evt = false;
+            _btclient[0]          = '\0';
+            grbl_send(CLIENT_ALL, "[MSG:BT Disconnected]\r\n");
+        }
         COMMANDS::wait(0);
     }
 

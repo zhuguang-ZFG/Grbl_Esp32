@@ -48,7 +48,7 @@ void client_init();
 void client_reset_read_buffer(uint8_t client);
 
 // Returns the number of bytes available in the RX serial buffer.
-uint8_t client_get_rx_buffer_available(uint8_t client);
+int client_get_rx_buffer_available(uint8_t client);
 
 void execute_realtime_command(Cmd command, uint8_t client);
 bool is_realtime_command(uint8_t data);

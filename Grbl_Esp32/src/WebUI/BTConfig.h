@@ -48,7 +48,7 @@ namespace WebUI {
         static void        handle();
         static void        reset_settings();
         static bool        Is_BT_on();
-        static String      _btclient;
+        static char        _btclient[18];
         // 蓝牙 SPP 连接后抑制换纸宏键一段时间，避免射频毛刺触发 [ESP910]
         static bool        suppress_paper_button_events();
 

@@ -70,13 +70,19 @@ static TaskHandle_t clientCheckTaskHandle = 0;
 WebUI::InputBuffer client_buffer[CLIENT_COUNT];  // create a buffer for each client
 
 // Returns the number of bytes available in a client buffer.
-uint8_t client_get_rx_buffer_available(uint8_t client) {
+int client_get_rx_buffer_available(uint8_t client) {
+#ifdef ENABLE_BLUETOOTH
+    if (client == CLIENT_BT) {
+        // 真实容量 = client_buffer 剩余空间，扣除还滞留在 SPP 接收队列里未搬运的字节
+        int avail = client_buffer[CLIENT_BT].availableforwrite() - WebUI::SerialBT.available();
+        return avail > 0 ? avail : 0;
+    }
+#endif
 #ifdef REVERT_TO_ARDUINO_SERIAL
     return 128 - Serial.available();
 #else
     return 128 - Uart0.available();
 #endif
-    //    return client_buffer[client].availableforwrite();
 }
 
 void heapCheckTask(void* pvParameters) {

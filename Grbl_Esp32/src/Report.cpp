@@ -608,8 +608,7 @@ void report_realtime_status(uint8_t client) {
 #    endif  //ENABLE_WIFI && ENABLE_TELNET
 #    if defined(ENABLE_BLUETOOTH)
         if (client == CLIENT_BT) {
-            //TODO FIXME
-            bufsize = 512 - WebUI::SerialBT.available();
+            bufsize = client_get_rx_buffer_available(CLIENT_BT);
         }
 #    endif  //ENABLE_BLUETOOTH
         if (client == CLIENT_SERIAL) {
