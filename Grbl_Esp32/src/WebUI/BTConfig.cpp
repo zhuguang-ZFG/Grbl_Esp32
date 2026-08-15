@@ -22,6 +22,7 @@
 
 #ifdef ENABLE_BLUETOOTH
 #    include <BluetoothSerial.h>
+#    include <esp_bt.h>  // esp_bredr_tx_power_set（hutuji：发射功率拉满）
 #    include "BTConfig.h"
 
 namespace WebUI {
@@ -138,6 +139,15 @@ namespace WebUI {
             } else {
                 SerialBT.register_callback(&my_spp_cb);
 #if defined(GRBL_PAPER_SYSTEM) && GRBL_PAPER_SYSTEM
+                // hutuji（2026-08-15 用户决策）：经典蓝牙发射功率拉满 P9=+9dBm
+                //（IDF 默认上限仅 P3=+3dBm，esp_bt.h:331）。须在 SerialBT.begin
+                // 成功之后调（控制器已上电）；失败只记消息不阻断 BT 使用。
+                {
+                    esp_err_t perr = esp_bredr_tx_power_set(ESP_PWR_LVL_P9, ESP_PWR_LVL_P9);
+                    if (perr != ESP_OK) {
+                        grbl_sendf(CLIENT_ALL, "[MSG:BT tx power set failed %d]\r\n", (int)perr);
+                    }
+                }
                 paper_btn_arm_bt_suppress();
 #endif
                 grbl_sendf(CLIENT_ALL, "[MSG:BT Started with %s]\r\n", _btname.c_str());
