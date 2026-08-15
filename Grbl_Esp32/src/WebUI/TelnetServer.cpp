@@ -127,16 +127,20 @@ namespace WebUI {
                     _telnetClients[i] = _telnetserver->available();
                     // hutuji §9-A：半开死连接回收（只开 SO_KEEPALIVE 无效，须显式三参数）
                     // ~KEEPIDLE 10 + 3×KEEPINTVL ≈ 19s 发现对端掉电/NAT 超时
+                    // R20-GW-01：四个 setsockopt 逐个查返回值——静默失败 = keepalive 没设上
+                    // （lwip 默认 ≈2h11m 形同没有），唯一槽位会被半开死连接占死。
                     {
                         int keepalive = 1;
                         int keepidle  = 10;
                         int keepintvl = 3;
                         int keepcnt   = 3;
                         int s = _telnetClients[i].fd();
-                        setsockopt(s, SOL_SOCKET,  SO_KEEPALIVE, &keepalive, sizeof(keepalive));
-                        setsockopt(s, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle,  sizeof(keepidle));
-                        setsockopt(s, IPPROTO_TCP, TCP_KEEPINTVL,&keepintvl, sizeof(keepintvl));
-                        setsockopt(s, IPPROTO_TCP, TCP_KEEPCNT,  &keepcnt,   sizeof(keepcnt));
+                        if (setsockopt(s, SOL_SOCKET,  SO_KEEPALIVE, &keepalive, sizeof(keepalive)) < 0 ||
+                            setsockopt(s, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle,  sizeof(keepidle)) < 0 ||
+                            setsockopt(s, IPPROTO_TCP, TCP_KEEPINTVL,&keepintvl, sizeof(keepintvl)) < 0 ||
+                            setsockopt(s, IPPROTO_TCP, TCP_KEEPCNT,  &keepcnt,   sizeof(keepcnt)) < 0) {
+                            log_w("telnet keepalive setsockopt failed errno=%d", errno);
+                        }
                     }
                     break;
                 }

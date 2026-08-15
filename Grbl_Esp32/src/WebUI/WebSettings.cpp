@@ -1041,6 +1041,16 @@ namespace WebUI {
         return Error::Ok;
     }
     static Error paperAutoHandler(char* parameter, AuthenticationLevel auth_level) {
+        // hutuji §9（R20-GW-03）：web 命令跑在 clientCheckTask，与 loopTask 并发；
+        // paper_auto_change() 内部无互斥，无守卫时两个并发实例会同时驱动同一组
+        // 换纸 GPIO。与主循环 BT poll（PaperSystem.cpp）同口径加 running 守卫。
+        // 残余窗口（登记待 §9 白名单决策）：这是 check-then-act——守卫到
+        // paper_auto_change() 入口置位之间仍可与 loopTask 的 M30 交叉；彻底修
+        // 需在换纸流程入口做原子认领，触及流程本体，本轮不做。
+        if (paper_auto_change_is_running()) {
+            webPrintln("busy");
+            return Error::Ok;
+        }
         Error e = paper_auto_change();
         if (e == Error::Ok) {
             webPrintln("done");
