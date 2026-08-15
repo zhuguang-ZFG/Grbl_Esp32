@@ -1004,6 +1004,61 @@ namespace WebUI {
     }
 #endif
 
+#ifdef GRBL_PAPER_SYSTEM
+    static Error paperStatusHandler(char* parameter, AuthenticationLevel auth_level) {
+        char buf[64];
+        paper_get_status_str(buf, sizeof(buf));
+        webPrintln(buf);
+        return Error::Ok;
+    }
+    static Error paperMotorHandler(char* parameter, AuthenticationLevel auth_level, uint8_t motor_ix) {
+        uint16_t steps = 0;
+        if (parameter) {
+            while (*parameter == ' ' || *parameter == '\t') parameter++;
+            if (*parameter >= '0' && *parameter <= '9') {
+                unsigned long v = strtoul(parameter, NULL, 10);
+                if (v > 0 && v <= 10000) steps = (uint16_t)v;
+            }
+        }
+        Error e = paper_run_motor(motor_ix, steps);
+        if (e == Error::Ok) {
+            webPrintln("done");
+        }
+        return e;
+    }
+    static Error paperMotor0Handler(char* parameter, AuthenticationLevel auth_level) {
+        return paperMotorHandler(parameter, auth_level, 0);
+    }
+    static Error paperMotor1Handler(char* parameter, AuthenticationLevel auth_level) {
+        return paperMotorHandler(parameter, auth_level, 1);
+    }
+    static Error paperMotor2Handler(char* parameter, AuthenticationLevel auth_level) {
+        return paperMotorHandler(parameter, auth_level, 2);
+    }
+    static Error paperEnableOnlyHandler(char* parameter, AuthenticationLevel auth_level) {
+        paper_enable_drivers_only();
+        webPrintln("MotorEn=On (no motion). Use M64/M65 P1/P2/P3 then [ESP911/912/913] to jog.");
+        return Error::Ok;
+    }
+    static Error paperAutoHandler(char* parameter, AuthenticationLevel auth_level) {
+        // hutuji §9（R20-GW-03）：web 命令跑在 clientCheckTask，与 loopTask 并发；
+        // paper_auto_change() 内部无互斥，无守卫时两个并发实例会同时驱动同一组
+        // 换纸 GPIO。与主循环 BT poll（PaperSystem.cpp）同口径加 running 守卫。
+        // 残余窗口（登记待 §9 白名单决策）：这是 check-then-act——守卫到
+        // paper_auto_change() 入口置位之间仍可与 loopTask 的 M30 交叉；彻底修
+        // 需在换纸流程入口做原子认领，触及流程本体，本轮不做。
+        if (paper_auto_change_is_running()) {
+            webPrintln("busy");
+            return Error::Ok;
+        }
+        Error e = paper_auto_change();
+        if (e == Error::Ok) {
+            webPrintln("done");
+        }
+        return e;
+    }
+#endif
+
     static Error showWebHelp(char* parameter, AuthenticationLevel auth_level) {  // ESP0
         webPrintln("Persistent web settings - $name to show, $name=value to set");
         webPrintln("ESPname FullName         Description");
@@ -1070,6 +1125,14 @@ namespace WebUI {
 #ifdef WEB_COMMON
         new WebCommand("RESTART", WEBCMD, WA, "ESP444", "System/Control", setSystemMode);
         new WebCommand(NULL, WEBCMD, WU, "ESP420", "System/Stats", showSysStats, anyState);
+#endif
+#ifdef GRBL_PAPER_SYSTEM
+        new WebCommand(NULL, WEBCMD, WG, "ESP910", "Paper/AutoChange", paperAutoHandler, anyState);
+        new WebCommand(NULL, WEBCMD, WG, "ESP901", "Paper/Status", paperStatusHandler, anyState);
+        new WebCommand("steps", WEBCMD, WG, "ESP911", "Paper/ClampMotor", paperMotor0Handler, anyState);
+        new WebCommand("steps", WEBCMD, WG, "ESP912", "Paper/PanelMotor", paperMotor1Handler, anyState);
+        new WebCommand("steps", WEBCMD, WG, "ESP913", "Paper/FeederMotor", paperMotor2Handler, anyState);
+        new WebCommand(NULL, WEBCMD, WG, "ESP930", "Paper/EnableOnly", paperEnableOnlyHandler, anyState);
 #endif
 #ifdef ENABLE_WIFI
         new WebCommand(NULL, WEBCMD, WU, "ESP410", "WiFi/ListAPs", listAPs);
