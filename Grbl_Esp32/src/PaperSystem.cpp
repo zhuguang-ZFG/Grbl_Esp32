@@ -6,6 +6,7 @@
 #ifdef USE_I2S_OUT
 #    include "I2SOut.h"
 #endif
+#include <atomic>
 
 #define PAPER_DISABLED 255
 
@@ -35,7 +36,10 @@
 #endif
 
 // 一键换纸流程是否正在执行（用于彩灯“快闪”与互斥）
-static volatile bool paper_auto_change_running = false;
+// hutuji §9-E′（R20-GW-03）：由 volatile 改为 std::atomic——入口认领需要
+// test-and-set 的原子性（volatile 只保证不优化掉访问，不保证读改写不可分割）。
+// 其余读写点语义不变：atomic<bool> 的隐式 load/store 与原 volatile 一致。
+static std::atomic<bool> paper_auto_change_running{false};
 // 换纸成功后的面板低电流保持（写字/点动/回零前释放；LED 刷新也需跳过）
 static volatile bool paper_panel_low_hold_active = false;
 
@@ -726,9 +730,35 @@ Error paper_auto_change(void) {
         return Error::GcodeUnsupportedCommand;
     }
 
+    // hutuji §9-E′（R20-GW-03）：入口原子认领，防两个任务并发驱动同一组换纸 GPIO。
+    // 竞争者有二：clientCheckTask（[ESP910] → WebServer.cpp:469 system_execute_line）
+    // 与 loopTask（M30 → user_m30 → 本函数），同优先级同核（SUPPORT_TASK_CORE）。
+    // WebSettings.cpp:1050 的 running 预检是 fast-path advisory（负责 web 侧 "busy"
+    // 文本应答），本处是唯一真正的互斥点，覆盖预检到入口之间的 check-then-act 窗口，
+    // 并同时兜住无预检的 M30 / M721(:1226) / BT 连接(:1113) 三条路径。
+    // 位置不能上移到 PAPER_DISABLED 早退之前：那条早退不清 running，认领会永久泄漏。
+    // 用 std::atomic CAS 而非 portMUX 临界区：本仓同形先例是 Stepper.cpp:210 的
+    // busy.compare_exchange_strong（Serial.cpp:66 的 portMUX 保护的是多字段缓冲区，
+    // 范式不同）；且 running 另有 8 处跨任务读（:55/:59/:115/:362、Protocol.cpp:131/
+    // :233、System.cpp:314、WebSettings.cpp:1050），临界区只护写侧、护不到它们，
+    // atomic 让全部读写一并定义化，还不必在换纸全程（依赖步进 ISR）里关中断。
+    // 只加互斥：零机械常量、零时序、零成功路径改动；失败者不清 running（归赢家所有）、
+    // 不碰任何 GPIO/电机/状态字，也不发 [PaperStatus]——那是“换纸流程结束码”，
+    // 认领失败时流程根本没开始，发终态码会让上位机误判本次换纸已跑完并失败。
+    // 返回 Error::MessageFailed(90) 与本函数既有失败出口（abort_cleanup :708、
+    // :841 缺纸/进纸超时、:962 卡纸）同码：M30 路径无论如何都被收敛成 error:90
+    // （Custom/paper_system.cpp:182 user_m30 + GCode.cpp:1653/1766/1787），M721 与
+    // [ESP910] 原样回传本码，WebSettings.cpp:1055 只在 Ok 时打 "done" 故仍能区分
+    // “拒了/跑完”；不用 IdleError(8)，因为 §7 把 error:8 定义为“不算失败、上位机须
+    // 重发该行”，会诱发 S3 重发换纸命令 → 双次换纸。
+    bool expected = false;
+    if (!paper_auto_change_running.compare_exchange_strong(expected, true)) {
+        grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Busy: change already in progress");
+        return Error::MessageFailed;
+    }
+
     // 允许起始有纸：用于“开始队列前出旧纸”和“M30 后出本页再进下一页”。第 1 步会先弹旧纸，再进新纸。
     paper_btn_reset_press_state();
-    paper_auto_change_running = true;
     paper_ignore_host_reset_until_ms = millis() + 8000u;
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] Starting auto paper change...");
     // 先全部失能，再按步骤使能需要运动的电机，避免不运动时电机仍带电
