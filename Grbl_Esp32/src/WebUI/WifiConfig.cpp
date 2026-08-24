@@ -306,6 +306,14 @@ namespace WebUI {
             WiFi.config(ip, gateway, mask);
         }
         if (WiFi.begin(SSID.c_str(), (password.length() > 0) ? password.c_str() : NULL)) {
+            // hutuji（2026-08-24 用户点名批准「grbl 不需要省电」，为 §9 清单外文件的用户
+            // 授权例外）：写字机插电工位不需要 WiFi 省电。modem-sleep 下 AP 会把下行帧
+            // （ok 应答）按 DTIM 节拍批化——S3 灌流饿爬实证 457 行 45.3s、send→ok 配对
+            // 中位 80ms（hutuji docs/design/s3-stream-pacing-investigation.md §3）。
+            // 只加监听功耗，不改协议/运动/换纸；设置失败不致命（维持原省电默认）。
+            if (esp_wifi_set_ps(WIFI_PS_NONE) != ESP_OK) {
+                grbl_send(CLIENT_ALL, "[MSG:WiFi PS off failed]\r\n");
+            }
             grbl_send(CLIENT_ALL, "\n[MSG:Client Started]\r\n");
             grbl_sendf(CLIENT_ALL, "[MSG:Connecting %s]\r\n", SSID.c_str());
             return ConnectSTA2AP();
