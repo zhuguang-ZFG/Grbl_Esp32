@@ -312,7 +312,11 @@
 #    define STEP_PULSE_DELAY                15  // 方向建立延时 µs（可串口 $ Stepper/Direction/Delay 调）
 #endif
 #define DEFAULT_STEP_PULSE_MICROSECONDS     3     // $0
-#define DEFAULT_STEPPER_IDLE_LOCK_TIME      25    // $1
+// $1=255（0xff）= 空闲不按计时失能（常使能）。弹簧笔架下 $1=25 会在 planner
+// 空窗失能 → 笔弹起而逻辑 Z 仍可能为 5，AI 短段链呈虚实交替。2026-08-28 用户确认
+// 机设 255 可画后固化进机型默认；换板 / $RST=$ 不再回落到 25。已有 NVS 值不受
+// 仅刷机影响，须 $RST=$ 或显式 $1=255+$S 才写入。
+#define DEFAULT_STEPPER_IDLE_LOCK_TIME      255   // $1
 #define DEFAULT_STEPPING_INVERT_MASK        0     // $2
 #define DEFAULT_DIRECTION_INVERT_MASK       7     // $3 = XYZ 全反相
 #define DEFAULT_INVERT_ST_ENABLE            0     // $4
