@@ -1727,7 +1727,11 @@ Error gc_execute_line(char* line, uint8_t client) {
             grbl_sendf(CLIENT_SERIAL, "[MSG:PAGE_END_IMMINENT]\r\n");
             
             protocol_buffer_synchronize();  // Sync and finish all remaining buffered motions before moving on.
-            motors_set_disable(true);       // 写完一页/程序结束立即失能 XYZ，避免依赖主循环 250ms 后才失能（换纸期间主循环被阻塞）
+            // $1=255（0xff）= 空闲常使能：页尾不得强制失能 XYZ（2026-08-28 机设；M30 后失能会导致弹簧笔架抬笔→下一页没墨）。
+            // $1≠255 时仍立即失能，避免换纸阻塞主循环、无法按 $1 计时在 loop 里失能。
+            if (stepper_idle_lock_time->get() != 0xff) {
+                motors_set_disable(true);
+            }
 
             // Upon program complete, only a subset of g-codes reset to certain defaults, according to
             // LinuxCNC's program end descriptions and testing. Only modal groups [G-code 1,2,3,5,7,12]
@@ -1782,7 +1786,9 @@ Error gc_execute_line(char* line, uint8_t client) {
         }
         if (do_paper_after_origin) {
             protocol_buffer_synchronize();
-            motors_set_disable(true);  // 回原点写完一页后立即失能 XYZ，换纸期间主循环被阻塞无法执行延时失能
+            if (stepper_idle_lock_time->get() != 0xff) {
+                motors_set_disable(true);  // 回原点换纸：$1≠255 时立即失能；常使能机跳过
+            }
             user_m30();
             if (!paper_last_change_ok()) {
                 return Error::MessageFailed;  // 换纸失败时不再上报 page end，避免上位机误继续

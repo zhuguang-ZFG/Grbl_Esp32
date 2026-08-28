@@ -704,12 +704,21 @@ static void paper_step_pulses_panel_eject(uint32_t steps) {
 }
 #endif
 
+// $1=255 常使能：换纸 abort/失败不得失能 XYZ（弹簧笔架→下一页没墨）；若页尾 M30 已失能则恢复使能。
+static void paper_finish_xyz_after_fault(void) {
+    if (stepper_idle_lock_time->get() == 0xff) {
+        motors_set_disable(false);
+    } else {
+        motors_set_disable(true);
+    }
+}
+
 static Error paper_auto_change_abort_cleanup(const char* reason) {
     paper_auto_change_running      = false;
     paper_ignore_host_reset_until_ms = 0;
     paper_btn_arm_post_change_cooldown();
     st_go_idle();
-    motors_set_disable(true);
+    paper_finish_xyz_after_fault();
     paper_disable_drivers();
     plan_reset();
     plan_sync_position();
@@ -823,9 +832,9 @@ Error paper_auto_change(void) {
             paper_auto_change_running        = false;
             paper_ignore_host_reset_until_ms = 0;
             paper_btn_arm_post_change_cooldown();
-            // 缺纸/进纸异常：立即停机并关闭驱动，等待下次从 Step1 重新开始
+            // 缺纸/进纸异常：立即停机并关闭纸路驱动；XYZ 是否失能见 paper_finish_xyz_after_fault
             st_go_idle();
-            motors_set_disable(true);
+            paper_finish_xyz_after_fault();
             paper_disable_drivers();
             if (timeout_10s) {
                 grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
@@ -945,9 +954,9 @@ Error paper_auto_change(void) {
             paper_auto_change_running        = false;
             paper_ignore_host_reset_until_ms = 0;
             paper_btn_arm_post_change_cooldown();
-            // 卡纸：立即停机并关闭驱动，等待下次从 Step1 重新开始
+            // 卡纸：立即停机并关闭纸路驱动；XYZ 是否失能见 paper_finish_xyz_after_fault
             st_go_idle();
-            motors_set_disable(true);
+            paper_finish_xyz_after_fault();
             paper_disable_drivers();
             if (jam_timeout) {
                 grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Warning,
@@ -1034,6 +1043,10 @@ Error paper_auto_change(void) {
     paper_auto_change_running        = false;
     paper_ignore_host_reset_until_ms = 0;
     paper_btn_arm_post_change_cooldown();
+    // $1=255 常使能：若页尾 M30 或其它路径曾失能 XYZ，换纸成功后须恢复，否则下一页弹簧抬笔→没墨。
+    if (stepper_idle_lock_time->get() == 0xff) {
+        motors_set_disable(false);
+    }
     grbl_msg_sendf(CLIENT_SERIAL, MsgLevel::Info, "[PaperAuto] All steps completed successfully!");
     grbl_msg_sendf(CLIENT_ALL, MsgLevel::Info, "[PaperStatus] %d", step7_sensor_ok ? PAPER_STATUS_OK : PAPER_STATUS_SENSOR_NOT_FOUND);  // hutuji §9-B1′
     return Error::Ok;
