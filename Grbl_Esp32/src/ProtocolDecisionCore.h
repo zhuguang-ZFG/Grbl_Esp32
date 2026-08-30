@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <strings.h>
 
 enum class ProtocolDistanceMode : uint8_t {
     Absolute,
@@ -353,5 +354,22 @@ public:
 
     static bool defer_notice_due(uint32_t now_ms, uint32_t last_notice_ms, uint32_t interval_ms = 3000u) {
         return last_notice_ms == 0 || static_cast<uint32_t>(now_ms - last_notice_ms) >= interval_ms;
+    }
+
+    // hutuji 出厂指纹：禁止 Telnet/WebUI 改写 MCP 安全边界依赖的关键 `$` 项。
+    static bool is_hutuji_locked_setting_key(const char* key) {
+        if (key == nullptr || *key == '\0') {
+            return false;
+        }
+        static const char* kLockedKeys[] = {
+            "1", "3", "20", "21", "22", "100", "101", "110", "111", "130", "131", "132",
+            "Errors/Verbose", nullptr,
+        };
+        for (const char** cursor = kLockedKeys; *cursor != nullptr; ++cursor) {
+            if (strcasecmp(key, *cursor) == 0) {
+                return true;
+            }
+        }
+        return false;
     }
 };

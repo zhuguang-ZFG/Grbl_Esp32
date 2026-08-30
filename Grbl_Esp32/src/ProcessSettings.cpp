@@ -1,5 +1,6 @@
 #include "Grbl.h"
 #include <map>
+#include "ProtocolDecisionCore.h"
 #include "Regex.h"
 
 // WG Readable and writable as guest
@@ -515,6 +516,9 @@ Error do_command_or_setting(const char* key, char* value, WebUI::AuthenticationL
                 return Error::AuthenticationFailed;
             }
             if (value) {
+                if (ProtocolDecisionCore::is_hutuji_locked_setting_key(key)) {
+                    return Error::SettingDisabled;
+                }
                 return s->setStringValue(value);
             } else {
                 show_setting(s->getName(), s->getStringValue(), NULL, out);
@@ -531,6 +535,9 @@ Error do_command_or_setting(const char* key, char* value, WebUI::AuthenticationL
                 return Error::AuthenticationFailed;
             }
             if (value) {
+                if (ProtocolDecisionCore::is_hutuji_locked_setting_key(key)) {
+                    return Error::SettingDisabled;
+                }
                 return s->setStringValue(value);
             } else {
                 show_setting(s->getGrblName(), s->getCompatibleValue(), NULL, out);
