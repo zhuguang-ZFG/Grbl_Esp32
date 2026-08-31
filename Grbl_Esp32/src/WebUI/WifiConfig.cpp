@@ -311,6 +311,9 @@ namespace WebUI {
             // （ok 应答）按 DTIM 节拍批化——S3 灌流饿爬实证 457 行 45.3s、send→ok 配对
             // 中位 80ms（hutuji docs/design/s3-stream-pacing-investigation.md §3）。
             // 只加监听功耗，不改协议/运动/换纸；设置失败不致命（维持原省电默认）。
+            // 调用点澄清（findings #30 R4）：此处在 WiFi.begin() 返回后、ConnectSTA2AP()
+            // 之前执行，关联尚未完成；esp_wifi_set_ps 允许关联前设置，行为正确。0e1b7ed
+            // commit message 写「STA 连上后」属措辞偏差，以本注释为准。
             if (esp_wifi_set_ps(WIFI_PS_NONE) != ESP_OK) {
                 grbl_send(CLIENT_ALL, "[MSG:WiFi PS off failed]\r\n");
             }
