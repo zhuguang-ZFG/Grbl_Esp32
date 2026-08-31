@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <strings.h>
 
 enum class ProtocolDistanceMode : uint8_t {
     Absolute,
@@ -357,16 +356,49 @@ public:
     }
 
     // hutuji 出厂指纹：禁止 Telnet/WebUI 改写 MCP 安全边界依赖的关键 `$` 项。
+    // 2026-08-31 补长名：ProcessSettings.cpp 有两个匹配循环——getName() 长名循环
+    // （如 $X/MaxTravel=200）与 getGrblName() 数字名循环，两处都把用户键原样传入本
+    // 谓词；只锁数字名时经长名路径可绕过守卫（findings #30 R1）。长名取自
+    // SettingsDefinitions.cpp：轴项为 makename("X|Y|Z", tail)，$1/$3/$20-22 为字面量。
+    // 故意不锁 $102/$112/$122 的 Z 变体——数字名清单本就不含，两侧保持一致。
+    // 键集合纯 ASCII，用本地折叠实现大小写不敏感比较：语义等价 strcasecmp，
+    // 但宿主侧 Windows clang（MSVC 目标）没有 <strings.h>——40616de 引入该头
+    // 曾使 fz protocol_scenarios/native_model/native_units 三层编译断（2026-08-31 复现）。
+    static bool hutuji_key_equals_ignore_case(const char* a, const char* b) {
+        if (a == nullptr || b == nullptr) {
+            return false;
+        }
+        while (*a != '\0' && *b != '\0') {
+            char ca = *a;
+            char cb = *b;
+            if (ca >= 'A' && ca <= 'Z') {
+                ca = static_cast<char>(ca - 'A' + 'a');
+            }
+            if (cb >= 'A' && cb <= 'Z') {
+                cb = static_cast<char>(cb - 'A' + 'a');
+            }
+            if (ca != cb) {
+                return false;
+            }
+            ++a;
+            ++b;
+        }
+        return *a == '\0' && *b == '\0';
+    }
+
     static bool is_hutuji_locked_setting_key(const char* key) {
         if (key == nullptr || *key == '\0') {
             return false;
         }
         static const char* kLockedKeys[] = {
             "1", "3", "20", "21", "22", "100", "101", "110", "111", "130", "131", "132",
+            "Stepper/IdleTime", "Stepper/DirInvert", "Limits/Soft", "Limits/Hard", "Homing/Enable",
+            "X/StepsPerMm", "Y/StepsPerMm", "X/MaxRate", "Y/MaxRate",
+            "X/MaxTravel", "Y/MaxTravel", "Z/MaxTravel",
             "Errors/Verbose", nullptr,
         };
         for (const char** cursor = kLockedKeys; *cursor != nullptr; ++cursor) {
-            if (strcasecmp(key, *cursor) == 0) {
+            if (hutuji_key_equals_ignore_case(key, *cursor)) {
                 return true;
             }
         }
