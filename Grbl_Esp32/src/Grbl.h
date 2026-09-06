@@ -48,7 +48,7 @@ const char* const GRBL_VERSION_BUILD = "20211103";
 #include "GCode.h"
 #include "Planner.h"
 #include "CoolantControl.h"
-#include "Limits.h"
+#include "grbl_limits.h"  // 2026-09-06 hutuji：原 Limits.h 经 -iquote include_next 遮蔽 C 库 limits.h（371a3c4 删除的正当动机），按上游 2018 改名方案以 grbl_limits.h 复活声明
 #include "MotionControl.h"
 #include "Protocol.h"
 #include "Uart.h"
