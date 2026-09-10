@@ -1057,6 +1057,15 @@ namespace WebUI {
         }
         return e;
     }
+#else   // !GRBL_PAPER_SYSTEM —— 无换纸量产机型
+    // 本机没有 PaperSystem，但 S3 管道在错误恢复/断连分流路径仍会发 [ESP901] 查纸态
+    // （hutuji_pipe.cc 判 "Paper="/"Changing=" 子串）。必须回答固定「无纸、不在换纸」，
+    // 否则 5s 无应答超时会被管道判成断连并丢任务（2026-09-11 实机事故：流内 error:21
+    // 后 [ESP901] 静默 → recv errno=128 → job error）。
+    static Error nopaperStatusHandler(char* parameter, AuthenticationLevel auth_level) {
+        webPrintln("Paper=No MotorEn=Off PanelHold=Off Changing=Off");
+        return Error::Ok;
+    }
 #endif
 
     static Error showWebHelp(char* parameter, AuthenticationLevel auth_level) {  // ESP0
@@ -1133,6 +1142,8 @@ namespace WebUI {
         new WebCommand("steps", WEBCMD, WG, "ESP912", "Paper/PanelMotor", paperMotor1Handler, anyState);
         new WebCommand("steps", WEBCMD, WG, "ESP913", "Paper/FeederMotor", paperMotor2Handler, anyState);
         new WebCommand(NULL, WEBCMD, WG, "ESP930", "Paper/EnableOnly", paperEnableOnlyHandler, anyState);
+#else   // !GRBL_PAPER_SYSTEM：无换纸机只答 [ESP901] 固定纸态，其余 Paper 命令不存在
+        new WebCommand(NULL, WEBCMD, WG, "ESP901", "Paper/Status", nopaperStatusHandler, anyState);
 #endif
 #ifdef ENABLE_WIFI
         new WebCommand(NULL, WEBCMD, WU, "ESP410", "WiFi/ListAPs", listAPs);
