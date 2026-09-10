@@ -22,7 +22,7 @@
 
 // Grbl versioning system
 const char* const GRBL_VERSION       = "1.3a";
-const char* const GRBL_VERSION_BUILD = "20211103";
+const char* const GRBL_VERSION_BUILD = "20260910";  // 量产无换纸 SKU（massprod/nopaper-1.3a，基线 c896ce5c）——[VER:1.3a.20260910:] 与现役 20211103 区分
 
 //#include <sdkconfig.h>
 #include <Arduino.h>
