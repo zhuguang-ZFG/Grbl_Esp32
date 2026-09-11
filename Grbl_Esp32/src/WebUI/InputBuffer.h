@@ -49,7 +49,10 @@ namespace WebUI {
         ~InputBuffer();
 
     private:
-        static const int RXBUFFERSIZE = 256;
+        // 回移植自主线 ed9073b（只摘缓冲放大一项）：原 256B 客户端输入缓冲小于 S3 管道
+        // 512B 在途窗口，解析稍慢即溢出丢字节 → 行粘连 → error:21（2026-09-11 量产机
+        // 三次实机流内中断的根触发形态）。2048B 与现役写字机一致。
+        static const int RXBUFFERSIZE = 2048;
 
         uint8_t  _RXbuffer[RXBUFFERSIZE];
         uint16_t _RXbufferSize;
