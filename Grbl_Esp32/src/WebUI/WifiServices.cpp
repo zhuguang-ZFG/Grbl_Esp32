@@ -41,6 +41,9 @@
 #    ifdef ENABLE_NOTIFICATIONS
 #        include "NotificationsService.h"
 #    endif
+#    ifdef ENABLE_STATUS_BEACON
+#        include "StatusBeacon.h"
+#    endif
 #    include "Commands.h"
 
 namespace WebUI {
@@ -116,8 +119,8 @@ namespace WebUI {
 #    ifdef ENABLE_TELNET
         telnet_server.begin();
 #    endif
-#    ifdef ENABLE_NOTIFICATIONS
-        notificationsservice.begin();
+#    ifdef ENABLE_STATUS_BEACON
+        StatusBeacon::begin();
 #    endif
         //be sure we are not is mixed mode in setup
         WiFi.scanNetworks(true);
@@ -127,11 +130,8 @@ namespace WebUI {
 #    ifdef ENABLE_NOTIFICATIONS
         notificationsservice.end();
 #    endif
-#    ifdef ENABLE_TELNET
-        telnet_server.end();
-#    endif
-#    ifdef ENABLE_HTTP
-        web_server.end();
+#    ifdef ENABLE_STATUS_BEACON
+        StatusBeacon::end();
 #    endif
         //stop OTA
 #    ifdef ENABLE_OTA
@@ -164,6 +164,9 @@ namespace WebUI {
 #    endif
 #    ifdef ENABLE_TELNET
         telnet_server.handle();
+#    endif
+#    ifdef ENABLE_STATUS_BEACON
+        StatusBeacon::handle();
 #    endif
     }
 }

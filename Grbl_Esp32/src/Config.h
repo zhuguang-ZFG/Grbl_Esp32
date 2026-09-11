@@ -123,6 +123,10 @@ const int MAX_N_AXIS = 6;
 #define ENABLE_SSDP                //enable UPNP discovery
 #define ENABLE_NOTIFICATIONS       //enable notifications
 
+// §9-H′（2026-09-12）：只读 UDP 状态广播——观察者（S3）在奎享占用 Telnet
+// 时也能得知 job 终态；纯广播面，无控制语义。
+#define ENABLE_STATUS_BEACON
+
 #define ENABLE_SERIAL2SOCKET_IN
 #define ENABLE_SERIAL2SOCKET_OUT
 
