@@ -119,6 +119,9 @@ namespace WebUI {
 #    ifdef ENABLE_TELNET
         telnet_server.begin();
 #    endif
+#    ifdef ENABLE_NOTIFICATIONS
+        notificationsservice.begin();
+#    endif
 #    ifdef ENABLE_STATUS_BEACON
         StatusBeacon::begin();
 #    endif
@@ -132,6 +135,12 @@ namespace WebUI {
 #    endif
 #    ifdef ENABLE_STATUS_BEACON
         StatusBeacon::end();
+#    endif
+#    ifdef ENABLE_TELNET
+        telnet_server.end();
+#    endif
+#    ifdef ENABLE_HTTP
+        web_server.end();
 #    endif
         //stop OTA
 #    ifdef ENABLE_OTA
