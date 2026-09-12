@@ -340,15 +340,18 @@
 #define DEFAULT_SPINDLE_RPM_MIN             0.0    // $31
 #define DEFAULT_LASER_MODE                  0      // $32
 
-// $100–$132（P100）
+// $100–$132（P100）。2026-09-12 提速批：X/Y 速率 12000→24000（F24000=400mm/s）、
+// X/Y 加速度 3000→12000，用户拍板「提速3倍」；Z 全项不动。G′ 锁拒写这些键，
+// 落机须重烧固件后经 $RST=$ 从机头默认装载（NVS 旧值 12000/3000 会被 $RST=$ 冲掉），
+// 云端契约已同步 F8000→F24000（hutuji docs/protocol.md §5）。
 #define DEFAULT_X_STEPS_PER_MM              100.0
 #define DEFAULT_Y_STEPS_PER_MM              100.0
 #define DEFAULT_Z_STEPS_PER_MM              50.0
-#define DEFAULT_X_MAX_RATE                  12000.0
-#define DEFAULT_Y_MAX_RATE                  12000.0
+#define DEFAULT_X_MAX_RATE                  24000.0
+#define DEFAULT_Y_MAX_RATE                  24000.0
 #define DEFAULT_Z_MAX_RATE                  10000.0
-#define DEFAULT_X_ACCELERATION              3000.0
-#define DEFAULT_Y_ACCELERATION              3000.0
+#define DEFAULT_X_ACCELERATION              12000.0
+#define DEFAULT_Y_ACCELERATION              12000.0
 #define DEFAULT_Z_ACCELERATION              8000.0
 #define DEFAULT_X_MAX_TRAVEL                210.0  // A4 短边
 #define DEFAULT_Y_MAX_TRAVEL                297.0  // A4 长边
