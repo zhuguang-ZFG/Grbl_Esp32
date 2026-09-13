@@ -1,5 +1,6 @@
 #include "Grbl.h"
 #include <map>
+#include <memory>
 #include "ProtocolDecisionCore.h"
 #include "Regex.h"
 
@@ -400,8 +401,9 @@ Error motor_disable(const char* value, WebUI::AuthenticationLevel auth_level, We
         value = "\0";
     }
 
-    s = strdup(value);
-    s = trim(s);
+    // trim 与轴名扫描会移动 s；所有出口都必须回收原始参数分配。
+    std::unique_ptr<char, decltype(&free)> parameter(strdup(value), &free);
+    s = trim(parameter.get());
 
     int32_t convertedValue;
     char*   endptr;
