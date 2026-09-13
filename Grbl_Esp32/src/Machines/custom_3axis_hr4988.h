@@ -111,8 +111,8 @@
 #define DEFAULT_Y_STEPS_PER_MM       100.0
 #define DEFAULT_Z_STEPS_PER_MM       100.0   // 1 step = 0.01 mm
 
-#define DEFAULT_X_MAX_RATE           5000.0  // mm/min
-#define DEFAULT_Y_MAX_RATE           5000.0  // mm/min
+#define DEFAULT_X_MAX_RATE           10000.0 // 2026-09-13 用户指定 XY 出厂速度；NVS 设置仍优先
+#define DEFAULT_Y_MAX_RATE           10000.0 // 与 X 同默认，运行期可逐轴独立调整
 #define DEFAULT_Z_MAX_RATE           600.0   // Conservative Z speed for pen up/down with spring load
 
 #define DEFAULT_X_ACCELERATION       500.0   // mm/sec^2
