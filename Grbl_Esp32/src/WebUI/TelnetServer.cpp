@@ -105,6 +105,13 @@ namespace WebUI {
         _setupdone    = false;
         _RXbufferSize = 0;
         _RXbufferpos  = 0;
+        // 删除监听者不会关闭已接入连接；重开服务前必须释放旧 session 的唯一槽位。
+        for (uint8_t i = 0; i < MAX_TLNT_CLIENTS; ++i) {
+            _telnetClients[i].stop();
+#    ifdef ENABLE_TELNET_WELCOME_MSG
+            _telnetClientsIP[i] = IPAddress(0, 0, 0, 0);
+#    endif
+        }
         if (_telnetserver) {
             delete _telnetserver;
             _telnetserver = NULL;
@@ -234,8 +241,11 @@ namespace WebUI {
                         readlen = writelen;
                     }
                     if (readlen > 0) {
-                        _telnetClients[i].read(buf, readlen);
-                        push(buf, readlen);
+                        // available() 只是提示；短读/错误不能把未收到的栈字节变成命令。
+                        const int received = _telnetClients[i].read(buf, readlen);
+                        if (received > 0) {
+                            push(buf, received);
+                        }
                     }
                     return;
                 }
