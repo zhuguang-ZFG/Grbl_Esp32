@@ -112,9 +112,16 @@ namespace WebUI {
 
     static keyval_t params[10];
     bool            split_params(char* parameter) {
-        int i = 0;
+        size_t i = 0;
+        params[0].key = NULL;
         for (char* s = parameter; *s; s++) {
             if (*s == '=') {
+                // params[10] 的最后一项是结束标记；拒绝第十个参数，
+                // 避免恶意 Web 参数把 key/value 写出数组。
+                if (i >= sizeof(params) / sizeof(params[0]) - 1) {
+                    params[0].key = NULL;
+                    return false;
+                }
                 params[i].value = s + 1;
                 *s              = '\0';
                 // Search backward looking for the start of the key,
@@ -135,6 +142,7 @@ namespace WebUI {
                     }
                     if (k == parameter) {
                         params[i++].key = k;
+                        break;
                     }
                 }
             }
