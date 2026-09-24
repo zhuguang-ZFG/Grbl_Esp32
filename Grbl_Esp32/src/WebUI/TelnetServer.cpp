@@ -91,11 +91,13 @@ namespace WebUI {
 
         //create instance
         _telnetserver = new WiFiServer(_port, MAX_TLNT_CLIENTS);
-        _telnetserver->setNoDelay(true);
         String s = "[MSG:TELNET Started " + String(_port) + "]\r\n";
         grbl_send(CLIENT_ALL, (char*)s.c_str());
         //start telnet server
         _telnetserver->begin();
+        // Arduino 1.0.4 的 begin() 会清掉 _noDelay；必须在启动后设置，
+        // 否则 accepted client 的 ok 应答仍被 Nagle 合并，拖空短段运动队列。
+        _telnetserver->setNoDelay(true);
         _setupdone = true;
         return no_error;
     }
