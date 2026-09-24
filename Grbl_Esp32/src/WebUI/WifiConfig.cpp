@@ -306,6 +306,11 @@ namespace WebUI {
             WiFi.config(ip, gateway, mask);
         }
         if (WiFi.begin(SSID.c_str(), (password.length() > 0) ? password.c_str() : NULL)) {
+            // 与普通分支保持一致：Telnet 连续供给不等待 WiFi 省电唤醒。
+            // WiFi.begin 已启动驱动，此时允许在关联完成前设置省电策略。
+            if (esp_wifi_set_ps(WIFI_PS_NONE) != ESP_OK) {
+                grbl_send(CLIENT_ALL, "[MSG:WiFi PS off failed]\r\n");
+            }
             grbl_send(CLIENT_ALL, "\n[MSG:Client Started]\r\n");
             grbl_sendf(CLIENT_ALL, "[MSG:Connecting %s]\r\n", SSID.c_str());
             return ConnectSTA2AP();
