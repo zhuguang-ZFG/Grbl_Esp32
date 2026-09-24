@@ -103,14 +103,56 @@ namespace WebUI {
 
     enum_opt_t onoffOptions = { { "OFF", 0 }, { "ON", 1 } };
 
-    static ESPResponseStream* espresponse;
-
     typedef struct {
         char* key;
         char* value;
     } keyval_t;
 
-    static keyval_t params[10];
+    // 每次调用在自己的栈上持有应答/参数，允许两个任务并发及同任务嵌套。
+    // 临界区只保护上下文链表，不跨越网络写入、换纸或等待，避免锁顺序反转。
+    struct WebCommandContext;
+    static WebCommandContext* command_contexts = nullptr;
+    static portMUX_TYPE command_context_mux = portMUX_INITIALIZER_UNLOCKED;
+    struct WebCommandContext {
+        TaskHandle_t task;
+        ESPResponseStream* response;
+        keyval_t parameters[10]{};
+        int column = 0;
+        WebCommandContext* next;
+
+        explicit WebCommandContext(ESPResponseStream* out)
+            : task(xTaskGetCurrentTaskHandle()), response(out) {
+            portENTER_CRITICAL(&command_context_mux);
+            next = command_contexts;
+            command_contexts = this;
+            portEXIT_CRITICAL(&command_context_mux);
+        }
+        ~WebCommandContext() {
+            portENTER_CRITICAL(&command_context_mux);
+            WebCommandContext** link = &command_contexts;
+            while (*link && *link != this)
+                link = &(*link)->next;
+            if (*link)
+                *link = next;
+            portEXIT_CRITICAL(&command_context_mux);
+        }
+        WebCommandContext(const WebCommandContext&) = delete;
+        WebCommandContext& operator=(const WebCommandContext&) = delete;
+    };
+    static WebCommandContext& current_command_context() {
+        const TaskHandle_t task = xTaskGetCurrentTaskHandle();
+        portENTER_CRITICAL(&command_context_mux);
+        WebCommandContext* context = command_contexts;
+        while (context && context->task != task)
+            context = context->next;
+        portEXIT_CRITICAL(&command_context_mux);
+        // 本任务的栈帧在 action 返回前始终存活，其他任务只能摘除自己的节点。
+        configASSERT(context != nullptr);
+        return *context;
+    }
+#define espresponse (current_command_context().response)
+#define params (current_command_context().parameters)
+#define webColumn (current_command_context().column)
     bool            split_params(char* parameter) {
         size_t i = 0;
         params[0].key = NULL;
@@ -178,12 +220,11 @@ Error WebCommand::action(char* value, WebUI::AuthenticationLevel auth_level, Web
     if (!value) {
         value = &empty;
     }
-    WebUI::espresponse = out;
+    WebUI::WebCommandContext context(out);
     return _action(value, auth_level);
 };
 
 namespace WebUI {
-    static int webColumn = 0;
     // We create a variety of print functions to make the rest
     // of the code more compact and readable.
     static void webPrint(const char* s) {
@@ -1298,3 +1339,7 @@ namespace WebUI {
 #endif
     }
 }
+
+#undef webColumn
+#undef params
+#undef espresponse
