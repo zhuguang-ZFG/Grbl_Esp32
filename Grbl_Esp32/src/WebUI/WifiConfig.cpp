@@ -36,6 +36,23 @@ namespace WebUI {
     String WiFiConfig::_hostname          = "";
     bool   WiFiConfig::_events_registered = false;
 
+    uint32_t WiFiConfig::_sta_link_down_since_ms    = 0;
+    uint32_t WiFiConfig::_sta_last_retry_ms         = 0;
+    uint32_t WiFiConfig::_ap_fallback_last_retry_ms = 0;
+
+    // STA 自愈看门狗参数（2026-09-25 量产中途断链事故：STA 掉线后固件零自愈，直至人工断电）：
+    // - 15s 才首重试：过滤漫游/干扰造成的秒级瞬断，避免误触发重连风暴；
+    // - 30s 重连节奏：轻量异步 WiFi.begin 代价低，S3 侧指数退避在此窗口内即可搭上；
+    // - 10min 连续断链升级 ESP.restart()：老式 lwIP/驱动深楔死只有全复位能治
+    //   （当日实证：OFF/ON 无线电重启后 TCP 服务层仍不收发，esp_restart 后恢复），
+    //   断链 10 分钟时任务早已丢失，自愈优先于保现场；
+    // - 120s AP 回落重试：StartSTA 内部 ConnectSTA2AP 最长阻塞 20s，仅在开机 STA 失败
+    //   回落 AP 后才走这条路，此时不可能有绘制任务（任务只能经 WiFi 到达），阻塞可接受。
+    static const uint32_t STA_WATCHDOG_FIRST_RETRY_MS = 15000;
+    static const uint32_t STA_WATCHDOG_RETRY_MS       = 30000;
+    static const uint32_t STA_WATCHDOG_RESTART_MS     = 600000;
+    static const uint32_t STA_FALLBACK_RETRY_MS       = 120000;
+
     WiFiConfig::WiFiConfig() {}
 
     //just simple helper to convert mac address to string
@@ -211,9 +228,19 @@ namespace WebUI {
         switch (event) {
             case SYSTEM_EVENT_STA_GOT_IP:
                 grbl_sendf(CLIENT_ALL, "[MSG:Connected with %s]\r\n", WiFi.localIP().toString().c_str());
+                _sta_link_down_since_ms = 0;  // 链路恢复，清零看门狗
                 break;
             case SYSTEM_EVENT_STA_DISCONNECTED:
                 grbl_send(CLIENT_ALL, "[MSG:Disconnected]\r\n");
+                if (_sta_link_down_since_ms == 0) {
+                    _sta_link_down_since_ms = millis();
+                }
+                break;
+            case SYSTEM_EVENT_STA_LOST_IP:
+                // DHCP 租约丢失但关联尚存：同属链路不通，计入看门狗计时。
+                if (_sta_link_down_since_ms == 0) {
+                    _sta_link_down_since_ms = millis();
+                }
                 break;
             default:
                 break;
@@ -446,6 +473,56 @@ namespace WebUI {
         //Services
         COMMANDS::wait(0);
         wifi_services.handle();
+
+        // STA 断链自愈看门狗。只在「期望 STA」且无线电未被运行时关闭（ESP115 OFF 后
+        // getMode 为 WIFI_MODE_NULL，属用户显式关断，不得自动拉起）时工作。
+        // 早启动护栏：clientCheckTask 首轮 handle() 先于 WebSettings 创建设置对象，
+        // wifi_radio_mode 仍为 NULL，直接解引用会 LoadProhibited（0x400ebae9 实证）。
+        if (!wifi_radio_mode || wifi_radio_mode->get() != ESP_WIFI_STA) {
+            return;
+        }
+        uint32_t    now  = millis();
+        wifi_mode_t mode = WiFi.getMode();
+        if (mode == WIFI_MODE_AP) {
+            // 开机 STA 失败回落 AP 后的自救：全量重走 begin()（StartSTA 内部最长阻塞
+            // 20s；此状态不可能有绘制任务，任务只能经 WiFi 到达）。
+            if (now - _ap_fallback_last_retry_ms >= STA_FALLBACK_RETRY_MS) {
+                _ap_fallback_last_retry_ms = now;
+                grbl_send(CLIENT_ALL, "[MSG:WiFi AP fallback, retry STA]\r\n");
+                begin();
+            }
+            return;
+        }
+        if (mode != WIFI_MODE_STA) {
+            return;
+        }
+        bool link_down = (WiFi.status() != WL_CONNECTED) || ((uint32_t)WiFi.localIP() == 0);
+        if (!link_down) {
+            _sta_link_down_since_ms = 0;
+            return;
+        }
+        if (_sta_link_down_since_ms == 0) {
+            _sta_link_down_since_ms = now;
+        }
+        uint32_t down_ms = now - _sta_link_down_since_ms;
+        if (down_ms >= STA_WATCHDOG_RESTART_MS) {
+            grbl_send(CLIENT_ALL, "[MSG:WiFi link dead 10min, restarting]\r\n");
+            ESP.restart();
+        }
+        if (down_ms >= STA_WATCHDOG_FIRST_RETRY_MS && now - _sta_last_retry_ms >= STA_WATCHDOG_RETRY_MS) {
+            _sta_last_retry_ms = now;
+            grbl_send(CLIENT_ALL, "[MSG:WiFi link down, reconnecting]\r\n");
+            // 轻量异步重连：复用 StartSTA 的参数但不进 ConnectSTA2AP 阻塞环（绘制中
+            // 不得卡运动环）；静态租约参数需重放，结果由 WiFiEvent 异步回报。
+            WiFi.disconnect(false);
+            if (wifi_sta_mode->get() != DHCP_MODE) {
+                IPAddress ip(wifi_sta_ip->get()), gw(wifi_sta_gateway->get()), mk(wifi_sta_netmask->get());
+                WiFi.config(ip, gw, mk);
+            }
+            String ssid = wifi_sta_ssid->get();
+            String pwd  = wifi_sta_password->get();
+            WiFi.begin(ssid.c_str(), pwd.length() ? pwd.c_str() : NULL);
+        }
     }
 
     WiFiConfig::~WiFiConfig() { end(); }
