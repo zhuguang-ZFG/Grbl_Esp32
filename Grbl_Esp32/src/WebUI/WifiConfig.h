@@ -23,6 +23,7 @@
 //Preferences entries
 
 #include <WiFi.h>
+#include <atomic>
 
 namespace WebUI {
     // TODO: Clean these constants up. Some of them don't belong here.
@@ -116,7 +117,8 @@ namespace WebUI {
         static bool   _events_registered;
 
         // STA 断链自愈看门狗状态（2026-09-25 量产中途断链事故定案追加）。
-        static uint32_t _sta_link_down_since_ms;     // 0 = 链路健康
+        static std::atomic<bool> _sta_link_recovered;  // 事件任务发布，handle 消费
+        static uint32_t _sta_link_down_since_ms;     // 仅 handle 读写；0 = 链路健康
         static uint32_t _sta_last_retry_ms;          // 上次轻量重连发起时刻
         static uint32_t _ap_fallback_last_retry_ms;  // AP 回落态上次全量重试时刻
     };

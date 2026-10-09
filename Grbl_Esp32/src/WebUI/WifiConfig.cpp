@@ -36,6 +36,7 @@ namespace WebUI {
     String WiFiConfig::_hostname          = "";
     bool   WiFiConfig::_events_registered = false;
 
+    std::atomic<bool> WiFiConfig::_sta_link_recovered{false};
     uint32_t WiFiConfig::_sta_link_down_since_ms    = 0;
     uint32_t WiFiConfig::_sta_last_retry_ms         = 0;
     uint32_t WiFiConfig::_ap_fallback_last_retry_ms = 0;
@@ -228,19 +229,14 @@ namespace WebUI {
         switch (event) {
             case SYSTEM_EVENT_STA_GOT_IP:
                 grbl_sendf(CLIENT_ALL, "[MSG:Connected with %s]\r\n", WiFi.localIP().toString().c_str());
-                _sta_link_down_since_ms = 0;  // 链路恢复，清零看门狗
+                // 时间戳仅由 handle 维护，事件任务只记录恢复，避免未来时间差下溢。
+                _sta_link_recovered.store(true, std::memory_order_relaxed);
                 break;
             case SYSTEM_EVENT_STA_DISCONNECTED:
                 grbl_send(CLIENT_ALL, "[MSG:Disconnected]\r\n");
-                if (_sta_link_down_since_ms == 0) {
-                    _sta_link_down_since_ms = millis();
-                }
                 break;
             case SYSTEM_EVENT_STA_LOST_IP:
-                // DHCP 租约丢失但关联尚存：同属链路不通，计入看门狗计时。
-                if (_sta_link_down_since_ms == 0) {
-                    _sta_link_down_since_ms = millis();
-                }
+                // handle 同时查询 IP，DHCP 租约丢失也由同一任务计时。
                 break;
             default:
                 break;
@@ -481,8 +477,12 @@ namespace WebUI {
         if (!wifi_radio_mode || wifi_radio_mode->get() != ESP_WIFI_STA) {
             return;
         }
-        uint32_t    now  = millis();
         wifi_mode_t mode = WiFi.getMode();
+        // 即使恢复后很快再断开，仍须重新开始一次连续断线窗口。
+        if (_sta_link_recovered.exchange(false, std::memory_order_relaxed)) {
+            _sta_link_down_since_ms = 0;
+        }
+        uint32_t now = millis();
         if (mode == WIFI_MODE_AP) {
             // 开机 STA 失败回落 AP 后的自救：全量重走 begin()（StartSTA 内部最长阻塞
             // 20s；此状态不可能有绘制任务，任务只能经 WiFi 到达）。
