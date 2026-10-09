@@ -26,6 +26,15 @@
 class WebSocketsServer;
 
 namespace WebUI {
+    // 服务析构与日志发送共用递归锁，回调日志可在同一任务重入。
+    class WebSocketAccessGuard {
+    public:
+        WebSocketAccessGuard();
+        ~WebSocketAccessGuard();
+        WebSocketAccessGuard(const WebSocketAccessGuard&) = delete;
+        WebSocketAccessGuard& operator=(const WebSocketAccessGuard&) = delete;
+    };
+
     class Serial_2_Socket : public Print {
         static const int TXBUFFERSIZE = 1200;
         static const int RXBUFFERSIZE = 256;

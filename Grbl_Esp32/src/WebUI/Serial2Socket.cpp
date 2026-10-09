@@ -26,8 +26,18 @@
 #    include "WebServer.h"
 #    include <WebSocketsServer.h>
 #    include <WiFi.h>
+#    include <freertos/semphr.h>
 
 namespace WebUI {
+    static SemaphoreHandle_t webSocketMutex = xSemaphoreCreateRecursiveMutex();
+    WebSocketAccessGuard::WebSocketAccessGuard() {
+        configASSERT(webSocketMutex != nullptr);
+        xSemaphoreTakeRecursive(webSocketMutex, portMAX_DELAY);
+    }
+    WebSocketAccessGuard::~WebSocketAccessGuard() {
+        xSemaphoreGiveRecursive(webSocketMutex);
+    }
+
     Serial_2_Socket Serial2Socket;
 
     Serial_2_Socket::Serial_2_Socket() {
@@ -38,12 +48,15 @@ namespace WebUI {
     }
 
     void Serial_2_Socket::begin(long speed) {
+        WebSocketAccessGuard lock;
         _TXbufferSize = 0;
         _RXbufferSize = 0;
         _RXbufferpos  = 0;
     }
 
     void Serial_2_Socket::end() {
+        WebSocketAccessGuard lock;
+        _web_socket = NULL;
         _TXbufferSize = 0;
         _RXbufferSize = 0;
         _RXbufferpos  = 0;
@@ -52,6 +65,7 @@ namespace WebUI {
     long Serial_2_Socket::baudRate() { return 0; }
 
     bool Serial_2_Socket::attachWS(WebSocketsServer* web_socket) {
+        WebSocketAccessGuard lock;
         if (web_socket) {
             _web_socket   = web_socket;
             _TXbufferSize = 0;
@@ -61,15 +75,21 @@ namespace WebUI {
     }
 
     bool Serial_2_Socket::detachWS() {
+        WebSocketAccessGuard lock;
+        _TXbufferSize = 0;  // 旧会话的待发日志不能交给下一会话。
         _web_socket = NULL;
         return true;
     }
 
     Serial_2_Socket::operator bool() const { return true; }
 
-    int Serial_2_Socket::available() { return _RXbufferSize; }
+    int Serial_2_Socket::available() {
+        WebSocketAccessGuard lock;
+        return _RXbufferSize;
+    }
 
     size_t Serial_2_Socket::write(uint8_t c) {
+        WebSocketAccessGuard lock;
         if (!_web_socket) {
             return 0;
         }
@@ -78,6 +98,7 @@ namespace WebUI {
     }
 
     size_t Serial_2_Socket::write(const uint8_t* buffer, size_t size) {
+        WebSocketAccessGuard lock;
         if ((buffer == NULL) || (!_web_socket)) {
             if (buffer == NULL) {
                 log_i("[SOCKET]No buffer");
@@ -110,6 +131,7 @@ namespace WebUI {
     }
 
     int Serial_2_Socket::peek(void) {
+        WebSocketAccessGuard lock;
         if (_RXbufferSize > 0) {
             return _RXbuffer[_RXbufferpos];
         } else {
@@ -118,6 +140,7 @@ namespace WebUI {
     }
 
     bool Serial_2_Socket::push(const char* data) {
+        WebSocketAccessGuard lock;
 #    if defined(ENABLE_SERIAL2SOCKET_IN)
         int data_size = strlen(data);
         if ((data_size + _RXbufferSize) <= RXBUFFERSIZE) {
@@ -144,6 +167,7 @@ namespace WebUI {
     }
 
     int Serial_2_Socket::read(void) {
+        WebSocketAccessGuard lock;
         if (_RXbufferSize > 0) {
             int v = _RXbuffer[_RXbufferpos];
             _RXbufferpos++;
@@ -159,13 +183,15 @@ namespace WebUI {
     }
 
     void Serial_2_Socket::handle_flush() {
+        WebSocketAccessGuard lock;
         if (_TXbufferSize > 0 && ((_TXbufferSize >= TXBUFFERSIZE) || ((millis() - _lastflush) > FLUSHTIMEOUT))) {
             log_i("[SOCKET]need flush, buffer size %d", _TXbufferSize);
             flush();
         }
     }
     void Serial_2_Socket::flush(void) {
-        if (_TXbufferSize > 0) {
+        WebSocketAccessGuard lock;
+        if (_TXbufferSize > 0 && _web_socket) {
             log_i("[SOCKET]flush data, buffer size %d", _TXbufferSize);
             _web_socket->broadcastBIN(_TXbuffer, _TXbufferSize);
 
@@ -178,6 +204,7 @@ namespace WebUI {
     }
 
     Serial_2_Socket::~Serial_2_Socket() {
+        WebSocketAccessGuard lock;
         if (_web_socket) {
             detachWS();
         }

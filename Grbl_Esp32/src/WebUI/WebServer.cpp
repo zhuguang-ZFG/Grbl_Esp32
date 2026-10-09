@@ -102,6 +102,7 @@ namespace WebUI {
     long Web_Server::get_client_ID() { return _id_connection; }
 
     bool Web_Server::begin() {
+        WebSocketAccessGuard lock;
         bool no_error = true;
         _setupdone    = false;
         if (http_enable->get() == 0) {
@@ -211,6 +212,9 @@ namespace WebUI {
     }
 
     void Web_Server::end() {
+        WebSocketAccessGuard lock;
+        // 先阻止新写入并等待在途发送结束，再删除真正的 WebSocket 对象。
+        Serial2Socket.detachWS();
         _setupdone = false;
 #    ifdef ENABLE_SSDP
         SSDP.end();
@@ -1547,6 +1551,7 @@ namespace WebUI {
 #    endif
 
     void Web_Server::handle() {
+        WebSocketAccessGuard lock;
         static uint32_t timeout = millis();
         COMMANDS::wait(0);
 #    ifdef ENABLE_CAPTIVE_PORTAL
