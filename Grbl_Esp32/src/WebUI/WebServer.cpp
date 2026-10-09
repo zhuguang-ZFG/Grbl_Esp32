@@ -465,10 +465,22 @@ namespace WebUI {
         }
         //if it is internal command [ESPXXX]<parameter>
         cmd.trim();
+        // HTTP处理与输入泵同任务：限制解析工作量，不能长时间占住实时指令接收。
+        constexpr size_t kMaxWebCommandBytes = 4096;
+        constexpr size_t kMaxWebCommandLines = 256;
+        if (cmd.length() > kMaxWebCommandBytes) {
+            _webserver->send(413, "text/plain", "Command too long");
+            return;
+        }
         int ESPpos = cmd.indexOf("[ESP");
         if (ESPpos > -1) {
             char line[256];
-            strncpy(line, cmd.c_str(), 255);
+            if (cmd.length() >= sizeof(line)) {
+                _webserver->send(413, "text/plain", "Command too long");
+                return;
+            }
+            // 长命令整条拒绝，合法命令连同NUL复制，禁止静默截断或扫描栈残留。
+            memcpy(line, cmd.c_str(), cmd.length() + 1);
             ESPResponseStream* espresponse = silent ? NULL : new ESPResponseStream(_webserver);
             Error              err         = system_execute_line(line, espresponse, auth_level);
             String             answer;
@@ -497,11 +509,18 @@ namespace WebUI {
             //Instead of send several commands one by one by web  / send full set and split here
             String      scmd;
             bool hasError =false;
-            uint8_t     sindex = 0;
+            size_t line_count = 1;
+            for (size_t i = 0; i < cmd.length(); ++i) {
+                if (cmd.charAt(i) == '\n' && ++line_count > kMaxWebCommandLines) {
+                    _webserver->send(413, "text/plain", "Too many commands");
+                    return;
+                }
+            }
             // TODO Settings - this is very inefficient.  get_Splited_Value() is O(n^2)
             // when it could easily be O(n).  Also, it would be just as easy to push
             // the entire string into Serial2Socket and pull off lines from there.
-            for (uint8_t sindex = 0; (scmd = get_Splited_Value(cmd, '\n', sindex)) != ""; sindex++) {
+            for (size_t sindex = 0; sindex < kMaxWebCommandLines &&
+                                   (scmd = get_Splited_Value(cmd, '\n', sindex)) != ""; ++sindex) {
                 // 0xC2 is an HTML encoding prefix that, in UTF-8 mode,
                 // precede 0x90 and 0xa0-0bf, which are GRBL realtime commands.
                 // There are other encodings for 0x91-0x9f, so I am not sure
@@ -518,6 +537,7 @@ namespace WebUI {
                 }
                 if (!Serial2Socket.push(scmd.c_str())) {
                     hasError = true;
+                    break;  // 同步handler返回前队列不会排空，继续追加没有意义。
                 }
             }
             _webserver->send(200, "text/plain", hasError?"Error":"");
