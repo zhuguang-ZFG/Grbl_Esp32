@@ -36,6 +36,7 @@ typedef struct {
     char buffer[LINE_BUFFER_SIZE];
     int  len;
     int  line_number;
+    bool discard_until_eol;
 } client_line_t;
 client_line_t client_lines[CLIENT_COUNT];
 
@@ -47,11 +48,20 @@ static void empty_line(uint8_t client) {
 static void empty_lines() {
     for (uint8_t client = 0; client < CLIENT_COUNT; client++) {
         empty_line(client);
+        client_lines[client].discard_until_eol = false;
     }
 }
 
 Error add_char_to_line(char c, uint8_t client) {
     client_line_t* cl = &client_lines[client];
+    // 超长物理行必须整行丢弃；backspace也不能解除拒收，避免尾部变成新命令。
+    if (cl->discard_until_eol) {
+        if (c == '\r' || c == '\n') {
+            cl->discard_until_eol = false;
+            cl->line_number++;
+        }
+        return Error::Ok;
+    }
     // Simple editing for interactive input
     if (c == '\b') {
         // Backspace erases
@@ -62,6 +72,8 @@ Error add_char_to_line(char c, uint8_t client) {
         return Error::Ok;
     }
     if (cl->len == (LINE_BUFFER_SIZE - 1)) {
+        // 换行本身触发溢出时已到行尾，下一物理行仍应正常受理。
+        cl->discard_until_eol = c != '\r' && c != '\n';
         return Error::Overflow;
     }
     if (c == '\r' || c == '\n') {
