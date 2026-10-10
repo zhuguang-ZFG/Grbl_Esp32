@@ -580,7 +580,8 @@ Error system_execute_line(char* line, WebUI::ESPResponseStream* out, WebUI::Auth
 
     char* value;
     if (*line++ == '[') {  // [ESPxxx] form
-        value = strrchr(line, ']');
+        // 命令前缀的第一个右括号才是键和值的分隔符；SSID/密码允许包含右括号。
+        value = strchr(line, ']');
         if (!value) {
             // Missing ] is an error in this form
             return Error::InvalidStatement;

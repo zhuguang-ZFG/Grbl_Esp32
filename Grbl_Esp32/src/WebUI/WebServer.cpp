@@ -463,15 +463,20 @@ namespace WebUI {
             _webserver->send(200, "text/plain", "Invalid command");
             return;
         }
-        //if it is internal command [ESPXXX]<parameter>
-        cmd.trim();
-        // HTTP处理与输入泵同任务：限制解析工作量，不能长时间占住实时指令接收。
+        // HTTP处理与输入泵同任务：先限总字节数，再处理前缀，保持工作量有界。
         constexpr size_t kMaxWebCommandBytes = 4096;
         constexpr size_t kMaxWebCommandLines = 256;
         if (cmd.length() > kMaxWebCommandBytes) {
             _webserver->send(413, "text/plain", "Command too long");
             return;
         }
+        // ESP参数尾空格属于SSID/密码，仅线性扫描命令前缀空白并一次移除。
+        size_t prefix = 0;
+        while (prefix < cmd.length() && (cmd[prefix] == ' ' || cmd[prefix] == '\t' ||
+                                         cmd[prefix] == '\r' || cmd[prefix] == '\n')) {
+            ++prefix;
+        }
+        cmd.remove(0, prefix);
         int ESPpos = cmd.indexOf("[ESP");
         if (ESPpos > -1) {
             char line[256];
@@ -502,6 +507,7 @@ namespace WebUI {
             }
             if(espresponse) delete(espresponse);
         } else {  //execute GCODE
+            cmd.trim();
             if (auth_level == AuthenticationLevel::LEVEL_GUEST) {
                 _webserver->send(401, "text/plain", "Authentication failed!\n");
                 return;
