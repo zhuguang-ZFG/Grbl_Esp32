@@ -411,7 +411,8 @@ void StringSetting::setDefault() {
 }
 
 Error StringSetting::setStringValue(char* s) {
-    if (_minLength && _maxLength && (strlen(s) < _minLength || strlen(s) > _maxLength)) {
+    const bool open_password = s != nullptr && s[0] == '\0' && strcmp(getName(), "Sta/Password") == 0;
+    if (!open_password && _minLength && _maxLength && (strlen(s) < _minLength || strlen(s) > _maxLength)) {
         return Error::BadNumberFormat;
     }
     Error err = check(s);

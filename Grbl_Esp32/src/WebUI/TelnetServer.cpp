@@ -104,12 +104,14 @@ namespace WebUI {
 
     void Telnet_Server::end() {
         TelnetClientLock lock;
+        _session      = client_begin_session(CLIENT_TELNET);
         _setupdone    = false;
         _RXbufferSize = 0;
         _RXbufferpos  = 0;
         // 删除监听者不会关闭已接入连接；重开服务前必须释放旧 session 的唯一槽位。
         for (uint8_t i = 0; i < MAX_TLNT_CLIENTS; ++i) {
             _telnetClients[i].stop();
+
 #    ifdef ENABLE_TELNET_WELCOME_MSG
             _telnetClientsIP[i] = IPAddress(0, 0, 0, 0);
 #    endif
@@ -133,6 +135,9 @@ namespace WebUI {
                     if (_telnetClients[i]) {
                         _telnetClients[i].stop();
                     }
+                    _RXbufferSize     = 0;
+                    _RXbufferpos      = 0;
+                    _session          = client_begin_session(CLIENT_TELNET);
                     _telnetClients[i] = _telnetserver->available();
                     // hutuji §9-A：半开死连接回收（只开 SO_KEEPALIVE 无效，须显式三参数）
                     // ~KEEPIDLE 10 + 3×KEEPINTVL ≈ 19s 发现对端掉电/NAT 超时
@@ -191,6 +196,9 @@ namespace WebUI {
                     log_w("[TELNET] write timeout sent=%u/%u", static_cast<unsigned>(wsize),
                           static_cast<unsigned>(size));
                     _telnetClients[i].stop();
+                    _RXbufferSize = 0;
+                    _RXbufferpos  = 0;
+                    _session      = client_begin_session(CLIENT_TELNET);
                     return 0;
                 }
                 const int written = send(socket, buffer + wsize, size - wsize, MSG_DONTWAIT);
@@ -207,6 +215,9 @@ namespace WebUI {
                 log_w("[TELNET] write failed n=%d errno=%d sent=%u/%u", written, send_errno,
                       static_cast<unsigned>(wsize), static_cast<unsigned>(size));
                 _telnetClients[i].stop();
+                _RXbufferSize = 0;
+                _RXbufferpos  = 0;
+                _session      = client_begin_session(CLIENT_TELNET);
                 return 0;
             }
         }
@@ -257,6 +268,9 @@ namespace WebUI {
                     _telnetClientsIP[i] = IPAddress(0, 0, 0, 0);
 #    endif
                     _telnetClients[i].stop();
+                    _RXbufferSize = 0;
+                    _RXbufferpos  = 0;
+                    _session      = client_begin_session(CLIENT_TELNET);
                 }
             }
             COMMANDS::wait(0);
@@ -264,6 +278,7 @@ namespace WebUI {
     }
 
     int Telnet_Server::peek(void) {
+        TelnetClientLock lock;
         if (_RXbufferSize > 0) {
             return _RXbuffer[_RXbufferpos];
         } else {
@@ -271,11 +286,18 @@ namespace WebUI {
         }
     }
 
-    int Telnet_Server::available() { return _RXbufferSize; }
+    int Telnet_Server::available() {
+        TelnetClientLock lock;
+        return _RXbufferSize;
+    }
 
-    int Telnet_Server::get_rx_buffer_available() { return TELNETRXBUFFERSIZE - _RXbufferSize; }
+    int Telnet_Server::get_rx_buffer_available() {
+        TelnetClientLock lock;
+        return TELNETRXBUFFERSIZE - _RXbufferSize;
+    }
 
     bool Telnet_Server::push(uint8_t data) {
+        TelnetClientLock lock;
         log_i("[TELNET]push %c", data);
         if ((1 + _RXbufferSize) <= TELNETRXBUFFERSIZE) {
             int current = _RXbufferpos + _RXbufferSize;
@@ -294,6 +316,7 @@ namespace WebUI {
     }
 
     bool Telnet_Server::push(const uint8_t* data, int data_size) {
+        TelnetClientLock lock;
         if ((data_size + _RXbufferSize) <= TELNETRXBUFFERSIZE) {
             int data_processed = 0;
             int current        = _RXbufferpos + _RXbufferSize;
@@ -318,7 +341,10 @@ namespace WebUI {
         return false;
     }
 
-    int Telnet_Server::read(void) {
+    int Telnet_Server::read(uint32_t* session) {
+        TelnetClientLock lock;
+        if (session != nullptr)
+            *session = _session;
         if (_RXbufferSize > 0) {
             int v = _RXbuffer[_RXbufferpos];
             //log_d("[TELNET]read %c",char(v));

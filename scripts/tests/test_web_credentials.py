@@ -29,6 +29,8 @@ int nvs_set_str(int,const char*,const char* value){stored=value;return 0;}
 struct StringSetting {
  size_t _minLength=1,_maxLength=64;int _handle=0;const char* _keyName="wifi";
  std::string _storedValue,_currentValue,_defaultValue;
+ std::string name="Sta/SSID";
+ const char* getName(){return name.c_str();}
  Error check(char*){return Error::Ok;}
  Error setStringValue(char*);
 };
@@ -39,6 +41,7 @@ void remove_password(char*,WebUI::AuthenticationLevel&){}
 StringSetting setting;
 Error do_command_or_setting(const char* key,char* value,WebUI::AuthenticationLevel,WebUI::ESPResponseStream*){
  if((std::string(key)!="ESP100"&&std::string(key)!="ESP101")||!value)return Error::Invalid;
+ setting.name=std::string(key)=="ESP101"?"Sta/Password":"Sta/SSID";
  return setting.setStringValue(value);
 }
 """+function(process,'Error system_execute_line(char* line, WebUI::ESPResponseStream* out, WebUI::AuthenticationLevel auth_level)').replace('Error system_execute_line(', 'Error WebUI::system_execute_line(')
@@ -56,11 +59,13 @@ int main(int argc,char** argv){
  if(scenario==3){ssid=" 家里网络 ";password=" password123 ";}
  if(scenario==4){ssid=std::string(31,'a')+" ";password=std::string(63,'p')+" ";}
  if(scenario==6)ssid="Home]Wifi";
+ if(scenario==7)password="";
  using namespace hutuji::provision;
  assert(ValidateHomeCredentials(ssid,password)==CredentialError::None);
  auto commands=BuildCommandSequence(ssid,password);
  HTTP http;WebUI::Web_Server::_webserver=&http;WebUI::Web_Server web;
  for(int i=0;i<2;++i){
+  setting._minLength=i?8:1;
   auto url=BuildCommandUrl(commands[i]);
   http.command=decode(url.substr(url.find("plain=")+6));
   if(scenario==5)http.command=" \t"+http.command;
@@ -88,5 +93,5 @@ class WebCredentialsTest(unittest.TestCase):
 def case_method(n):
     def run(self):self.check(n)
     return run
-for n,label in enumerate(('normal','ssid_tail','password_tail','utf8_spaces','max_length','command_prefix','ssid_right_bracket')):
+for n,label in enumerate(('normal','ssid_tail','password_tail','utf8_spaces','max_length','command_prefix','ssid_right_bracket','open_network_clears_password')):
     setattr(WebCredentialsTest,'test_'+label,case_method(n))

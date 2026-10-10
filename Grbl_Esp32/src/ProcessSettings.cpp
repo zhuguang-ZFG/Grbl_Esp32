@@ -589,7 +589,10 @@ Error system_execute_line(char* line, WebUI::ESPResponseStream* out, WebUI::Auth
         // ']' was found; replace it with null and set value to the rest of the line.
         *value++ = '\0';
         // If the rest of the line is empty, replace value with NULL.
-        if (*value == '\0') {
+        if (strcmp(line, "ESP101=") == 0 && *value == '\0') {
+            // 显式空值写入，与旧 [ESP101] 只读命令保持区分。
+            line[strlen(line) - 1] = '\0';
+        } else if (*value == '\0') {
             value = NULL;
         }
     } else {

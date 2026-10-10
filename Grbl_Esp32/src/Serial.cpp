@@ -68,6 +68,31 @@ portMUX_TYPE myMutex = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t clientCheckTaskHandle = 0;
 
 WebUI::InputBuffer client_buffer[CLIENT_COUNT];  // create a buffer for each client
+static uint32_t    client_session_generation[CLIENT_COUNT] = {};
+static uint32_t    client_session_seen[CLIENT_COUNT]       = {};
+
+uint32_t client_begin_session(uint8_t client) {
+    vTaskEnterCritical(&myMutex);
+    client_buffer[client].begin();
+    const uint32_t session = ++client_session_generation[client];
+    vTaskExitCritical(&myMutex);
+    return session;
+}
+
+bool client_session_current(uint8_t client, uint32_t session) {
+    vTaskEnterCritical(&myMutex);
+    const bool current = client_session_generation[client] == session;
+    vTaskExitCritical(&myMutex);
+    return current;
+}
+
+void client_write_session(uint8_t client, uint8_t data, uint32_t session) {
+    vTaskEnterCritical(&myMutex);
+    if (client != CLIENT_TELNET || client_session_generation[client] == session) {
+        client_buffer[client].write(data);
+    }
+    vTaskExitCritical(&myMutex);
+}
 
 // Returns the number of bytes available in a client buffer.
 uint8_t client_get_rx_buffer_available(uint8_t client) {
@@ -128,7 +153,7 @@ void client_init() {
     );
 }
 
-static uint8_t getClientChar(uint8_t* data) {
+static uint8_t getClientChar(uint8_t* data, uint32_t* session) {
     int res;
 #ifdef REVERT_TO_ARDUINO_SERIAL
     if (client_buffer[CLIENT_SERIAL].availableforwrite() && (res = Serial.read()) != -1) {
@@ -158,8 +183,8 @@ static uint8_t getClientChar(uint8_t* data) {
     }
 #endif
 #if defined(ENABLE_WIFI) && defined(ENABLE_TELNET)
-    if (WebUI::telnet_server.available()) {
-        *data = WebUI::telnet_server.read();
+    if ((res = WebUI::telnet_server.read(session)) != -1) {
+        *data = res;
         return CLIENT_TELNET;
     }
 #endif
@@ -173,7 +198,11 @@ void clientCheckTask(void* pvParameters) {
     uint8_t            client;  // who sent the data
     static UBaseType_t uxHighWaterMark = 0;
     while (true) {  // run continuously
-        while ((client = getClientChar(&data)) != CLIENT_ALL) {
+        uint32_t session = 0;
+        while ((client = getClientChar(&data, &session)) != CLIENT_ALL) {
+            if (client == CLIENT_TELNET && !client_session_current(client, session)) {
+                continue;
+            }
             // Pick off realtime command characters directly from the serial stream. These characters are
             // not passed into the main buffer, but these set system state flag bits for realtime execution.
             if (is_realtime_command(data)) {
@@ -182,9 +211,7 @@ void clientCheckTask(void* pvParameters) {
 #if defined(ENABLE_SD_CARD)
                 if (get_sd_state(false) < SDState::Busy) {
 #endif  //ENABLE_SD_CARD
-                    vTaskEnterCritical(&myMutex);
-                    client_buffer[client].write(data);
-                    vTaskExitCritical(&myMutex);
+                    client_write_session(client, data, session);
 #if defined(ENABLE_SD_CARD)
                 } else {
                     if (data == '\r' || data == '\n') {
@@ -231,7 +258,13 @@ void client_reset_read_buffer(uint8_t client) {
 // Fetches the first byte in the client read buffer. Called by protocol loop.
 int client_read(uint8_t client) {
     vTaskEnterCritical(&myMutex);
-    int data = client_buffer[client].read();
+    int data;
+    if (client_session_seen[client] != client_session_generation[client]) {
+        client_session_seen[client] = client_session_generation[client];
+        data                        = -2;  // 不占队列容量的会话屏障，先清半行再消费新数据。
+    } else {
+        data = client_buffer[client].read();
+    }
     vTaskExitCritical(&myMutex);
     return data;
 }

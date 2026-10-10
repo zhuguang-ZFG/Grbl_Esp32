@@ -37,6 +37,9 @@ class TelnetReceiveTest(unittest.TestCase):
 #include <cstdlib>
 #include <vector>
 namespace COMMANDS { void wait(int) {} }
+constexpr int CLIENT_TELNET=3;
+uint32_t generations=0;
+uint32_t client_begin_session(uint8_t){return ++generations;}
 struct TelnetClientLock { TelnetClientLock() {} };
 struct WiFiClient {
     bool live = true;
@@ -61,6 +64,7 @@ public:
     WiFiServer* _telnetserver = new WiFiServer;
     WiFiClient _telnetClients[MAX_TLNT_CLIENTS];
     int _RXbufferSize = 0, _RXbufferpos = 0;
+    uint32_t _session=0;
     std::vector<uint8_t> pushed;
     void clearClients() {}
     int available() const { return _RXbufferSize; }
@@ -84,6 +88,7 @@ int main(int argc, char** argv) {
         server._RXbufferpos = 7;
         server.end();
         assert(!server._setupdone && server._telnetserver == nullptr);
+        assert(generations>0);
         assert(!client.connected());
         assert(server._RXbufferSize == 0 && server._RXbufferpos == 0);
         server.end();

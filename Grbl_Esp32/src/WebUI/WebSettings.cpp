@@ -1112,7 +1112,7 @@ namespace WebUI {
     // 否则 5s 无应答超时会被管道判成断连并丢任务（2026-09-11 实机事故：流内 error:21
     // 后 [ESP901] 静默 → recv errno=128 → job error）。
     static Error nopaperStatusHandler(char* parameter, AuthenticationLevel auth_level) {
-        webPrintln("Paper=No MotorEn=Off PanelHold=Off Changing=Off");
+        webPrintln("Paper=No MotorEn=Unknown PanelHold=Unknown Changing=Off");
         return Error::Ok;
     }
 #endif

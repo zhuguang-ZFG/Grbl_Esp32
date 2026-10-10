@@ -184,6 +184,12 @@ void protocol_main_loop() {
         char*   line;
         for (client = 0; client < CLIENT_COUNT; client++) {
             while ((c = client_read(client)) != -1) {
+                // 会话屏障由串口队列原子发布；半行仅由协议线程清理。
+                if (c == -2) {
+                    empty_line(client);
+                    client_lines[client].discard_until_eol = false;
+                    continue;
+                }
                 Error res = add_char_to_line(c, client);
                 switch (res) {
                     case Error::Ok:

@@ -40,7 +40,7 @@ namespace WebUI {
         void   end();
         void   handle();
         size_t write(const uint8_t* buffer, size_t size);
-        int    read(void);
+        int    read(uint32_t* session = nullptr);
         int    peek(void);
         int    available();
         int    get_rx_buffer_available();
@@ -63,6 +63,7 @@ namespace WebUI {
         void clearClients();
 
         uint32_t _lastflush;
+        uint32_t _session = 0;
         uint8_t  _RXbuffer[TELNETRXBUFFERSIZE];
         uint16_t _RXbufferSize;
         uint16_t _RXbufferpos;
