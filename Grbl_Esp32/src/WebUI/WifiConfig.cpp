@@ -19,6 +19,7 @@
 */
 
 #include "../Grbl.h"
+#include "Utf8Ssid.h"
 
 #ifdef ENABLE_WIFI
 
@@ -156,19 +157,8 @@ namespace WebUI {
      */
 
     bool WiFiConfig::isSSIDValid(const char* ssid) {
-        //limited size
-        //char c;
-        // length is checked automatically by string setting
-        //only printable
-        if (!ssid) {
-            return true;
-        }
-        for (int i = 0; i < strlen(ssid); i++) {
-            if (!isPrintable(ssid[i])) {
-                return false;
-            }
-        }
-        return true;
+        // StringSetting负责长度，空默认值保持原行为；实际SSID接受严格UTF-8。
+        return !ssid || !*ssid || ValidUtf8Ssid(ssid,strlen(ssid));
     }
 
     /**
