@@ -38,7 +38,23 @@ namespace WebUI {
     // Private function to add a name enclosed with quotes.
     void JSONencoder::quoted(const char* s) {
         add('"');
-        str.concat(s);
+        for (const unsigned char* p = reinterpret_cast<const unsigned char*>(s); *p; ++p) {
+            const unsigned char c = *p;
+            if (c == '"' || c == '\\') {
+                add('\\');
+                add(static_cast<char>(c));
+            } else if (c < 0x20) {
+                static constexpr char hex[] = "0123456789abcdef";
+                add('\\');
+                add('u');
+                add('0');
+                add('0');
+                add(hex[c >> 4]);
+                add(hex[c & 0x0f]);
+            } else {
+                add(static_cast<char>(c));
+            }
+        }
         add('"');
     }
 

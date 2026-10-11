@@ -26,6 +26,7 @@
 #    include "WebServer.h"
 #    include <WebSocketsServer.h>
 #    include <WiFi.h>
+#    include <algorithm>
 #    include <freertos/semphr.h>
 
 namespace WebUI {
@@ -93,8 +94,7 @@ namespace WebUI {
         if (!_web_socket) {
             return 0;
         }
-        write(&c, 1);
-        return 1;
+        return write(&c, 1);
     }
 
     size_t Serial_2_Socket::write(const uint8_t* buffer, size_t size) {
@@ -110,22 +110,20 @@ namespace WebUI {
         }
 
 #    if defined(ENABLE_SERIAL2SOCKET_OUT)
-        if (_TXbufferSize == 0) {
-            _lastflush = millis();
+        size_t accepted = 0;
+        while (accepted < size && _web_socket) {
+            if (_TXbufferSize == 0) {
+                _lastflush = millis();
+            }
+            const size_t space = TXBUFFERSIZE - _TXbufferSize;
+            const size_t chunk = std::min(space, size - accepted);
+            memcpy(_TXbuffer + _TXbufferSize, buffer + accepted, chunk);
+            _TXbufferSize += chunk;
+            accepted += chunk;
+            // WiFi列表等响应可超过单帧缓冲；满时立即发出再续装，避免越界。
+            handle_flush();
         }
-
-        //send full line
-        if (_TXbufferSize + size > TXBUFFERSIZE) {
-            flush();
-        }
-
-        //need periodic check to force to flush in case of no end
-        for (int i = 0; i < size; i++) {
-            _TXbuffer[_TXbufferSize] = buffer[i];
-            _TXbufferSize++;
-        }
-        log_i("[SOCKET]buffer size %d", _TXbufferSize);
-        handle_flush();
+        return accepted;
 #    endif
         return size;
     }

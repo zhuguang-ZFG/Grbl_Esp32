@@ -42,13 +42,14 @@ uint32_t clock_ms=0;
 uint32_t millis(){return clock_ms;}
 struct String:std::string{using std::string::string; explicit String(long n):std::string(std::to_string(n)){};};
 std::atomic<bool> bad{false},destroyed{false};
+std::string received;
 std::mutex mx;std::condition_variable cv;bool entered=false,released=false;int block_kind=0,total=0;
 void block(int kind){if(block_kind!=kind)return;std::unique_lock<std::mutex> l(mx);entered=true;cv.notify_all();cv.wait(l,[]{return released;});}
 struct WebSocketsServer {
  bool alive=true;
  ~WebSocketsServer(){alive=false;destroyed=true;}
  static void operator delete(void*) noexcept {} // 替身保留存储以观测析构后的非法使用。
- void broadcastBIN(uint8_t*,size_t n){block(1);if(!this||!alive)bad=true;else total+=n;}
+ void broadcastBIN(uint8_t* data,size_t n){block(1);if(!this||!alive)bad=true;else{assert(n<=1200);total+=n;received.append((const char*)data,n);}}
  void broadcastTXT(const String&){}
  void loop(){block(2);if(!alive)bad=true;}
 };
@@ -86,6 +87,13 @@ int main(int argc,char**argv){
   assert(blocked&&!bad&&destroyed);
  }
  if(scenario==4){for(int i=0;i<20;++i){web.end();auto* next=new WebSocketsServer;Web_Server::_socket_server=next;Serial2Socket.attachWS(next);Serial2Socket.write((uint8_t)'x');Serial2Socket.flush();}assert(!bad&&total==20);}
+ if(scenario==5){for(size_t n:{size_t(0),size_t(1),size_t(1199),size_t(1200),size_t(1201),size_t(1399),size_t(4803)}){
+   std::string payload;for(size_t i=0;i<n;++i)payload.push_back(char(i%251));
+   Serial2Socket.begin(0);received.clear();total=0;
+   Serial2Socket.write((const uint8_t*)"prefix",6);
+   assert(Serial2Socket.write((const uint8_t*)payload.data(),payload.size())==payload.size());
+   Serial2Socket.flush();assert(!bad&&received=="prefix"+payload&&total==6+n);
+ }}
  return 0;
 }
 '''
@@ -113,5 +121,6 @@ class WebSocketLifecycleTest(unittest.TestCase):
     def test_end_waits_for_broadcast(self):self.check(2)
     def test_end_waits_for_loop(self):self.check(3)
     def test_repeated_service_recreation(self):self.check(4)
+    def test_oversized_output_is_fully_sent(self):self.check(5)
 
 if __name__=="__main__":unittest.main()
