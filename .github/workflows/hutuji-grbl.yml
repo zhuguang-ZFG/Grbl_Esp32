@@ -1,0 +1,40 @@
+name: Hutuji Mass Production
+on:
+  push:
+    branches: [massprod/nopaper-1.3a]
+  pull_request:
+    branches: [massprod/nopaper-1.3a]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CXX: g++
+      XIAOZHI_ROOT: ${{ github.workspace }}/xiaozhi-esp32
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: Grbl_Esp32-massprod
+      - uses: actions/checkout@v4
+        with:
+          repository: zhuguang-ZFG/xiaozhi-esp32
+          ref: 3d94f8ffeb307ff7166e1bcf695ed7b756d34547
+          path: xiaozhi-esp32
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install platformio pytest
+      - name: 宿主行为回归
+        working-directory: Grbl_Esp32-massprod
+        run: python -m pytest -q scripts/tests
+      - name: 构建 DIO 量产固件
+        working-directory: Grbl_Esp32-massprod
+        run: pio run -e release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grbl-nopaper-${{ github.sha }}
+          path: Grbl_Esp32-massprod/.pio/build/release/firmware.bin
+          if-no-files-found: error

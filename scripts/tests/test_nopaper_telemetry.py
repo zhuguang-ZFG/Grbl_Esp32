@@ -22,6 +22,8 @@ int main(){
  assert(motor==MotorEnState::Unknown && panel==PanelHoldState::Unknown && paper==PaperPresentState::No);
 }
 """
+  s3 = Path(os.environ.get('XIAOZHI_ROOT', str(ROOT.parent / 'xiaozhi-esp32')))
+  code = code.replace('D:/Users/xiaozhi-esp32/', s3.as_posix() + '/')
   with tempfile.TemporaryDirectory() as d:
    cpp=Path(d)/'case.cpp';exe=cpp.with_suffix('.exe');cpp.write_text(code,encoding='utf-8')
    r=subprocess.run([os.environ['CXX'],'-std=c++17',str(cpp),'-o',str(exe)],capture_output=True,timeout=60)
