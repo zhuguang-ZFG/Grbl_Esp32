@@ -40,7 +40,8 @@ void xSemaphoreGiveRecursive(SemaphoreHandle_t p){p->unlock();}
 class Print {};
 uint32_t clock_ms=0;
 uint32_t millis(){return clock_ms;}
-struct String:std::string{using std::string::string; explicit String(long n):std::string(std::to_string(n)){};};
+void delay(uint32_t ms){clock_ms+=ms;}
+struct String:std::string{using std::string::string; explicit String(long n):std::string(std::to_string(n)){}; String(const std::string& s):std::string(s){}};
 std::atomic<bool> bad{false},destroyed{false};
 std::string received;
 std::mutex mx;std::condition_variable cv;bool entered=false,released=false;int block_kind=0,total=0;
@@ -51,9 +52,11 @@ struct WebSocketsServer {
  static void operator delete(void*) noexcept {} // 替身保留存储以观测析构后的非法使用。
  void broadcastBIN(uint8_t* data,size_t n){block(1);if(!this||!alive)bad=true;else{assert(n<=1200);total+=n;received.append((const char*)data,n);}}
  void broadcastTXT(const String&){}
+ void sendTXT(long,const String&){block(3);if(!alive)bad=true;}
  void loop(){block(2);if(!alive)bad=true;}
 };
-struct WebServer{void handleClient(){}};
+struct FakeClient{int available(){return 0;}};
+struct WebServer{void handleClient(){} FakeClient client(){return {};} void send(int,const char*,const char*){}};
 namespace WebUI {
 struct COMMANDS{static void wait(int){}};
 class Web_Server {
@@ -61,6 +64,7 @@ public:
  static bool _setupdone;static long _id_connection;
  static WebSocketsServer* _socket_server;static WebServer* _webserver;
  void end();void handle();
+ static void pushError(int code,const char* st,bool web_error,uint16_t timeout);
 };
 bool Web_Server::_setupdone=true;long Web_Server::_id_connection=0;
 WebSocketsServer* Web_Server::_socket_server=nullptr;WebServer* Web_Server::_webserver=nullptr;
@@ -94,6 +98,19 @@ int main(int argc,char**argv){
    assert(Serial2Socket.write((const uint8_t*)payload.data(),payload.size())==payload.size());
    Serial2Socket.flush();assert(!bad&&received=="prefix"+payload&&total==6+n);
  }}
+ if(scenario==6){
+  // 回归：pushError 必须在 WebSocketAccessGuard 下解 _socket_server->loop()，
+  // 否则并发 end() 会 delete 掉对象导致 loop() 命中 !alive（UAF）。
+  block_kind=2;
+  std::thread writer([&]{Web_Server::pushError(1,"boom",false,5);});
+  {std::unique_lock<std::mutex> l(mx);assert(cv.wait_for(l,std::chrono::seconds(2),[]{return entered;}));}
+  std::promise<void> started;
+  auto closer=std::async(std::launch::async,[&]{started.set_value();web.end();});
+  started.get_future().wait();
+  bool blocked=closer.wait_for(std::chrono::milliseconds(80))==std::future_status::timeout;
+  {std::lock_guard<std::mutex> l(mx);released=true;}cv.notify_all();writer.join();closer.get();
+  assert(blocked&&!bad&&destroyed);
+ }
  return 0;
 }
 '''
@@ -107,7 +124,7 @@ class WebSocketLifecycleTest(unittest.TestCase):
         cpp=(base/"Serial2Socket.cpp").read_text(encoding="utf-8")
         web=(base/"WebServer.cpp").read_text(encoding="utf-8")
         strip=lambda text:re.sub(r"(?m)^\s*#\s*(?:include|pragma)[^\n]*$","",text)
-        program=STUB+strip(header)+strip(cpp)+"\nnamespace WebUI {\n"+function(web,"void Web_Server::end()")+function(web,"void Web_Server::handle()")+"\n}\n"+MAIN
+        program=STUB+strip(header)+strip(cpp)+"\nnamespace WebUI {\n"+function(web,"void Web_Server::end()")+function(web,"void Web_Server::handle()")+function(web,"void Web_Server::pushError(")+"\n}\n"+MAIN
         path=Path(cls.temp.name)/"test.cpp";path.write_text(program,encoding="utf-8")
         cls.exe=path.with_suffix(".exe" if os.name=="nt" else "")
         compiler=os.environ.get("CXX") or shutil.which("g++")
@@ -122,5 +139,6 @@ class WebSocketLifecycleTest(unittest.TestCase):
     def test_end_waits_for_loop(self):self.check(3)
     def test_repeated_service_recreation(self):self.check(4)
     def test_oversized_output_is_fully_sent(self):self.check(5)
+    def test_end_waits_for_pusherror(self):self.check(6)
 
 if __name__=="__main__":unittest.main()

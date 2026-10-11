@@ -922,6 +922,9 @@ namespace WebUI {
 
     //push error code and message to websocket
     void Web_Server::pushError(int code, const char* st, bool web_error, uint16_t timeout) {
+        // 与 end() 的 detachWS/delete 互斥：先取递归锁再解 _socket_server，
+        // 避免 sendTXT/loop() 跨任务与 Web_Server::end() 的删除竞争造成 UAF。
+        WebSocketAccessGuard lock;
         if (_socket_server && st) {
             String s = "ERROR:" + String(code) + ":";
             s += st;
