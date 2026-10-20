@@ -44,6 +44,7 @@ bool has_terminator=true;int copied_length=0,parsed=0;
 namespace WebUI {
 enum class AuthenticationLevel{LEVEL_GUEST,LEVEL_USER};
 struct ESPResponseStream {
+    ESPResponseStream()=default;
     explicit ESPResponseStream(HTTP*){}
     bool anyOutput(){return false;}void flush(){}
 };

@@ -486,7 +486,8 @@ namespace WebUI {
             }
             // 长命令整条拒绝，合法命令连同NUL复制，禁止静默截断或扫描栈残留。
             memcpy(line, cmd.c_str(), cmd.length() + 1);
-            ESPResponseStream* espresponse = silent ? NULL : new ESPResponseStream(_webserver);
+            // 静默查询仍需要有效对象；默认构造的 CLIENT_INPUT 会丢弃输出。
+            ESPResponseStream* espresponse = silent ? new ESPResponseStream() : new ESPResponseStream(_webserver);
             Error              err         = system_execute_line(line, espresponse, auth_level);
             String             answer;
             if (err == Error::Ok) {
