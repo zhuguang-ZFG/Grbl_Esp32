@@ -277,6 +277,16 @@ namespace WebUI {
         }
     }
 
+    bool Telnet_Server::executeRealtimeForSession(uint8_t data, uint32_t session, void (*execute)(uint8_t, uint8_t)) {
+        // 会话失效与实时提交共用 Telnet 锁；不在 Serial 自旋临界区中做网络输出。
+        TelnetClientLock lock;
+        if (!_setupdone || session != _session) {
+            return false;
+        }
+        execute(data, CLIENT_TELNET);
+        return true;
+    }
+
     int Telnet_Server::peek(void) {
         TelnetClientLock lock;
         if (_RXbufferSize > 0) {

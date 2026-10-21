@@ -206,7 +206,17 @@ void clientCheckTask(void* pvParameters) {
             // Pick off realtime command characters directly from the serial stream. These characters are
             // not passed into the main buffer, but these set system state flag bits for realtime execution.
             if (is_realtime_command(data)) {
-                execute_realtime_command(static_cast<Cmd>(data), client);
+#if defined(ENABLE_WIFI) && defined(ENABLE_TELNET)
+                if (client == CLIENT_TELNET) {
+                    WebUI::telnet_server.executeRealtimeForSession(
+                        data, session, [](uint8_t value, uint8_t target) {
+                            execute_realtime_command(static_cast<Cmd>(value), target);
+                        });
+                } else
+#endif
+                {
+                    execute_realtime_command(static_cast<Cmd>(data), client);
+                }
             } else {
 #if defined(ENABLE_SD_CARD)
                 if (get_sd_state(false) < SDState::Busy) {
