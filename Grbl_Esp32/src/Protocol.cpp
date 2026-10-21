@@ -37,9 +37,11 @@ static uint8_t comment_char_counter = 0;
 static uint32_t last_bt_eol_ms = 0;
 
 typedef struct {
-    char buffer[LINE_BUFFER_SIZE];
-    int  len;
-    int  line_number;
+    char     buffer[LINE_BUFFER_SIZE];
+    int      len;
+    int      line_number;
+    uint32_t rx_epoch;
+    bool     discard_until_eol;
 } client_line_t;
 client_line_t client_lines[CLIENT_COUNT];
 
@@ -51,11 +53,22 @@ static void empty_line(uint8_t client) {
 static void empty_lines() {
     for (uint8_t client = 0; client < CLIENT_COUNT; client++) {
         empty_line(client);
+        client_lines[client].discard_until_eol = false;
     }
 }
 
 Error add_char_to_line(char c, uint8_t client) {
     client_line_t* cl = &client_lines[client];
+    // 超长行已报错：丢弃本物理行剩余普通字符（含退格），直到 CR/LF。
+    if (cl->discard_until_eol) {
+        if (c != '\r' && c != '\n') {
+            return Error::Ok;
+        }
+        cl->discard_until_eol = false;
+        cl->len               = 0;
+        cl->line_number++;
+        return Error::Eol;
+    }
     // Simple editing for interactive input
     if (c == '\b') {
         // Backspace erases
@@ -147,10 +160,18 @@ static void protocol_notify_paper_motion_deferred(void) {
 
 // 从指定 client 读入并执行；若完整执行了一行 G 代码则返回 true
 static bool protocol_poll_client(uint8_t client) {
-    int     c;
-    bool    line_executed = false;
-    char*   line;
-    while ((c = client_read(client)) != -1) {
+    int      c;
+    bool     line_executed = false;
+    char*    line;
+    uint32_t rx_epoch = 0;
+    while ((c = client_read(client, rx_epoch)) != -1) {
+        client_line_t* cl = &client_lines[client];
+        if (client == CLIENT_TELNET && cl->rx_epoch != rx_epoch) {
+            // 换连后先清旧半行与丢弃状态，再接收新会话字节。
+            cl->rx_epoch          = rx_epoch;
+            empty_line(client);
+            cl->discard_until_eol = false;
+        }
         Error res = add_char_to_line(c, client);
         switch (res) {
             case Error::Ok:
@@ -216,6 +237,10 @@ static bool protocol_poll_client(uint8_t client) {
                     paper_bt_on_first_host_ack();
                 }
                 empty_line(client);
+                // 触发溢出的 CR/LF 是行边界，不能把下一行也吞掉。
+                if (c != '\r' && c != '\n') {
+                    cl->discard_until_eol = true;
+                }
                 break;
             default:
                 break;

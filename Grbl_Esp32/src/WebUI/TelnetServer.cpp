@@ -73,8 +73,19 @@ namespace WebUI {
     };
 
     Telnet_Server::Telnet_Server() {
+        _rx_active    = false;
+        _rx_epoch     = 0;
         _RXbufferSize = 0;
         _RXbufferpos  = 0;
+    }
+
+    // 调用者持有 TelnetClientLock；锁序固定 Telnet -> Serial(myMutex)。
+    void Telnet_Server::reset_rx() {
+        TelnetClientLock lock;
+        _RXbufferSize = 0;
+        _RXbufferpos  = 0;
+        _rx_active    = false;
+        _rx_epoch     = client_begin_session(CLIENT_TELNET);
     }
 
     bool Telnet_Server::begin() {
@@ -102,9 +113,8 @@ namespace WebUI {
 
     void Telnet_Server::end() {
         TelnetClientLock lock;
-        _setupdone    = false;
-        _RXbufferSize = 0;
-        _RXbufferpos  = 0;
+        _setupdone = false;
+        reset_rx();
         // 删除监听者不会关闭已接入连接；重开服务前必须释放旧 session 的唯一槽位。
         for (uint8_t i = 0; i < MAX_TLNT_CLIENTS; ++i) {
             _telnetClients[i].stop();
@@ -128,10 +138,17 @@ namespace WebUI {
 #    ifdef ENABLE_TELNET_WELCOME_MSG
                     _telnetClientsIP[i] = IPAddress(0, 0, 0, 0);
 #    endif
+                    if (_rx_active) {
+                        reset_rx();
+                    }
                     if (_telnetClients[i]) {
                         _telnetClients[i].stop();
                     }
                     _telnetClients[i] = _telnetserver->available();
+                    // hasClient() 已确认有新连接，不能再用 operator bool 二次判断。
+                    // 新会话从干净的网络环/Serial 队列/协议半行开始。
+                    reset_rx();
+                    _rx_active = true;
                     // hutuji §9-A：半开死连接回收（只开 SO_KEEPALIVE 无效，须显式三参数）
                     // ~KEEPIDLE 10 + 3×KEEPINTVL ≈ 19s 发现对端掉电/NAT 超时
                     // R20-GW-01：四个 setsockopt 逐个查返回值——静默失败 = keepalive 没设上
@@ -189,6 +206,7 @@ namespace WebUI {
                     log_w("[TELNET] write timeout sent=%u/%u", static_cast<unsigned>(wsize),
                           static_cast<unsigned>(size));
                     _telnetClients[i].stop();
+                    reset_rx();
                     return 0;
                 }
                 const int written = send(socket, buffer + wsize, size - wsize, MSG_DONTWAIT);
@@ -205,6 +223,7 @@ namespace WebUI {
                 log_w("[TELNET] write failed n=%d errno=%d sent=%u/%u", written, send_errno,
                       static_cast<unsigned>(wsize), static_cast<unsigned>(size));
                 _telnetClients[i].stop();
+                reset_rx();
                 return 0;
             }
         }
@@ -256,12 +275,16 @@ namespace WebUI {
 #    endif
                     _telnetClients[i].stop();
                 }
+                if (_rx_active) {
+                    reset_rx();
+                }
             }
             COMMANDS::wait(0);
         }
     }
 
     int Telnet_Server::peek(void) {
+        TelnetClientLock lock;
         if (_RXbufferSize > 0) {
             return _RXbuffer[_RXbufferpos];
         } else {
@@ -269,11 +292,18 @@ namespace WebUI {
         }
     }
 
-    int Telnet_Server::available() { return _RXbufferSize; }
+    int Telnet_Server::available() {
+        TelnetClientLock lock;
+        return _RXbufferSize;
+    }
 
-    int Telnet_Server::get_rx_buffer_available() { return TELNETRXBUFFERSIZE - _RXbufferSize; }
+    int Telnet_Server::get_rx_buffer_available() {
+        TelnetClientLock lock;
+        return TELNETRXBUFFERSIZE - _RXbufferSize;
+    }
 
     bool Telnet_Server::push(uint8_t data) {
+        TelnetClientLock lock;
         log_i("[TELNET]push %c", data);
         if ((1 + _RXbufferSize) <= TELNETRXBUFFERSIZE) {
             int current = _RXbufferpos + _RXbufferSize;
@@ -292,6 +322,7 @@ namespace WebUI {
     }
 
     bool Telnet_Server::push(const uint8_t* data, int data_size) {
+        TelnetClientLock lock;
         if ((data_size + _RXbufferSize) <= TELNETRXBUFFERSIZE) {
             int data_processed = 0;
             int current        = _RXbufferpos + _RXbufferSize;
@@ -316,7 +347,9 @@ namespace WebUI {
         return false;
     }
 
-    int Telnet_Server::read(void) {
+    int Telnet_Server::read(uint32_t& rx_epoch) {
+        TelnetClientLock lock;
+        rx_epoch = _rx_epoch;
         if (_RXbufferSize > 0) {
             int v = _RXbuffer[_RXbufferpos];
             //log_d("[TELNET]read %c",char(v));

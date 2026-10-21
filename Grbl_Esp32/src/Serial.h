@@ -39,7 +39,11 @@ void clientCheckTask(void* pvParameters);
 void client_write(uint8_t client, const char* text);
 
 // Fetches the first byte in the serial read buffer. Called by main program.
-int client_read(uint8_t client);
+// rx_epoch 标识 Telnet 会话代次；其他 client 恒为 0。
+int client_read(uint8_t client, uint32_t& rx_epoch);
+
+// 开始新会话：清空该 client 已排队的字节，并返回递增后的会话代次。
+uint32_t client_begin_session(uint8_t client);
 
 // See if the character is an action command like feedhold or jogging. If so, do the action and return true
 uint8_t check_action_command(uint8_t data);

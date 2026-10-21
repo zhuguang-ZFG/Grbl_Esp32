@@ -69,6 +69,37 @@ static TaskHandle_t clientCheckTaskHandle = 0;
 
 WebUI::InputBuffer client_buffer[CLIENT_COUNT];  // create a buffer for each client
 
+// Telnet 换连/断开/写失败时递增会话代次，并只清该 client 已排队的字节。
+// 网络线程不得直接改协议半行；协议线程看到代次变化后清自己的半行状态。
+static uint32_t client_session_generation[CLIENT_COUNT] = {};
+
+uint32_t client_begin_session(uint8_t client) {
+    vTaskEnterCritical(&myMutex);
+    client_buffer[client].begin();
+    const uint32_t session = ++client_session_generation[client];
+    vTaskExitCritical(&myMutex);
+    return session;
+}
+
+static bool client_byte_is_current(uint8_t client, uint32_t session) {
+    if (client != CLIENT_TELNET) {
+        return true;
+    }
+    vTaskEnterCritical(&myMutex);
+    const bool current = session == client_session_generation[client];
+    vTaskExitCritical(&myMutex);
+    return current;
+}
+
+static bool client_accept_byte(uint8_t client, uint8_t data, uint32_t session) {
+    vTaskEnterCritical(&myMutex);
+    // 代次与入队必须在同一临界区：旧连接已读出网络环、尚未入队的字节不得混入新会话。
+    const bool accepted =
+        (client != CLIENT_TELNET || session == client_session_generation[client]) && client_buffer[client].write(data);
+    vTaskExitCritical(&myMutex);
+    return accepted;
+}
+
 // Returns the number of bytes available in a client buffer.
 uint8_t client_get_rx_buffer_available(uint8_t client) {
 #ifdef REVERT_TO_ARDUINO_SERIAL
@@ -128,8 +159,9 @@ void client_init() {
     );
 }
 
-static uint8_t getClientChar(uint8_t* data) {
+static uint8_t getClientChar(uint8_t* data, uint32_t& rx_epoch) {
     int res;
+    rx_epoch = 0;
 #ifdef REVERT_TO_ARDUINO_SERIAL
     if (client_buffer[CLIENT_SERIAL].availableforwrite() && (res = Serial.read()) != -1) {
 #else
@@ -158,9 +190,13 @@ static uint8_t getClientChar(uint8_t* data) {
     }
 #endif
 #if defined(ENABLE_WIFI) && defined(ENABLE_TELNET)
-    if (WebUI::telnet_server.available()) {
-        *data = WebUI::telnet_server.read();
-        return CLIENT_TELNET;
+    {
+        // 一次取出字节与代次，避免 available()/read() 之间被换连清空。
+        const int telnet_byte = WebUI::telnet_server.read(rx_epoch);
+        if (telnet_byte != -1) {
+            *data = telnet_byte;
+            return CLIENT_TELNET;
+        }
     }
 #endif
     return CLIENT_ALL;
@@ -171,9 +207,14 @@ static uint8_t getClientChar(uint8_t* data) {
 void clientCheckTask(void* pvParameters) {
     uint8_t            data = 0;
     uint8_t            client;  // who sent the data
+    uint32_t           rx_epoch = 0;
     static UBaseType_t uxHighWaterMark = 0;
     while (true) {  // run continuously
-        while ((client = getClientChar(&data)) != CLIENT_ALL) {
+        while ((client = getClientChar(&data, rx_epoch)) != CLIENT_ALL) {
+            // 旧 Telnet 会话已读出网络环、尚未入队的字节不得进入新会话。
+            if (!client_byte_is_current(client, rx_epoch)) {
+                continue;
+            }
             // Pick off realtime command characters directly from the serial stream. These characters are
             // not passed into the main buffer, but these set system state flag bits for realtime execution.
             if (is_realtime_command(data)) {
@@ -182,9 +223,7 @@ void clientCheckTask(void* pvParameters) {
 #if defined(ENABLE_SD_CARD)
                 if (get_sd_state(false) < SDState::Busy) {
 #endif  //ENABLE_SD_CARD
-                    vTaskEnterCritical(&myMutex);
-                    client_buffer[client].write(data);
-                    vTaskExitCritical(&myMutex);
+                    client_accept_byte(client, data, rx_epoch);
 #if defined(ENABLE_SD_CARD)
                 } else {
                     if (data == '\r' || data == '\n') {
@@ -228,8 +267,9 @@ void client_reset_read_buffer(uint8_t client) {
 }
 
 // Fetches the first byte in the client read buffer. Called by protocol loop.
-int client_read(uint8_t client) {
+int client_read(uint8_t client, uint32_t& rx_epoch) {
     vTaskEnterCritical(&myMutex);
+    rx_epoch = client == CLIENT_TELNET ? client_session_generation[client] : 0;
     int data = client_buffer[client].read();
     vTaskExitCritical(&myMutex);
     return data;
