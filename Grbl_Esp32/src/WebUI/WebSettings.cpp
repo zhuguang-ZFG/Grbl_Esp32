@@ -220,7 +220,8 @@ Error WebCommand::action(char* value, WebUI::AuthenticationLevel auth_level, Web
     if (!value) {
         value = &empty;
     }
-    WebUI::WebCommandContext context(out);
+    WebUI::ESPResponseStream discarded;
+    WebUI::WebCommandContext context(out ? out : &discarded);
     return _action(value, auth_level);
 };
 
