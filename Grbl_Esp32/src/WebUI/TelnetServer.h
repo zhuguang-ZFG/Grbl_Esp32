@@ -42,6 +42,7 @@ namespace WebUI {
         size_t write(const uint8_t* buffer, size_t size);
         int    read(uint32_t& rx_epoch);
         int    peek(void);
+        bool   executeRealtimeForSession(uint8_t data, uint32_t session, void (*execute)(uint8_t, uint8_t));
         int    available();
         int    get_rx_buffer_available();
         bool   push(uint8_t data);
