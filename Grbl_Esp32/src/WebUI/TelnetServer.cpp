@@ -77,6 +77,14 @@ namespace WebUI {
         _RXbufferpos  = 0;
     }
 
+    void Telnet_Server::reset_rx() {
+        TelnetClientLock lock;
+        _RXbufferSize = 0;
+        _RXbufferpos = 0;
+        _rx_active = false;
+        _session = client_begin_session(CLIENT_TELNET);
+    }
+
     bool Telnet_Server::begin() {
         TelnetClientLock lock;
         bool no_error = true;
@@ -104,10 +112,8 @@ namespace WebUI {
 
     void Telnet_Server::end() {
         TelnetClientLock lock;
-        _session      = client_begin_session(CLIENT_TELNET);
-        _setupdone    = false;
-        _RXbufferSize = 0;
-        _RXbufferpos  = 0;
+        reset_rx();
+        _setupdone = false;
         // 删除监听者不会关闭已接入连接；重开服务前必须释放旧 session 的唯一槽位。
         for (uint8_t i = 0; i < MAX_TLNT_CLIENTS; ++i) {
             _telnetClients[i].stop();
@@ -135,10 +141,9 @@ namespace WebUI {
                     if (_telnetClients[i]) {
                         _telnetClients[i].stop();
                     }
-                    _RXbufferSize     = 0;
-                    _RXbufferpos      = 0;
-                    _session          = client_begin_session(CLIENT_TELNET);
+                    reset_rx();
                     _telnetClients[i] = _telnetserver->available();
+                    _rx_active = true;
                     // hutuji §9-A：半开死连接回收（只开 SO_KEEPALIVE 无效，须显式三参数）
                     // ~KEEPIDLE 10 + 3×KEEPINTVL ≈ 19s 发现对端掉电/NAT 超时
                     // R20-GW-01：四个 setsockopt 逐个查返回值——静默失败 = keepalive 没设上
@@ -196,9 +201,7 @@ namespace WebUI {
                     log_w("[TELNET] write timeout sent=%u/%u", static_cast<unsigned>(wsize),
                           static_cast<unsigned>(size));
                     _telnetClients[i].stop();
-                    _RXbufferSize = 0;
-                    _RXbufferpos  = 0;
-                    _session      = client_begin_session(CLIENT_TELNET);
+                    reset_rx();
                     return 0;
                 }
                 const int written = send(socket, buffer + wsize, size - wsize, MSG_DONTWAIT);
@@ -215,9 +218,7 @@ namespace WebUI {
                 log_w("[TELNET] write failed n=%d errno=%d sent=%u/%u", written, send_errno,
                       static_cast<unsigned>(wsize), static_cast<unsigned>(size));
                 _telnetClients[i].stop();
-                _RXbufferSize = 0;
-                _RXbufferpos  = 0;
-                _session      = client_begin_session(CLIENT_TELNET);
+                reset_rx();
                 return 0;
             }
         }
@@ -268,9 +269,11 @@ namespace WebUI {
                     _telnetClientsIP[i] = IPAddress(0, 0, 0, 0);
 #    endif
                     _telnetClients[i].stop();
-                    _RXbufferSize = 0;
-                    _RXbufferpos  = 0;
-                    _session      = client_begin_session(CLIENT_TELNET);
+                }
+                // Arduino bool 已等于 disconnected；失效必须由独立活跃标记决定。
+                if (_rx_active) {
+                    _telnetClients[i].stop();
+                    reset_rx();
                 }
             }
             COMMANDS::wait(0);
@@ -280,7 +283,7 @@ namespace WebUI {
     bool Telnet_Server::executeRealtimeForSession(uint8_t data, uint32_t session, void (*execute)(uint8_t, uint8_t)) {
         // 会话失效与实时提交共用 Telnet 锁；不在 Serial 自旋临界区中做网络输出。
         TelnetClientLock lock;
-        if (!_setupdone || session != _session) {
+        if (!_setupdone || !_rx_active || session != _session) {
             return false;
         }
         execute(data, CLIENT_TELNET);

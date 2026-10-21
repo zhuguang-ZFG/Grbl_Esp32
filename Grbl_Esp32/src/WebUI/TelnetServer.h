@@ -62,9 +62,11 @@ namespace WebUI {
         static uint16_t _port;
 
         void clearClients();
+        void reset_rx();
 
         uint32_t _lastflush;
         uint32_t _session = 0;
+        bool _rx_active = false;
         uint8_t  _RXbuffer[TELNETRXBUFFERSIZE];
         uint16_t _RXbufferSize;
         uint16_t _RXbufferpos;

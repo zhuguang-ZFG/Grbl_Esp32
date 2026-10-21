@@ -65,6 +65,8 @@ public:
     WiFiClient _telnetClients[MAX_TLNT_CLIENTS];
     int _RXbufferSize = 0, _RXbufferpos = 0;
     uint32_t _session=0;
+    bool _rx_active = false;
+    void reset_rx();
     std::vector<uint8_t> pushed;
     void clearClients() {}
     int available() const { return _RXbufferSize; }
@@ -77,7 +79,7 @@ public:
     void handle();
     void end();
 };
-''' + function_body(source, 'void Telnet_Server::handle()') + '\n' + function_body(source, 'void Telnet_Server::end()') + r'''
+''' + function_body(source, 'void Telnet_Server::reset_rx()') + '\n' + function_body(source, 'void Telnet_Server::handle()') + '\n' + function_body(source, 'void Telnet_Server::end()') + r'''
 int main(int argc, char** argv) {
     assert(argc == 2);
     const int scenario = std::atoi(argv[1]);
