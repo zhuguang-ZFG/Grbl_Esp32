@@ -62,3 +62,6 @@ COM*.txt
 # Host sim lives in fz; do not track under this firmware tree
 /tools/
 /docs/superpowers/
+
+# clangd tooling config (machine-specific paths)
+.clangd
