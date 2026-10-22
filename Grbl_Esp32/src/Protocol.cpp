@@ -86,6 +86,18 @@ Error add_char_to_line(char c, uint8_t client) {
     return Error::Ok;
 }
 
+// RAII 结算已领取行；允许实时检查/规划器等待期间网络会话独立失效。
+class ClientCommandOwner {
+public:
+    ClientCommandOwner(uint8_t client, uint32_t session)
+        : client_(client), accepted_(client_claim_command(client, session)) {}
+    ~ClientCommandOwner() { if (accepted_) client_release_command(client_); }
+    explicit operator bool() const { return accepted_; }
+private:
+    uint8_t client_;
+    bool accepted_;
+};
+
 Error execute_line(char* line, uint8_t client, WebUI::AuthenticationLevel auth_level) {
     Error result = Error::Ok;
     // Empty or comment line. For syncing purposes.
@@ -183,7 +195,8 @@ void protocol_main_loop() {
         uint8_t client = CLIENT_SERIAL;
         char*   line;
         for (client = 0; client < CLIENT_COUNT; client++) {
-            while ((c = client_read(client)) != -1) {
+            uint32_t rx_session = 0;
+            while ((c = client_read(client, &rx_session)) != -1) {
                 // 会话屏障由串口队列原子发布；半行仅由协议线程清理。
                 if (c == -2) {
                     empty_line(client);
@@ -194,10 +207,15 @@ void protocol_main_loop() {
                 switch (res) {
                     case Error::Ok:
                         break;
-                    case Error::Eol:
+                    case Error::Eol: {
                         protocol_execute_realtime();  // Runtime command check point.
                         if (sys.abort) {
                             return;  // Bail to calling function upon system abort
+                        }
+                        ClientCommandOwner owner(client, rx_session);
+                        if (!owner) {
+                            empty_line(client);
+                            break;
                         }
                         line = client_lines[client].buffer;
 #ifdef REPORT_ECHO_RAW_LINE_RECEIVED
@@ -207,6 +225,7 @@ void protocol_main_loop() {
                         report_status_message(execute_line(line, client, WebUI::AuthenticationLevel::LEVEL_GUEST), client);
                         empty_line(client);
                         break;
+                    }
                     case Error::Overflow:
                         report_status_message(Error::Overflow, client);
                         empty_line(client);

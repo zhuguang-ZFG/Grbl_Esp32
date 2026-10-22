@@ -71,6 +71,23 @@ WebUI::InputBuffer client_buffer[CLIENT_COUNT];  // create a buffer for each cli
 static uint32_t    client_session_generation[CLIENT_COUNT] = {};
 static uint32_t    client_session_seen[CLIENT_COUNT]       = {};
 
+// 领取即普通命令的提交点：失效仅撤销未领取字节，不打断已领取执行者。
+static uint32_t client_command_owners[CLIENT_COUNT] = {};
+bool client_claim_command(uint8_t client, uint32_t session) {
+    if (client != CLIENT_TELNET) return true;
+    vTaskEnterCritical(&myMutex);
+    const bool accepted = client_session_generation[client] == session;
+    if (accepted) ++client_command_owners[client];
+    vTaskExitCritical(&myMutex);
+    return accepted;
+}
+void client_release_command(uint8_t client) {
+    if (client != CLIENT_TELNET) return;
+    vTaskEnterCritical(&myMutex);
+    --client_command_owners[client];
+    vTaskExitCritical(&myMutex);
+}
+
 uint32_t client_begin_session(uint8_t client) {
     vTaskEnterCritical(&myMutex);
     client_buffer[client].begin();
@@ -266,8 +283,9 @@ void client_reset_read_buffer(uint8_t client) {
 }
 
 // Fetches the first byte in the client read buffer. Called by protocol loop.
-int client_read(uint8_t client) {
+int client_read(uint8_t client, uint32_t* session) {
     vTaskEnterCritical(&myMutex);
+    if (session != nullptr) *session = client_session_generation[client];
     int data;
     if (client_session_seen[client] != client_session_generation[client]) {
         client_session_seen[client] = client_session_generation[client];

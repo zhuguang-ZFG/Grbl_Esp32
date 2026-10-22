@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[2]
 class TelnetSessionTest(unittest.TestCase):
     def test_session_boundaries(self):
         source=program().split('int main(')[0]
-        source=source.replace('int client_read(uint8_t client){return client==active_client&&cursor<input.size()?input[cursor++]:-1;}','int client_read(uint8_t);')
+        source=source.replace('int client_read(uint8_t client,uint32_t* session=nullptr){if(session)*session=0;return client==active_client&&cursor<input.size()?input[cursor++]:-1;}','int client_read(uint8_t,uint32_t* session=nullptr);')
         serial=(ROOT/'Grbl_Esp32/src/Serial.cpp').read_text(encoding='utf-8')
         methods='\n'.join(function(serial,s) for s in ('uint32_t client_begin_session(', 'bool client_session_current(', 'void client_write_session(', 'int client_read('))
         prefix=r"""

@@ -32,7 +32,7 @@ def program():
     int read(uint32_t* session);bool executeRealtimeForSession(uint8_t,uint32_t,void(*)(uint8_t,uint8_t));
     bool _rx_active=true;void reset_rx();
     void push(const uint8_t*,int){}void handle();};
-    ''' + function(serial,'uint32_t client_begin_session(')+function(serial,'void client_write_session(')+function(serial,'int client_read(')+function(telnet,'void Telnet_Server::reset_rx()')+function(telnet,'void Telnet_Server::handle()')+function(telnet,'int Telnet_Server::read(')+function(telnet,'bool Telnet_Server::executeRealtimeForSession(')+r'''
+    ''' + 'int client_read(uint8_t,uint32_t* session=nullptr);\n' + function(serial,'uint32_t client_begin_session(')+function(serial,'void client_write_session(')+function(serial,'int client_read(')+function(telnet,'void Telnet_Server::reset_rx()')+function(telnet,'void Telnet_Server::handle()')+function(telnet,'int Telnet_Server::read(')+function(telnet,'bool Telnet_Server::executeRealtimeForSession(')+r'''
     int dispatches=0;
     int main(){
      WiFiServer listener;Telnet_Server server;server._telnetserver=&listener;

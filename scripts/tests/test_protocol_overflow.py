@@ -27,7 +27,8 @@ std::vector<std::string> commands;
 int errors=0;
 std::string input;size_t cursor=0;
 int active_client=0;
-int client_read(uint8_t client){return client==active_client&&cursor<input.size()?input[cursor++]:-1;}
+int client_read(uint8_t client,uint32_t* session=nullptr){if(session)*session=0;return client==active_client&&cursor<input.size()?input[cursor++]:-1;}
+bool client_claim_command(uint8_t,uint32_t){return true;}void client_release_command(uint8_t){}
 void protocol_execute_realtime(){}
 void report_status_message(Error error,uint8_t){if(error==Error::Overflow)++errors;}
 Error system_execute_line(char* line,uint8_t,WebUI::AuthenticationLevel){commands.emplace_back(line);return Error::Ok;}
@@ -66,7 +67,8 @@ def program():
     methods='\n'.join(function(source,n) for n in ('static void empty_line(', 'static void empty_lines(', 'Error add_char_to_line(', 'Error execute_line('))
     a=source.index('        for (client = 0; client < CLIENT_COUNT; client++) {',source.index('void protocol_main_loop()'))
     b=source.index('        // If there are no more characters',a)
-    return stub+methods+'\nvoid pump(){int c;uint8_t client;char* line;\n'+source[a:b]+'}\n'+MAIN
+    guard=source[source.index('class ClientCommandOwner {'):source.index('Error execute_line(')]
+    return stub+guard+methods+'\nvoid pump(){int c;uint8_t client;char* line;\n'+source[a:b]+'}\n'+MAIN
 
 class RegressionTest(unittest.TestCase):
     @classmethod
