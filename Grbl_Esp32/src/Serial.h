@@ -48,6 +48,9 @@ uint32_t client_begin_session(uint8_t client);
 // See if the character is an action command like feedhold or jogging. If so, do the action and return true
 uint8_t check_action_command(uint8_t data);
 
+// 普通行执行者持有领取直到返回；执行过程不占 Serial 或 Telnet 锁。
+bool client_claim_command(uint8_t client, uint32_t session);
+void client_release_command(uint8_t client);
 void client_init();
 void client_reset_read_buffer(uint8_t client);
 

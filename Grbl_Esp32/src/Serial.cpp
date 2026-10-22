@@ -73,6 +73,23 @@ WebUI::InputBuffer client_buffer[CLIENT_COUNT];  // create a buffer for each cli
 // 网络线程不得直接改协议半行；协议线程看到代次变化后清自己的半行状态。
 static uint32_t client_session_generation[CLIENT_COUNT] = {};
 
+// 领取即普通命令的提交点：失效仅撤销未领取字节，不打断已领取执行者。
+static uint32_t client_command_owners[CLIENT_COUNT] = {};
+bool client_claim_command(uint8_t client, uint32_t session) {
+    if (client != CLIENT_TELNET) return true;
+    vTaskEnterCritical(&myMutex);
+    const bool accepted = client_session_generation[client] == session;
+    if (accepted) ++client_command_owners[client];
+    vTaskExitCritical(&myMutex);
+    return accepted;
+}
+void client_release_command(uint8_t client) {
+    if (client != CLIENT_TELNET) return;
+    vTaskEnterCritical(&myMutex);
+    --client_command_owners[client];
+    vTaskExitCritical(&myMutex);
+}
+
 uint32_t client_begin_session(uint8_t client) {
     vTaskEnterCritical(&myMutex);
     client_buffer[client].begin();

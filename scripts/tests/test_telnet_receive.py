@@ -463,7 +463,7 @@ static void protocol_execute_realtime() {}
             function_body(source, 'static void empty_lines()') + '\n' + \
             function_body(source, 'Error add_char_to_line(char c, uint8_t client)') + '\n' + \
             function_body(source, 'static bool protocol_line_is_motion_gcode_g0_g3(const char* line)') + '\n' + \
-            function_body(source, 'static bool protocol_poll_client(uint8_t client)') + r'''
+            'bool client_claim_command(uint8_t,uint32_t){return true;}void client_release_command(uint8_t){}\n' + source[source.index('class ClientCommandOwner {'):source.index('Error execute_line(')] + '\n' + function_body(source, 'static bool protocol_poll_client(uint8_t client)') + r'''
 static void enqueue(uint8_t client, const char* text, uint32_t epoch) {
     for (const char* p = text; *p; ++p) queues[client].push_back({static_cast<uint8_t>(*p), epoch});
 }

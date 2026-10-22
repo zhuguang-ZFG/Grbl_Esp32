@@ -91,6 +91,18 @@ Error add_char_to_line(char c, uint8_t client) {
     return Error::Ok;
 }
 
+// RAII 结算已领取行；允许实时检查/规划器等待期间网络会话独立失效。
+class ClientCommandOwner {
+public:
+    ClientCommandOwner(uint8_t client, uint32_t session)
+        : client_(client), accepted_(client_claim_command(client, session)) {}
+    ~ClientCommandOwner() { if (accepted_) client_release_command(client_); }
+    explicit operator bool() const { return accepted_; }
+private:
+    uint8_t client_;
+    bool accepted_;
+};
+
 Error execute_line(char* line, uint8_t client, WebUI::AuthenticationLevel auth_level) {
     Error result = Error::Ok;
     // Empty or comment line. For syncing purposes.
@@ -176,10 +188,15 @@ static bool protocol_poll_client(uint8_t client) {
         switch (res) {
             case Error::Ok:
                 break;
-            case Error::Eol:
+            case Error::Eol: {
                 protocol_execute_realtime();
                 if (sys.abort) {
                     return line_executed;
+                }
+                ClientCommandOwner owner(client, rx_epoch);
+                if (!owner) {
+                    empty_line(client);
+                    break;
                 }
                 line = client_lines[client].buffer;
 #ifdef ENABLE_BLUETOOTH
@@ -231,6 +248,7 @@ static bool protocol_poll_client(uint8_t client) {
                 empty_line(client);
                 line_executed = true;
                 break;
+            }
             case Error::Overflow:
                 report_status_message(Error::Overflow, client);
                 if (client == CLIENT_BT) {
