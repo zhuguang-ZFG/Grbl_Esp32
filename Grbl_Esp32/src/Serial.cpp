@@ -76,6 +76,11 @@ static uint32_t client_command_owners[CLIENT_COUNT] = {};
 // F49-03：已领取命令的响应归属会话（0=无在途响应）。发送侧据此把旧 ok/error/
 // 多行结果挡在换连后的新连接之外；领取期间协议线程内的一切写出都属于该命令。
 static uint32_t client_response_session[CLIENT_COUNT] = {};
+// 2026-10-23 续修：标签只在领取任务内有效。clientCheckTask 的欢迎消息与 `?` 实时应答不属于
+// 任何已领取命令，不能因为别的任务持有领取就被送进旧会话而丢掉。
+// 不变量：领取/释放都由 Protocol 命令循环在同一任务内串行发生（ClientCommandOwner），
+// 每客户端至多一个领取任务；计数保留只为让测试里的重叠领取显式可见。
+static TaskHandle_t client_response_owner_task[CLIENT_COUNT] = {};
 bool client_claim_command(uint8_t client, uint32_t session) {
     if (client != CLIENT_TELNET) return true;
     vTaskEnterCritical(&myMutex);
@@ -83,6 +88,7 @@ bool client_claim_command(uint8_t client, uint32_t session) {
     if (accepted) {
         ++client_command_owners[client];
         client_response_session[client] = session;
+        client_response_owner_task[client] = xTaskGetCurrentTaskHandle();
     }
     vTaskExitCritical(&myMutex);
     return accepted;
@@ -90,14 +96,23 @@ bool client_claim_command(uint8_t client, uint32_t session) {
 void client_release_command(uint8_t client) {
     if (client != CLIENT_TELNET) return;
     vTaskEnterCritical(&myMutex);
-    --client_command_owners[client];
-    client_response_session[client] = 0;
+    // 只结算领取任务的领取；其他任务的释放不改计数，也不清标签。
+    if (client_command_owners[client] &&
+        client_response_owner_task[client] == xTaskGetCurrentTaskHandle()) {
+        --client_command_owners[client];
+        if (!client_command_owners[client]) {
+            client_response_session[client] = 0;
+            client_response_owner_task[client] = 0;
+        }
+    }
     vTaskExitCritical(&myMutex);
 }
 
 uint32_t client_response_tag(uint8_t client) {
     vTaskEnterCritical(&myMutex);
-    const uint32_t session = client_response_session[client];
+    const uint32_t session = client_response_owner_task[client] == xTaskGetCurrentTaskHandle()
+                                 ? client_response_session[client]
+                                 : 0;
     vTaskExitCritical(&myMutex);
     return session;
 }
