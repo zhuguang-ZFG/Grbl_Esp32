@@ -173,7 +173,6 @@ namespace WebUI {
 
     size_t Telnet_Server::write(const uint8_t* buffer, size_t size) {
         TelnetClientLock lock;
-        size_t wsize = 0;
         if (!_setupdone || _telnetserver == NULL) {
             log_d("[TELNET out blocked]");
             return 0;
@@ -181,7 +180,13 @@ namespace WebUI {
 
         clearClients();
 
-        // 可靠语义是「整段写出或明确断链」，不能在背压时静默截断 ok/状态行。
+        return write_locked(buffer, size);
+    }
+
+    // 可靠语义是「整段写出或明确断链」，不能在背压时静默截断 ok/状态行。
+    // 调用方须已持 TelnetClientLock 并完成收养（如需）；超时/失败收尾 stop+reset_rx。
+    size_t Telnet_Server::write_locked(const uint8_t* buffer, size_t size) {
+        size_t wsize = 0;
         for (uint8_t i = 0; i < MAX_TLNT_CLIENTS; i++) {
             if (!_telnetClients[i] || !_telnetClients[i].connected()) {
                 continue;
@@ -223,6 +228,21 @@ namespace WebUI {
             }
         }
         return wsize;
+    }
+
+    size_t Telnet_Server::write_for_session(const uint8_t* buffer, size_t size, uint32_t session) {
+        // F49-03：响应归属认领时的原会话。会话被 reset_rx() 换掉后，旧命令的
+        // ok/error/多行结果必须丢弃。核验与写出在同一把递归连接锁内。
+        // 故意不做 clearClients() 收养：收养会 bump 会话并换掉 slot，
+        // 正是本调用要挡在旧响应之外的交换；slot 已死则写出为空。
+        TelnetClientLock lock;
+        if (!_setupdone || _telnetserver == NULL) {
+            return 0;
+        }
+        if (session != _session) {
+            return 0;
+        }
+        return write_locked(buffer, size);
     }
 
     void Telnet_Server::handle() {

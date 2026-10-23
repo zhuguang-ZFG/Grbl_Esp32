@@ -73,11 +73,17 @@ static uint32_t    client_session_seen[CLIENT_COUNT]       = {};
 
 // 领取即普通命令的提交点：失效仅撤销未领取字节，不打断已领取执行者。
 static uint32_t client_command_owners[CLIENT_COUNT] = {};
+// F49-03：已领取命令的响应归属会话（0=无在途响应）。发送侧据此把旧 ok/error/
+// 多行结果挡在换连后的新连接之外；领取期间协议线程内的一切写出都属于该命令。
+static uint32_t client_response_session[CLIENT_COUNT] = {};
 bool client_claim_command(uint8_t client, uint32_t session) {
     if (client != CLIENT_TELNET) return true;
     vTaskEnterCritical(&myMutex);
     const bool accepted = client_session_generation[client] == session;
-    if (accepted) ++client_command_owners[client];
+    if (accepted) {
+        ++client_command_owners[client];
+        client_response_session[client] = session;
+    }
     vTaskExitCritical(&myMutex);
     return accepted;
 }
@@ -85,7 +91,15 @@ void client_release_command(uint8_t client) {
     if (client != CLIENT_TELNET) return;
     vTaskEnterCritical(&myMutex);
     --client_command_owners[client];
+    client_response_session[client] = 0;
     vTaskExitCritical(&myMutex);
+}
+
+uint32_t client_response_tag(uint8_t client) {
+    vTaskEnterCritical(&myMutex);
+    const uint32_t session = client_response_session[client];
+    vTaskExitCritical(&myMutex);
+    return session;
 }
 
 uint32_t client_begin_session(uint8_t client) {
@@ -430,7 +444,14 @@ void client_write(uint8_t client, const char* text) {
 #endif
 #if defined(ENABLE_WIFI) && defined(ENABLE_TELNET)
     if (client == CLIENT_TELNET || client == CLIENT_ALL) {
-        WebUI::telnet_server.write((const uint8_t*)text, strlen(text));
+        // F49-03：在途已领取命令的 ok/error/多行结果只回认领会话；无在途响应的
+        // 状态行/横幅仍走原广播路径。client==CLIENT_ALL 时 Telnet 侧同样按标签核验。
+        const uint32_t response_session = client_response_tag(CLIENT_TELNET);
+        if (response_session) {
+            WebUI::telnet_server.write_for_session((const uint8_t*)text, strlen(text), response_session);
+        } else {
+            WebUI::telnet_server.write((const uint8_t*)text, strlen(text));
+        }
     }
 #endif
     if (client == CLIENT_SERIAL || client == CLIENT_ALL) {

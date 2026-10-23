@@ -32,7 +32,7 @@ constexpr int CLIENT_TELNET=0;
 struct Buffer {std::deque<int> q;void begin(){q.clear();}void write(int c){q.push_back(c);}int read(){if(q.empty())return -1;int c=q.front();q.pop_front();return c;}};
 Buffer client_buffer[CLIENT_COUNT];
 uint32_t client_session_generation[CLIENT_COUNT]={},client_session_seen[CLIENT_COUNT]={};
-uint32_t client_command_owners[CLIENT_COUNT]={};int critical_depth=0;
+uint32_t client_command_owners[CLIENT_COUNT]={},client_response_session[CLIENT_COUNT]={};int critical_depth=0;
 int myMutex;void vTaskEnterCritical(int*){++critical_depth;}void vTaskExitCritical(int*){--critical_depth;}
 '''
     source += '\n'+function(serial,'bool client_claim_command(')+function(serial,'void client_release_command(')

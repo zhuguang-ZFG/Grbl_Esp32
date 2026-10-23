@@ -47,6 +47,9 @@ uint8_t check_action_command(uint8_t data);
 // 普通行执行者持有领取直到返回；执行过程不占 Serial 或 Telnet 锁。
 bool client_claim_command(uint8_t client, uint32_t session);
 void client_release_command(uint8_t client);
+// F49-03：已领取命令的响应归属会话（0=无在途响应）。client_write 据此把旧会话
+// 结果送 write_for_session 核验，换连后丢弃，不流入新连接。
+uint32_t client_response_tag(uint8_t client);
 void client_init();
 void client_reset_read_buffer(uint8_t client);
 uint32_t client_begin_session(uint8_t client);
