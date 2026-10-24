@@ -463,7 +463,8 @@ void client_write(uint8_t client, const char* text) {
         // 状态行/横幅仍走原广播路径。client==CLIENT_ALL 时 Telnet 侧同样按标签核验。
         const uint32_t response_session = client_response_tag(CLIENT_TELNET);
         if (response_session) {
-            WebUI::telnet_server.write_for_session((const uint8_t*)text, strlen(text), response_session);
+            WebUI::telnet_server.write_for_session((const uint8_t*)text, strlen(text), response_session,
+                                                   client == CLIENT_ALL);
         } else {
             WebUI::telnet_server.write((const uint8_t*)text, strlen(text));
         }

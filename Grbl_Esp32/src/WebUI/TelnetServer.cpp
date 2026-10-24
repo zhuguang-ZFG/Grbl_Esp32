@@ -230,7 +230,7 @@ namespace WebUI {
         return wsize;
     }
 
-    size_t Telnet_Server::write_for_session(const uint8_t* buffer, size_t size, uint32_t session) {
+    size_t Telnet_Server::write_for_session(const uint8_t* buffer, size_t size, uint32_t session, bool broadcast_on_stale) {
         // F49-03：响应归属认领时的原会话。会话被 reset_rx() 换掉后，旧命令的
         // ok/error/多行结果必须丢弃。核验与写出在同一把递归连接锁内。
         // 故意不做 clearClients() 收养：收养会 bump 会话并换掉 slot，
@@ -240,7 +240,12 @@ namespace WebUI {
             return 0;
         }
         if (session != _session) {
-            return 0;
+            // F50-13：领取期间的 CLIENT_ALL 广播（ALARM 等）不是命令应答，旧会话
+            // 失配时回退广播路径（含收养），不把这条广播行丢在 Telnet 侧。
+            if (!broadcast_on_stale) {
+                return 0;
+            }
+            clearClients();
         }
         return write_locked(buffer, size);
     }

@@ -110,7 +110,7 @@ struct Telnet_Server {
     void reset_rx();
     void clearClients();
     size_t write(const uint8_t*, size_t);
-    size_t write_for_session(const uint8_t*, size_t, uint32_t);
+    size_t write_for_session(const uint8_t*, size_t, uint32_t, bool broadcast_on_stale = false);
     size_t write_locked(const uint8_t*, size_t);
 };
 namespace WebUI { Telnet_Server telnet_server; }

@@ -41,7 +41,7 @@ namespace WebUI {
         void   handle();
         size_t write(const uint8_t* buffer, size_t size);
         // F49-03：已领取命令的响应只送达认领时的会话；换连后旧会话结果丢弃。
-        size_t write_for_session(const uint8_t* buffer, size_t size, uint32_t session);
+        size_t write_for_session(const uint8_t* buffer, size_t size, uint32_t session, bool broadcast_on_stale = false);
         int    read(uint32_t* session = nullptr);
         int    peek(void);
         bool   executeRealtimeForSession(uint8_t data, uint32_t session, void (*execute)(uint8_t, uint8_t));

@@ -220,7 +220,10 @@ Error WebCommand::action(char* value, WebUI::AuthenticationLevel auth_level, Web
     if (!value) {
         value = &empty;
     }
-    WebUI::WebCommandContext context(out);
+    // 空 out 时列对齐格式化（webPrintSetColumn）会在 espresponse==NULL 下死循环、
+    // 设置查询会空指针解引用；丢弃流保证上下文永不为空（普通分支 f632f587 同修）。
+    WebUI::ESPResponseStream discarded;
+    WebUI::WebCommandContext context(out ? out : &discarded);
     return _action(value, auth_level);
 };
 

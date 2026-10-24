@@ -113,6 +113,56 @@ int main() {
 '''
 
 
+PROGRAM_NULL_OUT = r'''
+#include <cassert>
+#include <cstring>
+#include <functional>
+#include <iostream>
+#include <mutex>
+#include <string>
+#include <thread>
+enum class Error { Ok, AnotherInterfaceBusy };
+using TaskHandle_t = std::thread::id;
+using portMUX_TYPE = std::mutex;
+#define portMUX_INITIALIZER_UNLOCKED {}
+#define portENTER_CRITICAL(p) (p)->lock()
+#define portEXIT_CRITICAL(p) (p)->unlock()
+#define configASSERT(x) assert(x)
+TaskHandle_t xTaskGetCurrentTaskHandle() { return std::this_thread::get_id(); }
+namespace WebUI {
+enum class AuthenticationLevel { User };
+struct ESPResponseStream {
+    std::string output;
+    void print(const char* s) { output += s; }
+};
+@@CONTEXT@@
+@@PRINTER@@
+@@SETCOL@@
+}
+struct WebCommand {
+    std::function<bool()> _cmdChecker;
+    std::function<Error(char*, WebUI::AuthenticationLevel)> _action;
+    Error action(char*, WebUI::AuthenticationLevel, WebUI::ESPResponseStream*);
+};
+@@ACTION@@
+
+int main() {
+    WebUI::ESPResponseStream probe;
+    WebCommand cmd;
+    int ran = 0;
+    cmd._action = [&](char*, auto) {
+        WebUI::webPrint("x");
+        WebUI::webPrintSetColumn(25);
+        assert(WebUI::current_command_context().column == 25);
+        ++ran;
+        return Error::Ok;
+    };
+    assert(cmd.action(nullptr, WebUI::AuthenticationLevel::User, nullptr) == Error::Ok);
+    assert(ran == 1 && probe.output.empty());
+}
+'''
+
+
 class WebCommandContextTest(unittest.TestCase):
     def test_concurrent_response_and_nested_context(self):
         source = (ROOT / "Grbl_Esp32/src/WebUI/WebSettings.cpp").read_text(encoding="utf-8")
@@ -121,6 +171,17 @@ class WebCommandContextTest(unittest.TestCase):
         context = source[start:end]
         program = PROGRAM.replace("@@CONTEXT@@", context)
         program = program.replace("@@PRINTER@@", function(source, "static void webPrint(const char* s)"))
+        program = program.replace("@@ACTION@@", function(source, "Error WebCommand::action("))
+        compile_run(program)
+
+    def test_null_out_uses_discarded_stream_and_columns_advance(self):
+        source = (ROOT / "Grbl_Esp32/src/WebUI/WebSettings.cpp").read_text(encoding="utf-8")
+        start = source.index("    typedef struct {")
+        end = source.index("    bool            split_params(", start)
+        context = source[start:end]
+        program = PROGRAM_NULL_OUT.replace("@@CONTEXT@@", context)
+        program = program.replace("@@PRINTER@@", function(source, "static void webPrint(const char* s)"))
+        program = program.replace("@@SETCOL@@", function(source, "static void webPrintSetColumn("))
         program = program.replace("@@ACTION@@", function(source, "Error WebCommand::action("))
         compile_run(program)
 
