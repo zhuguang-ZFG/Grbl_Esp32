@@ -37,6 +37,9 @@
 void clientCheckTask(void* pvParameters);
 
 void client_write(uint8_t client, const char* text);
+// 无主异步事件（当前仅 ALARM）可在旧命令会话失效后收养并广播；普通
+// CLIENT_ALL 仍属于领取任务输出，必须经过会话屏障，不能污染新连接。
+void client_write_broadcast(const char* text);
 
 // Fetches the first byte in the serial read buffer. Called by main program.
 int client_read(uint8_t client, uint32_t* session = nullptr);

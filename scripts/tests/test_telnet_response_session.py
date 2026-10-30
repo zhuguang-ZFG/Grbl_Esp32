@@ -135,7 +135,11 @@ def program():
         'bool client_claim_command(',
         'void client_release_command(',
         'uint32_t client_response_tag(',
+    ))
+    source += function(serial, 'static void client_write_impl(')
+    source += '\n'.join(function(serial, sig) for sig in (
         'void client_write(',
+        'void client_write_broadcast(',
     ))
     source += '\n'.join(function(telnet, sig) for sig in (
         'void Telnet_Server::reset_rx()',
@@ -190,12 +194,18 @@ int main(int argc, char** argv) {
         client_write(CLIENT_TELNET, "$131=297.000\r\n");
         client_write(CLIENT_TELNET, "ok\r\n");
         assert(writes[42] == "welcome\r\n<Idle|MPos:0.000,0.000,0.000>\r\n");
+        // CLIENT_ALL 不等于无主广播：旧命令自己的消息仍须被会话屏障丢弃。
+        client_write(CLIENT_ALL, "old-command-info\r\n");
+        assert(writes[42] == "welcome\r\n<Idle|MPos:0.000,0.000,0.000>\r\n");
+        // 真正的异步 ALARM 走显式广播入口，允许收养并送达新连接。
+        client_write_broadcast("ALARM:1\r\n");
+        assert(writes[42] == "welcome\r\n<Idle|MPos:0.000,0.000,0.000>\r\nALARM:1\r\n");
         // 旧会话不可再领取；新会话领取后的 ok 必须送达新连接。
         assert(!client_claim_command(CLIENT_TELNET, old));
         host_current_task = 2;
         assert(client_claim_command(CLIENT_TELNET, now));
         client_write(CLIENT_TELNET, "ok-new\r\n");
-        assert(writes[42] == "welcome\r\n<Idle|MPos:0.000,0.000,0.000>\r\nok-new\r\n");
+        assert(writes[42] == "welcome\r\n<Idle|MPos:0.000,0.000,0.000>\r\nALARM:1\r\nok-new\r\n");
         client_release_command(CLIENT_TELNET);
         host_current_task = 1;
         assert(client_response_tag(CLIENT_TELNET) == 0);
@@ -269,6 +279,12 @@ class TelnetResponseSessionTest(unittest.TestCase):
         self.assertEqual(ids['CLIENT_ALL'], 0xFF)
         self.assertEqual(ids['CLIENT_COUNT'], 5)
         self.assertLess(max(ids[name] for name in CLIENT_IDS), ids['CLIENT_COUNT'])
+
+    def test_alarm_uses_explicit_unowned_broadcast(self):
+        report = (ROOT / 'Grbl_Esp32/src/Report.cpp').read_text(encoding='utf-8')
+        alarm = function(report, 'void report_alarm_message(')
+        self.assertIn('client_write_broadcast(text)', alarm)
+        self.assertNotIn('grbl_sendf(CLIENT_ALL', alarm)
 
 
 if __name__ == '__main__':

@@ -442,7 +442,7 @@ void execute_realtime_command(Cmd command, uint8_t client) {
     }
 }
 
-void client_write(uint8_t client, const char* text) {
+static void client_write_impl(uint8_t client, const char* text, bool broadcast_on_stale) {
     if (client == CLIENT_INPUT) {
         return;
     }
@@ -464,7 +464,7 @@ void client_write(uint8_t client, const char* text) {
         const uint32_t response_session = client_response_tag(CLIENT_TELNET);
         if (response_session) {
             WebUI::telnet_server.write_for_session((const uint8_t*)text, strlen(text), response_session,
-                                                   client == CLIENT_ALL);
+                                                   broadcast_on_stale);
         } else {
             WebUI::telnet_server.write((const uint8_t*)text, strlen(text));
         }
@@ -477,4 +477,12 @@ void client_write(uint8_t client, const char* text) {
         Uart0.write(text);
 #endif
     }
+}
+
+void client_write(uint8_t client, const char* text) {
+    client_write_impl(client, text, false);
+}
+
+void client_write_broadcast(const char* text) {
+    client_write_impl(CLIENT_ALL, text, true);
 }

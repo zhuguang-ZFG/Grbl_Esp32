@@ -243,8 +243,10 @@ void report_status_message(Error status_code, uint8_t client) {
 
 // Prints alarm messages.
 void report_alarm_message(ExecAlarm alarm_code) {
-    grbl_sendf(CLIENT_ALL, "ALARM:%d\r\n", static_cast<int>(alarm_code));  // OK to send to all clients
-    delay_ms(500);                                                         // Force delay to ensure message clears serial write buffer.
+    char text[24];
+    snprintf(text, sizeof(text), "ALARM:%d\r\n", static_cast<int>(alarm_code));
+    client_write_broadcast(text);  // 无主异步事件：旧命令换连后仍须送达当前客户端。
+    delay_ms(500);                 // Force delay to ensure message clears serial write buffer.
 }
 
 std::map<Message, const char*> MessageText = {
